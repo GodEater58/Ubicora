@@ -161,6 +161,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         db.updatePhoto(itemId,null)
         PhotoFiles.delete(getApplication<Application>(),current.photoFile)
     }
+    fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
+                          unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
+        db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
+    }
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
         db.updatePurchase(itemId,cost,supplier,leadDays)
     }
