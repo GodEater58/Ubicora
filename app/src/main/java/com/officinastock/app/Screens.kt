@@ -613,7 +613,7 @@ private fun EditItemDetailsDialog(
     }
 }
 
-@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
+@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
     val archiveScope=rememberCoroutineScope()
     var archivePins by remember { mutableStateOf<Map<Long,String>>(emptyMap()) }
     var archiveError by remember { mutableStateOf<String?>(null) }
@@ -668,6 +668,8 @@ private fun EditItemDetailsDialog(
         item {Panel(Modifier.fillMaxWidth()) {
             Text("ESPORTAZIONE EXCEL / CSV",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             PrimaryAction("Esporta inventario CSV",onCsv,modifier=Modifier.fillMaxWidth())
+            OutlinedButton(onClick=onCsvImport,modifier=Modifier.fillMaxWidth()){Text("Importa articoli da CSV")}
+            Text("I duplicati bloccano l’importazione. Occorre confermare l’anteprima.",fontSize=11.sp,color=TextSecondary)
             Text("Il CSV è solo un elenco in chiaro: NON permette di ripristinare l'app. Usa il backup cifrato per salvare tutti i dati.",fontSize=11.sp,color=TextSecondary)
         }}
         item {Panel(Modifier.fillMaxWidth()) {
