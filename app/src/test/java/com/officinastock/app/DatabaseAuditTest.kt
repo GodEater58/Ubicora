@@ -68,6 +68,42 @@ class DatabaseAuditTest {
         assertEquals(10001,db.csv(warehouse).lineSequence().count{it.isNotEmpty()})
         println("AUDIT 10000 database items + search + CSV milliseconds="+(System.nanoTime()-start)/1000000)
     }
+    @Test fun fullMovementHistoryCanBePagedAndFilteredWithoutTruncation(){
+        val id=item()
+        val base=System.currentTimeMillis()+10_000L
+        val sql=db.writableDatabase
+        sql.beginTransaction()
+        try {
+            val insert=sql.compileStatement("INSERT INTO movements(item_id,delta,note,created_at) VALUES(?,?,?,?)")
+            try {
+                repeat(260){ n ->
+                    insert.clearBindings()
+                    insert.bindLong(1,id)
+                    insert.bindDouble(2,if(n%2==0)1.0 else -1.0)
+                    insert.bindString(3,"event-$"+"n")
+                    insert.bindLong(4,base+n)
+                    insert.executeInsert()
+                }
+            } finally { insert.close() }
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
+        val first=db.movementsPage(warehouse,base,0,0,101)
+        val second=db.movementsPage(warehouse,base,0,100,101)
+        val third=db.movementsPage(warehouse,base,0,200,101)
+        assertEquals(101,first.size)
+        assertEquals(101,second.size)
+        assertEquals(60,third.size)
+        assertEquals("event-259",first.first().note)
+        assertEquals("event-0",third.last().note)
+        assertEquals(260,(first.take(100)+second.take(100)+third).map{it.id}.toSet().size)
+        assertEquals(101,db.movementsPage(warehouse,base,1,0,101).size)
+        assertEquals(30,db.movementsPage(warehouse,base,1,100,101).size)
+        assertEquals(30,db.movementsPage(warehouse,base,-1,100,101).size)
+        assertEquals(60,db.movementsPage(warehouse,base+200,0,0,101).size)
+        val other=db.createWarehouse(profile,"Other","")
+        assertTrue(db.movementsPage(other,base,0,0,101).isEmpty())
+        rejects{db.movementsPage(warehouse,base,0,0,500)}
+    }
     @Test fun encryptedArchiveRoundTripAndInvalidRestorePreserveOriginal(){
         val context=RuntimeEnvironment.getApplication()
         val id=item()
