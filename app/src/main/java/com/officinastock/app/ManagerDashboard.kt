@@ -1,6 +1,7 @@
 package com.officinastock.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,7 +46,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
 
-@Composable fun ManagerAnalyticsPanel(items:List<StockItem>,snapshot:ManagerSnapshot,onReorder:()->Unit) {
+@Composable fun ManagerAnalyticsPanel(items:List<StockItem>,snapshot:ManagerSnapshot,onStockFocus:(StockFocus)->Unit,onActivityFocus:(ActivityFocus,Int)->Unit,onItemFocus:(Long)->Unit) {
     var days by remember { mutableIntStateOf(30) }
     var expanded by remember { mutableStateOf(true) }
     val report=remember(items,snapshot,days){ManagerMetrics.compute(items,snapshot,days)}
