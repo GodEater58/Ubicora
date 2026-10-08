@@ -6,7 +6,7 @@ import org.junit.Test
 class CsvImportTest {
     private val header="\"Codice\";\"Descrizione\";\"Categoria\";\"Quantità\";\"Minimo\";\"Unità\";\"Ubicazione\";\"Note\";\"Costo unitario EUR\";\"Fornitore\";\"Consegna giorni\""
     private fun row(sku:String="RIC-000321", name:String="Vite") =
-        "\"$"+"sku\";\"$"+"name\";\"Ricambi\";\"3.5\";\"1\";\"pz\";\"\";\"note\";\"2.5\";\"Officina\";\"5\""
+        listOf(sku,name,"Ricambi","3.5","1","pz","","note","2.5","Officina","5").joinToString(";") { value -> "\""+value.replace("\"","\"\"")+"\"" }
     private fun rejects(raw:String) {
         try { CsvImport.parse(raw); fail("CSV non valido accettato") }
         catch(expected:IllegalArgumentException) {}
