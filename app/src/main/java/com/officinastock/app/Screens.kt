@@ -218,7 +218,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }
         item {SectionTitle("Ultime attività")}
         if(recently.isEmpty()) item { Panel(Modifier.fillMaxWidth()){Text("Non ci sono ancora movimenti. Aggiungi il primo articolo.",color=TextSecondary)} }
-        items(recently,key={it.id}) { move -> MovementRow(move,onClick=goMoves) }
+        items(recently,key={it.id}) { move -> MovementRow(move,onClick={onItemFocus(move.itemId)}) }
         item{Spacer(Modifier.height(8.dp))}
     }
 }
@@ -262,6 +262,9 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     val u=model.ui
     var query by remember(u.warehouse?.id){mutableStateOf("")}
     var activeFocus by remember(u.warehouse?.id){mutableStateOf(requestedFocus)}
+    val idleIds=remember(u.manager.usage) {
+        u.manager.usage.filter { it.consumed90>0.0 }.map { it.itemId }.toSet()
+    }
     LaunchedEffect(requestedFocus){activeFocus=requestedFocus}
     var add by remember{mutableStateOf(false)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
@@ -284,13 +287,14 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             }
         }
     }
-    val filtered=remember(u.items,query,activeFocus) { u.items.filter { item ->
+    val filtered=remember(u.items,query,activeFocus,idleIds) { u.items.filter { item ->
         val matches=when(activeFocus){
             StockFocus.ALL -> true
             StockFocus.CRITICAL -> item.lowStock
             StockFocus.EMPTY -> item.quantity==0.0
             StockFocus.PRICED -> item.unitCost!=null
             StockFocus.UNLOCATED -> item.placementId==null
+            StockFocus.IDLE_90 -> item.id !in idleIds
         }
         matches && (query.isBlank()||listOf(item.name,item.sku,item.category).any{v->v.contains(query,true)})
     } }
@@ -310,7 +314,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
-                    StockFocus.UNLOCATED to "Senza ubicazione"
+                    StockFocus.UNLOCATED to "Senza ubicazione",
+                    StockFocus.IDLE_90 to "Fermi 90 gg"
                 ).forEach { (option,label) ->
                     FilterChip(selected=activeFocus==option,onClick={activeFocus=option},label={Text(label)})
                 }
@@ -506,7 +511,13 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             } else {
-                item { Text("${visible.size} operazioni",color=TextSecondary,fontSize=12.sp) }
+                item {
+                    Text("${visible.size} operazioni",color=TextSecondary,fontSize=12.sp)
+                    if(u.movements.size>=250) Text(
+                        "Mostrate al massimo le ultime 250 registrazioni. I grafici manageriali analizzano tutto il periodo.",
+                        color=Amber,fontSize=11.sp
+                    )
+                }
                 if(visible.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun movimento per questi filtri.",color=TextSecondary)}}
                 items(visible,key={it.id}) {MovementRow(it)}
             }

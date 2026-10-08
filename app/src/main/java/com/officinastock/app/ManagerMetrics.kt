@@ -33,7 +33,7 @@ object ManagerMetrics {
         fun used(x: ItemUsage?): Double=when(days){7->x?.consumed7 ?: 0.0;30->x?.consumed30 ?: 0.0;else->x?.consumed90 ?: 0.0}
         val nowSince=java.time.LocalDate.now().minusDays(days.toLong()-1).toString()
         val filtered=snapshot.daily.filter{it.day>=nowSince}
-        val under=items.filter { it.quantity < it.minimum || it.quantity == 0.0 }
+        val under=items.filter { it.lowStock }
         val priorities=under.map{ item ->
             val monthly=usageById[item.id]?.consumed30 ?: 0.0
             val coverage=if(monthly>0.0) item.quantity * 30.0/monthly else null

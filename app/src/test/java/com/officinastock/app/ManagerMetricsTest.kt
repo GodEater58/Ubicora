@@ -26,6 +26,14 @@ class ManagerMetricsTest {
         assertEquals("C",report.abc[1].group)
         assertEquals(201.0,report.usageValue,.001)
     }
+    @Test fun quantitiesExactlyAtMinimumMatchInventoryWarning() {
+        val atMinimum=entry(1,5.0,5.0)
+        val aboveMinimum=entry(2,6.0,5.0)
+        assertTrue(atMinimum.lowStock)
+        val report=ManagerMetrics.compute(listOf(atMinimum,aboveMinimum),ManagerSnapshot(),30)
+        assertEquals(1,report.lowStock)
+        assertEquals(1L,report.reorder.single().item.id)
+    }
     @Test fun noDemandMeansNoFakeCoverage() {
         assertNull(ManagerMetrics.compute(listOf(entry(1,2.0,4.0)),ManagerSnapshot(),30).reorder[0].coverageDays)
     }

@@ -98,6 +98,9 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                     Text("Priorità di riordino",fontWeight=FontWeight.Bold,fontSize=16.sp)
                 }
                 Text("${report.lowStock} referenze sotto soglia o esaurite · ${report.missingLocation} senza ubicazione",fontSize=12.sp,color=TextSecondary)
+                if(report.missingLocation>0) TextButton(
+                    onClick={onStockFocus(StockFocus.UNLOCATED)},modifier=Modifier.fillMaxWidth()
+                ) { Text("Mostra articoli senza ubicazione") }
                 if(report.reorder.isEmpty()) Text("Nessun articolo critico con le soglie attuali.",fontSize=12.sp,color=Mint)
                 report.reorder.take(5).forEach { risk ->
                     Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().clickable { onItemFocus(risk.item.id) }) {
@@ -153,6 +156,9 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
             Panel(Modifier.fillMaxWidth()) {
                 Text("Utilizzo e scorte ferme",fontSize=16.sp,fontWeight=FontWeight.Bold)
                 Text("${report.noWithdrawal90} referenze senza prelievi registrati negli ultimi 90 giorni. Include quelle nuove: non equivale a obsolescenza.",fontSize=12.sp,color=TextSecondary)
+                TextButton(onClick={onStockFocus(StockFocus.IDLE_90)},modifier=Modifier.fillMaxWidth()){
+                    Text("Vedi le ${report.noWithdrawal90} referenze senza prelievi")
+                }
                 report.topConsumed.take(5).forEach { (item,qty) ->
                     Row(Modifier.fillMaxWidth().clickable { onItemFocus(item.id) }) {
                         Text(item.name,modifier=Modifier.weight(1f),fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)

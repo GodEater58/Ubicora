@@ -122,7 +122,7 @@ class MainActivity: ComponentActivity() {
 }
 
 enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni") }
-enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED }
+enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90 }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
 @Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {

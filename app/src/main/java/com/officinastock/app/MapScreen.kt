@@ -123,7 +123,14 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 val w=with(density){maxWidth.toPx()}
                 val h=with(density){maxHeight.toPx()}
                 val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
+                // Screen-space typography: never shrink text with the map camera.
                 val labelPx=with(density){14.sp.toPx()}
+                val selectedLabelPx=with(density){16.sp.toPx()}
+                val labelHeightPx=with(density){28.dp.toPx()}
+                val labelPadPx=with(density){9.dp.toPx()}
+                val labelGapPx=with(density){7.dp.toPx()}
+                val badgePx=with(density){12.dp.toPx()}
+                val badgeTextPx=with(density){11.sp.toPx()}
                 LaunchedEffect(zoom,w,h,roomWidth,roomHeight) {
                     val adjusted=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
                         .clampedPan(panX,panY)
@@ -253,17 +260,56 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         val items=mapItems[f.id].orEmpty()
                         val count=items.size
                         if(count>0){
-                            val bubble=Offset(center.x+fw/2,center.y-fh/2)
-                            drawCircle(if(items.any{it.lowStock})Amber else Mint,9f,bubble)
+                            val bubble=Offset(
+                                (center.x+fw/2).coerceIn(badgePx,size.width-badgePx),
+                                (center.y-fh/2).coerceIn(badgePx,size.height-badgePx)
+                            )
+                            drawCircle(if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
                             drawIntoCanvas { cv ->
-                                val paint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {color=android.graphics.Color.BLACK;textSize=11f;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER}
-                                cv.nativeCanvas.drawText(count.toString(),bubble.x,bubble.y+4f,paint)
+                                val paint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                                    color=android.graphics.Color.BLACK
+                                    textSize=badgeTextPx
+                                    typeface=Typeface.DEFAULT_BOLD
+                                    textAlign=AndroidPaint.Align.CENTER
+                                }
+                                cv.nativeCanvas.drawText(count.toString(),bubble.x,
+                                    bubble.y-(paint.ascent()+paint.descent())/2f,paint)
                             }
                         }
-                        if(showLabels){
+                        if(showLabels && size.width>60f && size.height>60f){
+                            val labelPaint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                textSize=if(selected)selectedLabelPx else labelPx
+                                typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)
+                                textAlign=AndroidPaint.Align.CENTER
+                            }
+                            val original=f.label.ifBlank { f.kind }
+                            val maxTextWidth=(size.width-2f*labelPadPx-18f).coerceAtLeast(24f)
+                            var cut=original.length
+                            while(cut>1 && labelPaint.measureText(
+                                if(cut<original.length)original.take(cut)+"…" else original
+                            )>maxTextWidth) cut--
+                            val label=if(cut<original.length)original.take(cut)+"…" else original
+                            val bubbleW=(labelPaint.measureText(label)+2f*labelPadPx)
+                                .coerceAtMost(size.width-12f)
+                            val centerX=center.x.coerceIn(bubbleW/2f+6f,size.width-bubbleW/2f-6f)
+                            val below=center.y+fh/2f+labelGapPx+labelHeightPx/2f
+                            val above=center.y-fh/2f-labelGapPx-labelHeightPx/2f
+                            val centerY=(if(below+labelHeightPx/2f>size.height-6f)above else below)
+                                .coerceIn(labelHeightPx/2f+6f,size.height-labelHeightPx/2f-6f)
+                            val origin=Offset(centerX-bubbleW/2f,centerY-labelHeightPx/2f)
+                            drawRoundRect(
+                                Color(0xF20B2332),topLeft=origin,
+                                size=Size(bubbleW,labelHeightPx),cornerRadius=CornerRadius(8f)
+                            )
+                            drawRoundRect(
+                                if(selected)Amber.copy(alpha=.75f) else Mint.copy(alpha=.38f),
+                                topLeft=origin,size=Size(bubbleW,labelHeightPx),
+                                cornerRadius=CornerRadius(8f),style=Stroke(width=1.25f)
+                            )
                             drawIntoCanvas { cv ->
-                                val paint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {color=android.graphics.Color.WHITE;textSize=if(selected)13f else 11f;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER}
-                                cv.nativeCanvas.drawText(f.label.take(19),center.x,center.y+fh/2+17f,paint)
+                                cv.nativeCanvas.drawText(label,centerX,
+                                    centerY-(labelPaint.ascent()+labelPaint.descent())/2f,labelPaint)
                             }
                         }
                     }

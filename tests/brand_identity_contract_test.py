@@ -15,7 +15,7 @@ assert 'painterResource(R.drawable.ic_ubicora_u_selected)' in screens
 assert 'UbicoraWordmark' in screens and 'OFFICINA STOCK 4.0' not in screens
 assert 'Text("Ubicora"' in screens
 assert '"Ubicora",101f' in labels
-assert 'versionCode = 416' in gradle
+assert 'versionCode = 417' in gradle
 assert 'applicationId = "com.ubicora.app"' in gradle
 assert 'put("app","OfficinaStock")' in backup
 assert 'manifest.optString("app")=="OfficinaStock"' in backup
