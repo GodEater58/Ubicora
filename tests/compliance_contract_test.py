@@ -12,7 +12,7 @@ assert 'onProceed' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt
 assert 'PRIVACY E LICENZE' in load('app/src/main/java/com/officinastock/app/Screens.kt')
 assert 'LegalInfoDialog(' in load('app/src/main/java/com/officinastock/app/Screens.kt')
 assert 'legal/Apache-2.0.txt' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt')
-assert 'versionCode = 418' in load('app/build.gradle.kts')
+assert 'versionCode = 419' in load('app/build.gradle.kts')
 assert 'android:value="optional"' in load('app/src/main/AndroidManifest.xml')
 assert 'android.permission.INTERNET' not in load('app/src/main/AndroidManifest.xml')
 assert '[EMAIL DA COMPLETARE]' in load('docs/PRIVACY_POLICY_DRAFT_IT.md')
