@@ -39,7 +39,7 @@ import java.io.FileOutputStream
 object QrLabels {
     fun bitmap(item: StockItem, size: Int = 480): Bitmap {
         val value=ArticleCodes.payload(item.warehouseId,item.sku)
-        val matrix=MultiFormatWriter().encode(value, BarcodeFormat.QR,size,size,
+        val matrix=MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE,size,size,
             mapOf(EncodeHintType.CHARACTER_SET to "UTF-8",
                   EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
                   EncodeHintType.MARGIN to 2))
