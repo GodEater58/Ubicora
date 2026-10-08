@@ -76,8 +76,8 @@ object PhotoFiles {
     private fun decode(context: Context, source: Uri, edge: Int): Bitmap? {
         val cr=context.contentResolver
         val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
-        cr.openInputStream(source)?.use { BitmapFactory.decodeStream(it,null,bounds) }
-            ?: throw IOException("File foto non disponibile")
+        val boundsStream=cr.openInputStream(source) ?: throw IOException("File foto non disponibile")
+        boundsStream.use { BitmapFactory.decodeStream(it,null,bounds) }
         if(bounds.outWidth<=0||bounds.outHeight<=0) throw IOException("Formato immagine non supportato")
         val opts=BitmapFactory.Options().apply { inSampleSize=sample(bounds.outWidth,bounds.outHeight,edge) }
         val decoded=cr.openInputStream(source)?.use{ BitmapFactory.decodeStream(it,null,opts) }
