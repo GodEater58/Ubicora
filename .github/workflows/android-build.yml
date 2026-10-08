@@ -27,7 +27,7 @@ jobs:
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+          sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools'
       - name: Verify SQLite contract
         run: python3 tests/sqlite_contract_test.py && python3 tests/photo_storage_contract_test.py && python3 tests/manager_contract_test.py && python3 tests/plan_editor_contract_test.py && python3 tests/scanner_contract_test.py && python3 tests/backup_demo_contract_test.py && python3 tests/demo_full_contract_test.py
       - name: Verify Home navigation and map viewport
