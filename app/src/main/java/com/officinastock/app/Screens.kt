@@ -493,12 +493,12 @@ private fun EditItemDetailsDialog(
                 Spacer(Modifier.width(7.dp))
                 Text("Costo, fornitore e tempi di riordino")
             }
-            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("carico","prelievo","prestito").forEach {
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                listOf("carico","prelievo","prestito","rettifica").forEach {
                     FilterChip(selected=action==it,onClick={action=it},label={Text(it.replaceFirstChar(Char::uppercase),fontSize=12.sp)})
                 }
             }
-            Input(quantity,{quantity=it},"Quantità",number=true)
+            Input(quantity,{quantity=it},if(action=="rettifica")"Quantità contata" else "Quantità",number=true)
             if(action=="prestito") Input(borrower,{borrower=it},"Assegnato a")
             else Input(note,{note=it},"Motivo / riferimento")
             OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.fillMaxWidth()) {
@@ -509,9 +509,10 @@ private fun EditItemDetailsDialog(
     },confirmButton={TextButton(onClick={
         val q=quantity.replace(',','.').toDouble()
         if(action=="prestito") model.lend(item.id,borrower,q)
+        else if(action=="rettifica") model.reconcileQuantity(item.id,q,note)
         else model.movement(item.id,if(action=="carico")q else -q,note)
         onDismiss()
-    },enabled=quantity.replace(',','.').toDoubleOrNull()?.let{it>0&&it.isFinite()}==true&&(action!="prestito"||borrower.isNotBlank())){Text("Conferma")}},
+    },enabled=quantity.replace(',','.').toDoubleOrNull()?.let{it.isFinite() && (if(action=="rettifica") it>=0.0 && it!=item.quantity else it>0.0)}==true&&(action!="prestito"||borrower.isNotBlank())&&(action!="rettifica"||note.trim().length in 3..250)){Text("Conferma")}},
         dismissButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
     if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
     if(editDetails) EditItemDetailsDialog(item,onClose={editDetails=false}) { name,category,min,unit,note,cost,supplier,days ->
