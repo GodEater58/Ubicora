@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 411
-        versionName = "4.1.1-native-qr-scanner"
+        versionCode = 412
+        versionName = "4.1.2-backup-demo"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

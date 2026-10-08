@@ -435,11 +435,17 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
-@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit) {
+@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
     var newWarehouse by remember{mutableStateOf(false)}
+    var confirmDemoRemoval by remember{mutableStateOf(false)}
+    var backupDialog by remember{mutableStateOf(false)}
+    var restoreDialog by remember{mutableStateOf(false)}
+    var secret by remember{mutableStateOf("")}
+    var secretConfirm by remember{mutableStateOf("")}
+    var understood by remember{mutableStateOf(false)}
     var name by remember{mutableStateOf("")};var location by remember{mutableStateOf("")}
     LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        item {SectionTitle("Impostazioni","Ambienti, profili e strumenti")}
+        item {SectionTitle("Impostazioni","Ambienti, profili, demo e sicurezza dei dati")}
         item {Panel(Modifier.fillMaxWidth()) {
             Text("PROFILO CORRENTE",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text(model.ui.profile?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
@@ -451,25 +457,66 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
         }}
-        if(model.ui.items.isEmpty() && model.ui.placements.isEmpty() && model.ui.walls.isEmpty())
+        item {Panel(Modifier.fillMaxWidth()) {
+            Text("BACKUP COMPLETO CIFRATO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text("Esporta profili, articoli, foto, movimenti, prestiti, magazzini, codici e planimetrie in un unico file protetto da password.",fontSize=12.sp,color=TextSecondary)
+            PrimaryAction("Esporta backup completo",onClick={secret="";secretConfirm="";backupDialog=true},modifier=Modifier.fillMaxWidth())
+            OutlinedButton(onClick={secret="";understood=false;restoreDialog=true},modifier=Modifier.fillMaxWidth()) {Text("Ripristina da backup")}
+            Text("Conserva password e file al sicuro. Senza la password il backup non è recuperabile. Il ripristino sostituisce tutti i dati locali.",fontSize=11.sp,color=TextSecondary)
+        }}
+        if(model.ui.demoCount>0) {
+            item {Panel(Modifier.fillMaxWidth()) {
+                Text("DATI DIMOSTRATIVI",color=Amber,fontSize=11.sp,letterSpacing=1.sp)
+                Text("${model.ui.demoCount} elementi di esempio in questo magazzino. La rimozione preserva gli elementi creati da te.",fontSize=12.sp,color=TextSecondary)
+                OutlinedButton(onClick={confirmDemoRemoval=true},modifier=Modifier.fillMaxWidth()) {Text("Rimuovi soltanto la demo",color=Danger)}
+            }}
+        } else if(model.ui.items.isEmpty() && model.ui.placements.isEmpty() && model.ui.walls.isEmpty()) {
             item {Panel(Modifier.fillMaxWidth()) {
                 Text("DEMO GUIDATA",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
                 Text("Carica otto articoli fittizi, tre strutture e la planimetria per esplorare l'interfaccia.",fontSize=12.sp,color=TextSecondary)
                 PrimaryAction("Carica dati dimostrativi",model::seedDemo,modifier=Modifier.fillMaxWidth())
             }}
+        }
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("DATI LOCALI",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
-            Text("Archivio SQLite, senza connessione Internet.",fontSize=13.sp,color=TextSecondary)
+            Text("ESPORTAZIONE EXCEL / CSV",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             PrimaryAction("Esporta inventario CSV",onCsv,modifier=Modifier.fillMaxWidth())
-            Text("Il CSV esportato contiene informazioni non cifrate: conservalo in un luogo sicuro.",fontSize=11.sp,color=TextSecondary)
+            Text("Il CSV è solo un elenco in chiaro: NON permette di ripristinare l'app. Usa il backup cifrato per salvare tutti i dati.",fontSize=11.sp,color=TextSecondary)
         }}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("Officina Stock 4.0 · Native Alpha",fontWeight=FontWeight.SemiBold)
-            Text("Interfaccia nativa Kotlin/Compose, database SQLite, rilievo ARCore opzionale.",color=TextSecondary,fontSize=12.sp)
+            Text("Officina Stock 4.1.2 · Native Alpha",fontWeight=FontWeight.SemiBold)
+            Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }
     if(newWarehouse) AlertDialog(onDismissRequest={newWarehouse=false},title={Text("Nuovo magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
+    if(confirmDemoRemoval) AlertDialog(onDismissRequest={confirmDemoRemoval=false},title={Text("Eliminare la demo?")},text={
+        Text("Rimuove soltanto articoli, strutture e pareti marcati come dimostrativi in questo magazzino. Gli articoli personali non verranno cancellati.")
+    },confirmButton={TextButton(onClick={model.removeDemo();confirmDemoRemoval=false}){Text("Rimuovi demo",color=Danger)}},
+        dismissButton={TextButton(onClick={confirmDemoRemoval=false}){Text("Annulla")}})
+    if(backupDialog) AlertDialog(onDismissRequest={backupDialog=false},title={Text("Backup cifrato")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+            Text("Scegli una password di almeno 8 caratteri e conservala: protegge tutto l'archivio, inclusi PIN e fotografie.",fontSize=12.sp,color=TextSecondary)
+            OutlinedTextField(secret,onValueChange={secret=it},label={Text("Password del backup")},
+                visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(secretConfirm,onValueChange={secretConfirm=it},label={Text("Conferma password")},
+                visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
+        }
+    },confirmButton={TextButton(onClick={onBackup(secret);backupDialog=false;secret="";secretConfirm=""},
+        enabled=secret.length>=8 && secret==secretConfirm && !model.ui.busy){Text("Scegli dove salvare")}},
+        dismissButton={TextButton(onClick={backupDialog=false}){Text("Annulla")}})
+    if(restoreDialog) AlertDialog(onDismissRequest={restoreDialog=false},title={Text("Ripristino completo")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Text("ATTENZIONE: il ripristino sostituisce TUTTI i profili, magazzini, articoli, foto e movimenti esistenti su questo telefono.",color=Amber,fontSize=12.sp)
+            OutlinedTextField(secret,onValueChange={secret=it},label={Text("Password del backup")},
+                visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Checkbox(checked=understood,onCheckedChange={understood=it})
+                Text("Ho capito: i dati attuali saranno sostituiti",fontSize=12.sp)
+            }
+        }
+    },confirmButton={TextButton(onClick={onRestore(secret);restoreDialog=false;secret=""},
+        enabled=secret.length>=8 && understood && !model.ui.busy){Text("Seleziona backup",color=Amber)}},
+        dismissButton={TextButton(onClick={restoreDialog=false}){Text("Annulla")}})
 }

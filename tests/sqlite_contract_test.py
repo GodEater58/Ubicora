@@ -9,7 +9,7 @@ con=sqlite3.connect(":memory:")
 con.execute("PRAGMA foreign_keys=ON")
 for ddl in multis+single:
     con.execute(ddl)
-assert len(multis)==8, len(multis)
+assert len(multis)==9, len(multis)
 assert len(single)==5, len(single)
 con.execute("INSERT INTO sku_sequences(prefix,next_value) VALUES('RIC',1)")
 try:
@@ -42,4 +42,4 @@ except sqlite3.IntegrityError:
     pass
 con.execute("DELETE FROM profiles WHERE id=1")
 assert con.execute("SELECT count(*) FROM items").fetchone()[0]==0
-print('SQLite: 8 tabelle, 5 indici e 5 controlli integrità OK')
+print('SQLite: 9 tabelle, 5 indici e 5 controlli integrità OK')

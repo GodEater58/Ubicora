@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 5) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 6) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
         db.execSQL("""CREATE TABLE profiles (
@@ -51,6 +51,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             x1 REAL NOT NULL, y1 REAL NOT NULL, x2 REAL NOT NULL, y2 REAL NOT NULL,
             source TEXT NOT NULL DEFAULT 'manual')""")
         createSkuSequences(db)
+        createDemoAssets(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -92,6 +93,59 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             // Geometry v4 was relative percent, so convert once to physical metres.
             db.execSQL("UPDATE placements SET x = x * 0.12, y = y * 0.08")
             db.execSQL("UPDATE walls SET x1=x1*0.12,x2=x2*0.12,y1=y1*0.08,y2=y2*0.08")
+        }
+        if (oldVersion < 6 && newVersion >= 6) {
+            createDemoAssets(db)
+            markLegacyDemo(db)
+        }
+    }
+    private fun createDemoAssets(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (
+            entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL,
+            warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+            PRIMARY KEY(entity_type,entity_id)
+        )""")
+    }
+    private fun demoTag(db: SQLiteDatabase, warehouseId: Long, entity: String, id: Long) {
+        db.insertWithOnConflict("demo_assets", null, ContentValues().apply {
+            put("warehouse_id",warehouseId);put("entity_type",entity);put("entity_id",id)
+        }, SQLiteDatabase.CONFLICT_IGNORE)
+    }
+    /** Recupero mirato per demo create con le build 4.1.1 o precedenti.
+     * Il riconoscimento richiede la descrizione demo e nomi originali,
+     * non marca altri articoli nemmeno se hanno SKU simili. */
+    private fun markLegacyDemo(db: SQLiteDatabase) {
+        val itemNames=listOf("Vite TCEI M8 x 35","Cuscinetto 6204 2RS","Sensore induttivo M18",
+            "Chiave combinata 13 mm","Raccordo pneumatico 1/4","Fusibile rapido 10 A",
+            "Guarnizione NBR 30 mm","Punta HSS Ø6")
+        val warehouses=mutableSetOf<Long>()
+        db.rawQuery("SELECT id,warehouse_id,name FROM items WHERE note='Dati dimostrativi'",null).use {c ->
+            while(c.moveToNext()) if(c.getString(2) in itemNames) {
+                demoTag(db,c.getLong(1),"items",c.getLong(0));warehouses.add(c.getLong(1))
+            }
+        }
+        // Vecchia demo: identifichiamo le strutture solo se esistono articoli demo.
+        warehouses.forEach {warehouseId ->
+            db.rawQuery("SELECT id,kind,label,x,y FROM placements WHERE warehouse_id=?",arrayOf(warehouseId.toString())).use {c ->
+                while(c.moveToNext()) {
+                    val signature=Triple(c.getString(1),c.getString(2),c.getFloat(3) to c.getFloat(4))
+                    val known= listOf(Triple("Scaffale","A · Ricambi",3.36f to 2.48f),
+                        Triple("Armadio","B · Utensili",8.64f to 2.4f),
+                        Triple("Cassetto","C · Elettrico",6.12f to 5.84f))
+                    if(known.any {it.first==signature.first && it.second==signature.second &&
+                        kotlin.math.abs(it.third.first-signature.third.first)<.02f &&
+                        kotlin.math.abs(it.third.second-signature.third.second)<.02f}) demoTag(db,warehouseId,"placements",c.getLong(0))
+                }
+            }
+            val original=listOf(floatArrayOf(1.08f,.72f,10.92f,.72f),floatArrayOf(10.92f,.72f,10.92f,7.28f),
+                floatArrayOf(10.92f,7.28f,1.08f,7.28f),floatArrayOf(1.08f,7.28f,1.08f,.72f))
+            db.rawQuery("SELECT id,x1,y1,x2,y2,source FROM walls WHERE warehouse_id=?",arrayOf(warehouseId.toString())).use {c ->
+                while(c.moveToNext()) if(c.getString(5)=="manual") {
+                    val p=FloatArray(4) {idx -> c.getFloat(idx+1)}
+                    if(original.any {o -> (0..3).all {idx -> kotlin.math.abs(o[idx]-p[idx])<.02f} })
+                        demoTag(db,warehouseId,"walls",c.getLong(0))
+                }
+            }
         }
     }
     private fun createSkuSequences(db: SQLiteDatabase) {
@@ -389,6 +443,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                     put("x",pos.first);put("y",pos.second);put("locked",1)
                 })
             }
+            ids.forEach {demoTag(db,warehouseId,"placements",it)}
             val data=listOf(
                 listOf("VIT-M8-035","Vite TCEI M8 x 35","Meccanica","240","40","pz","0"),
                 listOf("CUS-6204","Cuscinetto 6204 2RS","Ricambi","12","8","pz","0"),
@@ -405,18 +460,48 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                     put("quantity",row[3].toDouble());put("minimum",row[4].toDouble());put("unit",row[5]);
                     put("placement_id",ids[row[6].toInt()]);put("note","Dati dimostrativi")
                 })
+                demoTag(db,warehouseId,"items",id)
                 recordMovement(db,id,row[3].toDouble(),"Carico iniziale · demo")
             }
             listOf(floatArrayOf(1.08f,.72f,10.92f,.72f),floatArrayOf(10.92f,.72f,10.92f,7.28f),
                 floatArrayOf(10.92f,7.28f,1.08f,7.28f),floatArrayOf(1.08f,7.28f,1.08f,.72f)).forEach { p ->
-                db.insertOrThrow("walls",null,ContentValues().apply {
+                val wallId=db.insertOrThrow("walls",null,ContentValues().apply {
                     put("warehouse_id",warehouseId);put("x1",p[0]);put("y1",p[1]);
                     put("x2",p[2]);put("y2",p[3]);put("source","manual")
                 })
+                demoTag(db,warehouseId,"walls",wallId)
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
+    fun demoAssetCount(warehouseId: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM demo_assets WHERE warehouse_id=?",arrayOf(warehouseId.toString())
+    ).use {it.moveToFirst();it.getInt(0)}
+
+    /** Solo gli ID etichettati come demo sono cancellabili. Gli altri restano intatti. */
+    fun removeDemo(warehouseId: Long): List<String> {
+        val db=writableDatabase
+        val photos=mutableListOf<String>()
+        db.beginTransaction()
+        try {
+            for((entity,table) in listOf("items" to "items","walls" to "walls","placements" to "placements")) {
+                val ids=mutableListOf<Long>()
+                db.rawQuery("SELECT entity_id FROM demo_assets WHERE warehouse_id=? AND entity_type=?",
+                    arrayOf(warehouseId.toString(),entity)).use {c ->while(c.moveToNext())ids.add(c.getLong(0))}
+                for(id in ids) {
+                    if(entity=="items") db.rawQuery("SELECT photo_file FROM items WHERE id=? AND warehouse_id=?",
+                        arrayOf(id.toString(),warehouseId.toString())).use {c ->
+                        if(c.moveToFirst() && !c.isNull(0)) photos.add(c.getString(0))
+                    }
+                    db.delete(table,"id=? AND warehouse_id=?",arrayOf(id.toString(),warehouseId.toString()))
+                }
+            }
+            db.delete("demo_assets","warehouse_id=?",arrayOf(warehouseId.toString()))
+            db.setTransactionSuccessful()
+        } finally {db.endTransaction()}
+        return photos
+    }
+
     /** CSV safely escaped for Excel, including formula injection prevention. */
     fun csv(warehouseId: Long): String {
         fun field(s: String): String {

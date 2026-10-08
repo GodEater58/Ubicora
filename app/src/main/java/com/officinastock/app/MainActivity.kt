@@ -1,6 +1,7 @@
 package com.officinastock.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -53,13 +54,35 @@ class MainActivity: ComponentActivity() {
                         Toast.makeText(context,if(failure==null)"CSV esportato" else "Esportazione non riuscita: $failure",Toast.LENGTH_LONG).show()
                     }
                 }
+                var backupPassword by remember {mutableStateOf("")}
+                var restorePassword by remember {mutableStateOf("")}
+                val backupLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+                    if(uri!=null) lifecycleScope.launch {
+                        val error=runCatching {model.exportBackup(uri,backupPassword)}.exceptionOrNull()
+                        backupPassword=""
+                        Toast.makeText(context,if(error==null)"Backup cifrato esportato" else "Backup non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
+                    } else backupPassword=""
+                }
+                val restoreLauncher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if(uri!=null) lifecycleScope.launch {
+                        val error=runCatching {model.restoreBackup(uri,restorePassword)}.exceptionOrNull()
+                        restorePassword=""
+                        Toast.makeText(context,if(error==null)"Ripristino completato" else "Ripristino non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
+                    } else restorePassword=""
+                }
                 StockApp(model,onAr = {
                     arLauncher.launch(Intent(context,ARScanActivity::class.java).apply {
                         putExtra("site",model.ui.warehouse?.name)
                         putExtra("profileId",model.ui.profile?.id?.toString())
                     })
                 },onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")},
-                onScan = {
+                onBackup={password ->
+                    backupPassword=password
+                    backupLauncher.launch("officina_stock_backup_${System.currentTimeMillis()}.osbackup")
+                },onRestore={password ->
+                    restorePassword=password
+                    restoreLauncher.launch(arrayOf("*/*"))
+                },onScan = {
                     qrLauncher.launch(ScanOptions()
                         .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                         .setPrompt("Inquadra il codice QR dell'articolo")
@@ -71,21 +94,21 @@ class MainActivity: ComponentActivity() {
     }
 }
 
-@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onScan:()->Unit) {
+@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     val data=model.ui
     Surface(color=Ink,modifier=Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         when {
             data.profiles.isEmpty() -> NewProfileScreen(model,first=true)
             data.profile==null -> ProfileChooserScreen(model)
             data.warehouse==null -> WarehouseChooserScreen(model)
-            else -> StockShell(model,onAr,onCsv,onScan)
+            else -> StockShell(model,onAr,onCsv,onBackup,onRestore,onScan)
         }
     }
 }
 
 enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni") }
 
-@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onScan:()->Unit) {
+@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     val data=model.ui
     LaunchedEffect(data.scannedItemId) {
@@ -131,7 +154,7 @@ enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("M
                 Tab.STOCK -> InventoryScreen(model,onScan)
                 Tab.MAP -> NativeMapScreen(model,onAr)
                 Tab.MOVES -> MovementsScreen(model)
-                Tab.SETTINGS -> SettingsScreen(model,onCsv)
+                Tab.SETTINGS -> SettingsScreen(model,onCsv,onBackup,onRestore)
             }
         }
     }

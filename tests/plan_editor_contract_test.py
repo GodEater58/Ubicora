@@ -6,7 +6,7 @@ ui=(p/'MapScreen.kt').read_text()
 model=(p/'Models.kt').read_text()
 geom=(p/'PlanGeometry.kt').read_text()
 checks={
-    'versioned migration': 'null, 5)' in db and 'oldVersion < 5' in db,
+    'versioned migration': 'null, 6)' in db and 'oldVersion < 5' in db,
     'metric room size': 'map_width REAL NOT NULL DEFAULT 12' in db,
     'metric furniture schema': 'width_m REAL NOT NULL DEFAULT 1.6' in db,
     'safe legacy wall conversion': 'x1=x1*0.12' in db,

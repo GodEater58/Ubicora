@@ -23,6 +23,7 @@ data class StockUiState(
     val movements: List<Movement> = emptyList(),
     val loans: List<Loan> = emptyList(),
     val manager: ManagerSnapshot = ManagerSnapshot(),
+    val demoCount: Int = 0,
     val createdItemId: Long? = null,
     val scannedItemId: Long? = null,
     val busy: Boolean = false,
@@ -78,6 +79,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     val day=86_400_000L
                     ManagerSnapshot(db.dailyActivity(it.id,now-90*day),db.usageSummary(it.id,now))
                 } ?: ManagerSnapshot(),
+                demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error)
         }
@@ -164,6 +166,28 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun deleteWall(id:Long)=execute{db.deleteWall(id)}
     fun importAr(json:String)=execute{db.importArScan(requireWarehouse(),json)}
     fun seedDemo() = execute { db.seedDemo(requireWarehouse()) }
+    fun removeDemo() = execute {
+        val names=db.removeDemo(requireWarehouse())
+        names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
+    }
+    /** Il backup completo include anche gli altri profili e magazzini del telefono. */
+    suspend fun exportBackup(uri:Uri,password:String) {
+        require(!ui.busy) {"Attendi il completamento dell'operazione in corso"}
+        ui=ui.copy(busy=true)
+        try {withContext(Dispatchers.IO){BackupArchive(getApplication(),db).export(uri,password)}}
+        finally {ui=ui.copy(busy=false)}
+    }
+    /** Ripristina l'intero archivio e ritorna alla scelta del profilo. */
+    suspend fun restoreBackup(uri:Uri,password:String) {
+        require(!ui.busy) {"Attendi il completamento dell'operazione in corso"}
+        ui=ui.copy(busy=true)
+        try {
+            withContext(Dispatchers.IO){BackupArchive(getApplication(),db).restore(uri,password)}
+            val profiles=withContext(Dispatchers.IO){db.profiles()}
+            pendingNewItem=null;pendingProfileId=null;pendingWarehouseId=null
+            ui=StockUiState(profiles=profiles,message="Backup ripristinato. Seleziona il profilo e inserisci il relativo PIN.")
+        } finally {if(ui.busy)ui=ui.copy(busy=false)}
+    }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
     fun refresh()=execute{}
     private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
