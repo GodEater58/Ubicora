@@ -188,10 +188,19 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         buildList { while(c.moveToNext()) add(Profile(c.getLong(0),c.getString(1))) }
     }
     fun authenticate(profileId: Long, pin: String): Boolean {
+        val attempts=appContext.getSharedPreferences("login_attempts",Context.MODE_PRIVATE)
+        val key="profile_$profileId"
+        val now=System.currentTimeMillis()
+        val retry=attempts.getLong("${key}_retry",0L)
+        require(retry<=now || retry-now>60_000L) { "Troppi tentativi. Attendi un minuto e riprova." }
         readableDatabase.rawQuery("SELECT salt,verifier FROM profiles WHERE id=?", arrayOf(profileId.toString())).use { c ->
             if(!c.moveToFirst()) return false
             val current = proof(pin,Base64.getDecoder().decode(c.getString(0)))
-            return java.security.MessageDigest.isEqual(current.toByteArray(),c.getString(1).toByteArray())
+            val valid=java.security.MessageDigest.isEqual(current.toByteArray(),c.getString(1).toByteArray())
+            val failures=if(valid)0 else attempts.getInt(key,0)+1
+            attempts.edit().putInt(key,if(failures>=5)0 else failures)
+                .putLong("${key}_retry",if(failures>=5)now+60_000L else 0L).commit()
+            return valid
         }
     }
     fun createWarehouse(profileId: Long, name: String, location: String): Long {
@@ -205,6 +214,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }
     fun updateMapSize(warehouseId: Long, width: Float, height: Float) {
         require(width.isFinite() && width in 2f..150f && height.isFinite() && height in 2f..150f) { "Dimensioni ammesse: 2–150 metri" }
+        require(placements(warehouseId).all{it.x in 0f..width && it.y in 0f..height} &&
+            walls(warehouseId).all{it.x1 in 0f..width && it.x2 in 0f..width && it.y1 in 0f..height && it.y2 in 0f..height}) {
+            "Sposta le strutture e le pareti prima di ridurre la pianta: elementi fuori dai nuovi confini."
+        }
         writableDatabase.update("warehouses",ContentValues().apply {put("map_width",width);put("map_height",height)},"id=?",arrayOf(warehouseId.toString()))
     }
     private fun mapBounds(warehouseId: Long): Pair<Float,Float> = readableDatabase.rawQuery(
@@ -214,7 +227,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     fun items(warehouseId: Long, filter: String = ""): List<StockItem> {
         val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days
             FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ?)
-            ORDER BY name COLLATE NOCASE,id LIMIT 20000"""
+            ORDER BY name COLLATE NOCASE,id"""
         val safeFilter = "%${filter.trim().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")}%"
         // Backslash escaping is explicit for SQL LIKE so '%' in search is interpreted literally.
         val escapedQuery = query.replace(" LIKE ?", " LIKE ? ESCAPE '\\'")
@@ -356,6 +369,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         })
     }
     fun movePlacement(id: Long, x: Float, y: Float): Boolean {
+        require(x.isFinite() && y.isFinite()) { "Coordinate non valide" }
         val warehouseId=readableDatabase.rawQuery("SELECT warehouse_id FROM placements WHERE id=?",arrayOf(id.toString())).use {
             if(!it.moveToFirst()) return false;it.getLong(0)
         }
@@ -411,12 +425,16 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         val xs=segments.flatMap{listOf(it[0],it[2])};val ys=segments.flatMap{listOf(it[1],it[3])}
         val minX=xs.minOrNull()!!;val maxX=xs.maxOrNull()!!;val minY=ys.minOrNull()!!;val maxY=ys.maxOrNull()!!
-        val (mapWidth,mapHeight)=mapBounds(warehouseId)
-        val scale=minOf((mapWidth*.86f)/maxOf(1f,maxX-minX),(mapHeight*.86f)/maxOf(1f,maxY-minY))
-        val dx=(mapWidth-(maxX-minX)*scale)/2;val dy=(mapHeight-(maxY-minY)*scale)/2
+        val (oldWidth,oldHeight)=mapBounds(warehouseId)
+        // AR coordinates are metres: enlarge the room if needed, never stretch measured walls.
+        val mapWidth=maxOf(oldWidth,maxX-minX+2f);val mapHeight=maxOf(oldHeight,maxY-minY+2f)
+        require(mapWidth.isFinite() && mapHeight.isFinite() && mapWidth<=150f && mapHeight<=150f) { "Rilievo oltre il limite di 150 metri" }
+        val scale=1f
+        val dx=(mapWidth-(maxX-minX))/2;val dy=(mapHeight-(maxY-minY))/2
         val db=writableDatabase
         db.beginTransaction()
         try {
+            db.update("warehouses",ContentValues().apply{put("map_width",mapWidth);put("map_height",mapHeight)},"id=?",arrayOf(warehouseId.toString()))
             db.delete("walls","warehouse_id=? AND source='ar'",arrayOf(warehouseId.toString()))
             for(p in segments) db.insertOrThrow("walls",null,ContentValues().apply {
                 put("warehouse_id",warehouseId);put("source","ar")
@@ -594,5 +612,30 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             for(it in items(warehouseId)) appendLine(listOf(it.sku,it.name,it.category,it.quantity.toString(),it.minimum.toString(),it.unit,
                 labels[it.placementId]?.label ?: "",it.note,it.unitCost?.toString() ?: "",it.supplier,it.leadDays?.toString() ?: "").joinToString(";"){v->field(v)})
         }
+    }
+
+    /** SQL foreign keys alone do not enforce warehouse ownership or valid floating point geometry. */
+    internal fun validateRestoredData() {
+        val db=readableDatabase
+        db.rawQuery("SELECT 1 FROM items i JOIN placements p ON p.id=i.placement_id WHERE i.warehouse_id<>p.warehouse_id LIMIT 1",null).use {
+            require(!it.moveToFirst()) { "Ubicazione collegata a un altro magazzino nel backup" }
+        }
+        for(profile in profiles()) for(w in warehouses(profile.id)) {
+            require(w.mapWidth.isFinite() && w.mapWidth in 2f..150f && w.mapHeight.isFinite() && w.mapHeight in 2f..150f) { "Dimensioni pianta non valide nel backup" }
+            for(p in placements(w.id)) require(listOf(p.x,p.y,p.width,p.depth,p.rotation).all{it.isFinite()} && p.width in .2f..15f && p.depth in .2f..15f) { "Struttura non valida nel backup" }
+            for(wall in walls(w.id)) StockRules.normalizeWall(floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
+        }
+        db.rawQuery("SELECT quantity,minimum,unit_cost FROM items",null).use { c -> while(c.moveToNext()) {
+            require(StockRules.validQuantity(c.getDouble(0)) && StockRules.validQuantity(c.getDouble(1)) &&
+                (c.isNull(2) || StockRules.validQuantity(c.getDouble(2)))) { "Quantità o costo non valido nel backup" }
+        } }
+        // Restoring stale counters must not make the next insert collide with an existing SKU.
+        db.rawQuery("SELECT sku FROM items",null).use { c -> while(c.moveToNext()) {
+            val sku=c.getString(0);val prefix=sku.substringBefore('-');val serial=sku.substringAfter('-').toLongOrNull()
+            if(prefix in ArticleCodes.categoryPrefixes.values && serial!=null && serial in 1..999999999L) {
+                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
+                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",arrayOf(serial+1,prefix))
+            }
+        } }
     }
 }

@@ -1,10 +1,10 @@
 from pathlib import Path
 base=Path(__file__).resolve().parents[1]
-models=(base/"app/src/main/java/com/officinastock/app/Models.kt").read_text()
-main=(base/"app/src/main/java/com/officinastock/app/MainActivity.kt").read_text()
-vm=(base/"app/src/main/java/com/officinastock/app/StockViewModel.kt").read_text()
-screens=(base/"app/src/main/java/com/officinastock/app/Screens.kt").read_text()
-build=(base/"app/build.gradle.kts").read_text()
+models=(base/"app/src/main/java/com/officinastock/app/Models.kt").read_text(encoding='utf-8')
+main=(base/"app/src/main/java/com/officinastock/app/MainActivity.kt").read_text(encoding='utf-8')
+vm=(base/"app/src/main/java/com/officinastock/app/StockViewModel.kt").read_text(encoding='utf-8')
+screens=(base/"app/src/main/java/com/officinastock/app/Screens.kt").read_text(encoding='utf-8')
+build=(base/"app/build.gradle.kts").read_text(encoding='utf-8')
 assert "parseScan(raw: String)" in models
 assert '"OFFICINA-STOCK:1:W$warehouseId:$sku"' in models
 assert 'ScanContract()' in main and 'ScanOptions.QR_CODE' in main

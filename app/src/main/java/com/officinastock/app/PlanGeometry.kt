@@ -26,6 +26,17 @@ data class PlanViewport(
     fun panLimitY(): Float = ((roomHeight*scale-heightPx)/2f).coerceAtLeast(0f) + heightPx*.16f
     fun clampedPan(x:Float,y:Float) = PointMetres(x.coerceIn(-panLimitX(),panLimitX()),y.coerceIn(-panLimitY(),panLimitY()))
 
+    fun transformed(factor:Float, anchor:PointMetres, translation:PointMetres):PlanViewport {
+        val world=toWorld(anchor)
+        val next=copy(zoom=(zoom*factor).coerceIn(.7f,4f))
+        val projected=next.toScreen(world)
+        val pan=next.clampedPan(panX+anchor.x+translation.x-projected.x,panY+anchor.y+translation.y-projected.y)
+        return next.copy(panX=pan.x,panY=pan.y)
+    }
+
+    fun insetCoordinate(value:Float,extent:Float,inset:Float):Float =
+        if(extent<=2*inset) extent/2f else value.coerceIn(inset,extent-inset)
+
 }
 object PlanGeometry {
     fun snap(value:Float,spacing:Float=.25f):Float = round(value/spacing)*spacing

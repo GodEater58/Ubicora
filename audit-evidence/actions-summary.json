@@ -1,0 +1,313 @@
+{
+  "repository": "GodEater58/OfficinaStock-Android",
+  "branch": "main",
+  "commit": "b28e738c07a6c2bbd5e793f53e4dd668b0957063",
+  "runs": [
+    {
+      "id": 37825241034,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37825241034",
+      "sha": "b28e738c07a6c2bbd5e793f53e4dd668b0957063",
+      "conclusion": "success",
+      "title": "Ubicora 4.1.7: accessible map labels, consistent manager counts, func…",
+      "created_at": "2026-10-08T18:33:43Z"
+    },
+    {
+      "id": 37823691252,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823691252",
+      "sha": "ef45f7c2279a9941642acf3ad3687133cf75cc9f",
+      "conclusion": "success",
+      "title": "Fix brittle QR contract test after inventory navigation refactor",
+      "created_at": "2026-10-08T18:21:50Z"
+    },
+    {
+      "id": 37823372210,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823372210",
+      "sha": "fecd63ea2b44a730d9aae90d7e67f9183dcc4670",
+      "conclusion": "failure",
+      "title": "Clip all map drawing including Android Canvas labels, clamp after zoo…",
+      "created_at": "2026-10-08T18:19:22Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:19:41.4185524Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:19:41.4186563Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:19:41.4187237Z AssertionError\\n2026-10-08T18:19:41.4426038Z ##"
+      ]
+    },
+    {
+      "id": 37823325151,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823325151",
+      "sha": "69713c5459126faa7fa2153634278414b2658002",
+      "conclusion": "failure",
+      "title": "Constrain map to bounded, clipped floorplan viewport",
+      "created_at": "2026-10-08T18:19:00Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:19:33.2836744Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:19:33.2844918Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:19:33.2845846Z AssertionError\\n2026-10-08T18:19:33.3043171Z ##"
+      ]
+    },
+    {
+      "id": 37823237613,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823237613",
+      "sha": "aa3d1137195bde5f6569b01c0bd4c5162fd5e35a",
+      "conclusion": "failure",
+      "title": "Constrain pan to maintain visible floorplan on all zoom levels",
+      "created_at": "2026-10-08T18:18:19Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:18:45.9367007Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:18:45.9367490Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:18:45.9367879Z AssertionError\\n2026-10-08T18:18:45.9511579Z ##"
+      ]
+    },
+    {
+      "id": 37823152724,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823152724",
+      "sha": "a159a31c690be917c3923d044924bd9d61859b60",
+      "conclusion": "failure",
+      "title": "Open manager charts reorder item rows and ABC details by tapping",
+      "created_at": "2026-10-08T18:17:39Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:17:58.2810201Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:17:58.2830102Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:17:58.2850230Z AssertionError\\n2026-10-08T18:17:58.2988026Z ##"
+      ]
+    },
+    {
+      "id": 37823112197,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823112197",
+      "sha": "6a9060ba8f31b210c9ebb4bb7b39e0a64726065b",
+      "conclusion": "failure",
+      "title": "Open contextual stock and movement lists from manager KPI cards",
+      "created_at": "2026-10-08T18:17:20Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:17:41.9064794Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:17:41.9065748Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:17:41.9066565Z AssertionError\\n2026-10-08T18:17:41.9216405Z ##"
+      ]
+    },
+    {
+      "id": 37823068878,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37823068878",
+      "sha": "8a64e46c2f6745e25e3cb016cecc604f97479e05",
+      "conclusion": "failure",
+      "title": "Accept navigation callbacks in management intelligence dashboard",
+      "created_at": "2026-10-08T18:16:59Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:17:17.6492229Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:17:17.6492747Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:17:17.6493184Z AssertionError\\n2026-10-08T18:17:17.6663662Z ##"
+      ]
+    },
+    {
+      "id": 37822932828,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37822932828",
+      "sha": "b57a15416641a37269cdeb68c9902adea6773db9",
+      "conclusion": "failure",
+      "title": "Make home overview cards actionable and add inventory/activity drill-…",
+      "created_at": "2026-10-08T18:15:57Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:16:14.6132733Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:16:14.6133281Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:16:14.6133728Z AssertionError\\n2026-10-08T18:16:14.6258437Z ##"
+      ]
+    },
+    {
+      "id": 37822804112,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37822804112",
+      "sha": "bf6fecc2a931d8e031d5eeb01810e9718c25dfdb",
+      "conclusion": "failure",
+      "title": "Add safe item detail navigation for dashboard drill-downs",
+      "created_at": "2026-10-08T18:14:59Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:15:13.0704900Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:15:13.0707381Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:15:13.0707790Z AssertionError\\n2026-10-08T18:15:13.0860765Z ##"
+      ]
+    },
+    {
+      "id": 37822769919,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37822769919",
+      "sha": "92a7652bd1af2088549895cbdd9dba27d112bad4",
+      "conclusion": "failure",
+      "title": "Wire home KPI navigation to filtered inventory and activity screens",
+      "created_at": "2026-10-08T18:14:43Z",
+      "errors": [
+        "act_test.py\\\", line 12, in <module>\\n2026-10-08T18:15:09.0994015Z     assert \\\"InventoryScreen(model,onScan)\\\" in main\\n2026-10-08T18:15:09.0994726Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T18:15:09.0995393Z AssertionError\\n2026-10-08T18:15:09.1144436Z ##"
+      ]
+    },
+    {
+      "id": 37795445930,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37795445930",
+      "sha": "bf1b19677320f6a5b392a4b78aedd118225b3bb9",
+      "conclusion": "success",
+      "title": "Ubicora 4.1.6: chosen U icon, new com.ubicora.app identity and backup…",
+      "created_at": "2026-10-08T14:48:10Z"
+    },
+    {
+      "id": 37794972318,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37794972318",
+      "sha": "6c30ce9c3acd5751784e3bee0dec743c590097d0",
+      "conclusion": "success",
+      "title": "Ubicora 4.1.6: chosen artistic U icon and new com.ubicora.app package…",
+      "created_at": "2026-10-08T14:44:44Z"
+    },
+    {
+      "id": 37786103226,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37786103226",
+      "sha": "d035ea70f187c28d983e1b5a46586193af849b68",
+      "conclusion": "success",
+      "title": "Preserve valid ZXing QR_CODE constant in Ubicora label generator",
+      "created_at": "2026-10-08T13:39:38Z"
+    },
+    {
+      "id": 37785382754,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37785382754",
+      "sha": "54a1d38de27463f0cf2396f0c7a2d588ad323a45",
+      "conclusion": "failure",
+      "title": "Ubicora 4.1.5: complete visual rebrand, launcher icon and backward-co…",
+      "created_at": "2026-10-08T13:34:16Z",
+      "errors": [
+        "4.8004989Z > Task :app:mergeExtDexDebug\\n2026-10-08T13:37:05.4025731Z e: file:///home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/src/main/java/com/officinastock/app/QrLabels.kt:42:68 Unresolved reference 'QR'.\\n2026-10-08T13:37:05.4026547Z \\n2026-10-08T13:37:05"
+      ]
+    },
+    {
+      "id": 37782975433,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37782975433",
+      "sha": "f61b6165a43ea52051342ab1e9c7818491bd6f2a",
+      "conclusion": "success",
+      "title": "Officina Stock 4.1.4 compliance: in-app OSS notices, ARCore privacy d…",
+      "created_at": "2026-10-08T13:15:49Z"
+    },
+    {
+      "id": 37779643247,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37779643247",
+      "sha": "c3368b85f09bf5ae920ea95e723e647eef38605b",
+      "conclusion": "success",
+      "title": "Officina Stock 4.1.3: autorotating portrait QR scanner and complete 4…",
+      "created_at": "2026-10-08T12:49:26Z"
+    },
+    {
+      "id": 37777728066,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37777728066",
+      "sha": "52d6c0520dc0d0788fcf8801a8fc5ed528622fe1",
+      "conclusion": "success",
+      "title": "Officina Stock 4.1.2: encrypted full backup & restore, safe demo clea…",
+      "created_at": "2026-10-08T12:33:35Z"
+    },
+    {
+      "id": 37774293170,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37774293170",
+      "sha": "3aba6ba5f5b55f8b0066e5606162be480222c1bc",
+      "conclusion": "success",
+      "title": "Restore native offline QR scanning and direct inventory item lookup (…",
+      "created_at": "2026-10-08T12:04:15Z"
+    },
+    {
+      "id": 37771105262,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37771105262",
+      "sha": "b43cc60268a8b2fb39d2e00f9a0616920381fc9d",
+      "conclusion": "success",
+      "title": "Keep map hit testing synced with live furniture and wall positions",
+      "created_at": "2026-10-08T11:35:53Z"
+    },
+    {
+      "id": 37770929411,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37770929411",
+      "sha": "6fafcbe6bd4644a76e6c57bcd0de176e2e966a8c",
+      "conclusion": "success",
+      "title": "Use gesture-scope awaitPointerEvent without invalid import",
+      "created_at": "2026-10-08T11:34:18Z"
+    },
+    {
+      "id": 37770924217,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37770924217",
+      "sha": "0375c792907d9ac67092f35c661d585ab682d1a4",
+      "conclusion": "failure",
+      "title": "Update photo schema contract to SQLite version 5",
+      "created_at": "2026-10-08T11:34:15Z",
+      "errors": [
+        "6306508Z > Task :app:compileDebugKotlin\\n2026-10-08T11:36:39.2315036Z e: file:///home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/src/main/java/com/officinastock/app/MapScreen.kt:28:42 Unresolved reference 'awaitPointerEvent'.\\n2026-10-08T11:36:45.5289162Z \\n202"
+      ]
+    },
+    {
+      "id": 37770780113,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37770780113",
+      "sha": "ffde0e46b8108d263775b2a4cd1f23fb7cbc8ee5",
+      "conclusion": "failure",
+      "title": "Officina Stock 4.1: premium metric floorplan, snap-to-wall and dimens…",
+      "created_at": "2026-10-08T11:32:59Z",
+      "errors": [
+        "act_test.py\\\", line 10, in <module>\\n2026-10-08T11:33:17.3856434Z     assert 'null, 4)' in source, 'Versione DB non aggiornata'\\n2026-10-08T11:33:17.3856849Z            ^^^^^^^^^^^^^^^^^^^^\\n2026-10-08T11:33:17.3857175Z AssertionError: Versione DB non aggiornata\\n2026-10-08T11"
+      ]
+    },
+    {
+      "id": 37768203546,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37768203546",
+      "sha": "dd1937df2fd16f4f628d70538318e3f3931cf5fb",
+      "conclusion": "success",
+      "title": "Add native management analytics: stock value, ABC, reorder priorities…",
+      "created_at": "2026-10-08T11:09:25Z"
+    },
+    {
+      "id": 37766276114,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37766276114",
+      "sha": "2cde6c014a5ac64e55a24dbc011807a8b732494f",
+      "conclusion": "success",
+      "title": "Fix BitmapFactory bounds probe for image stream",
+      "created_at": "2026-10-08T10:51:54Z"
+    },
+    {
+      "id": 37766230092,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37766230092",
+      "sha": "991f4ec26152503ebff4a02a16a9016babc08f84",
+      "conclusion": "success",
+      "title": "Add robust native article photos, retake/delete/gallery, and map draw…",
+      "created_at": "2026-10-08T10:51:29Z"
+    },
+    {
+      "id": 37760810223,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37760810223",
+      "sha": "ba820de3c5c819b93199b22a3dc574a67a27de9d",
+      "conclusion": "success",
+      "title": "Fix ZXing enum QR_CODE in native label renderer",
+      "created_at": "2026-10-08T10:02:28Z"
+    },
+    {
+      "id": 37760192398,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37760192398",
+      "sha": "9ae9f056c48314ef7b9ce2b9fec622208590ba02",
+      "conclusion": "failure",
+      "title": "Automatic category SKU numbering, QR label preview and native printab…",
+      "created_at": "2026-10-08T09:57:09Z",
+      "errors": [
+        "1910102Z > Task :app:compileDebugKotlin\\n2026-10-08T09:59:52.4896869Z e: file:///home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/src/main/java/com/officinastock/app/QrLabels.kt:42:68 Unresolved reference 'QR'.\\n2026-10-08T09:59:56.4891830Z \\n2026-10-08T09:59:56"
+      ]
+    },
+    {
+      "id": 37756661973,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37756661973",
+      "sha": "ddae4006afefe40cde1b601ec0d49f01fff60ad9",
+      "conclusion": "success",
+      "title": "Fix Compose map bounds receiver and compile native UI",
+      "created_at": "2026-10-08T09:26:28Z"
+    },
+    {
+      "id": 37756034371,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37756034371",
+      "sha": "60342fd3c75cf7e893c4ff83b29592ddd5818464",
+      "conclusion": "failure",
+      "title": "Locate sdkmanager dynamically on GitHub hosted Android SDK",
+      "created_at": "2026-10-08T09:21:06Z",
+      "errors": [
+        "9541827Z > Task :app:compileDebugKotlin\\n2026-10-08T09:23:43.3545572Z e: file:///home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/src/main/java/com/officinastock/app/MapScreen.kt:109:66 'val maxWidth: Dp' cannot be called in this context with an implicit receive",
+        " Use an explicit receiver if necessary.\\n2026-10-08T09:23:43.3593721Z e: file:///home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/src/main/java/com/officinastock/app/MapScreen.kt:109:85 'val maxHeight: Dp' cannot be called in this context with an implicit receiv"
+      ]
+    },
+    {
+      "id": 37755968344,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37755968344",
+      "sha": "8514781a36e269e84ef414befc1a725e049721eb",
+      "conclusion": "failure",
+      "title": "Fix Android CI: use runner SDK instead of deprecated tools package",
+      "created_at": "2026-10-08T09:20:31Z",
+      "errors": [
+        "/c4f793c9-45fd-44ea-8c62-8e59da5a8f9b.sh: line 2: sdkmanager: command not found\\n2026-10-08T09:20:40.0221068Z ##[error]Process completed with exit code 127.\\n2026-10-08T09:20:40.0326654Z Post job cleanup.\\n2026-10-08T09:20:40.1529044Z (node:1993) [DEP0040] DeprecationWarning: Th"
+      ]
+    },
+    {
+      "id": 37755868190,
+      "url": "https://github.com/GodEater58/OfficinaStock-Android/actions/runs/37755868190",
+      "sha": "79025ced883bb0351b14bd57a1b40fb362269952",
+      "conclusion": "failure",
+      "title": "Import Officina Stock 4.0 Native app, SQLite, ARCore and Android APK …",
+      "created_at": "2026-10-08T09:19:40Z",
+      "errors": [
+        "uting updates...              \\n2026-10-08T09:19:57.3259942Z Warning: Failed to find package 'tools'\\n2026-10-08T09:19:57.3472966Z /home/runner/work/_actions/android-actions/setup-android/v3/dist/index.js:1823\\n2026-10-08T09:19:57.3474809Z                 error = new Error(`The proce",
+        "       ^\\n2026-10-08T09:19:57.3475490Z \\n2026-10-08T09:19:57.3475812Z Error: The process '/usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager' failed with exit code 1\\n2026-10-08T09:19:57.3476485Z     at ExecState._setResult (/home/runner/work/_actions/android-action"
+      ]
+    }
+  ]
+}

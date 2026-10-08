@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 fun amount(d:Double):String= if(d%1.0==0.0) d.toLong().toString() else String.format(Locale.ITALY,"%.2f",d)
 fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format(Date(ts))
@@ -89,7 +90,14 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var creating by remember { mutableStateOf(false) }
     var picked by remember{mutableStateOf<Profile?>(null)}
     var pin by remember{mutableStateOf("")}
-    if(creating){NewProfileScreen(model,false);return}
+    if(creating){
+        androidx.activity.compose.BackHandler { creating=false }
+        Column(Modifier.fillMaxSize()) {
+            TextButton(onClick={creating=false}) { Text("Torna ai profili") }
+            Box(Modifier.weight(1f)) { NewProfileScreen(model,false) }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Spacer(Modifier.height(36.dp))
         UbicoraWordmark(compact=true)
@@ -305,7 +313,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR articolo")
             }
             Spacer(Modifier.width(6.dp))
-            FilledIconButton(onClick={add=true}) {Icon(Icons.Outlined.Add,null)}
+            FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
@@ -526,6 +534,9 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 }
 
 @Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
+    val archiveScope=rememberCoroutineScope()
+    var archivePins by remember { mutableStateOf<Map<Long,String>>(emptyMap()) }
+    var archiveError by remember { mutableStateOf<String?>(null) }
     var newWarehouse by remember{mutableStateOf(false)}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
@@ -552,8 +563,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         item {Panel(Modifier.fillMaxWidth()) {
             Text("BACKUP COMPLETO CIFRATO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text("Esporta profili, articoli, foto, movimenti, prestiti, magazzini, codici e planimetrie in un unico file protetto da password.",fontSize=12.sp,color=TextSecondary)
-            PrimaryAction("Esporta backup completo",onClick={secret="";secretConfirm="";backupDialog=true},modifier=Modifier.fillMaxWidth())
-            OutlinedButton(onClick={secret="";understood=false;restoreDialog=true},modifier=Modifier.fillMaxWidth()) {Text("Ripristina da backup")}
+            PrimaryAction("Esporta backup completo",onClick={secret="";secretConfirm="";archivePins=emptyMap();archiveError=null;backupDialog=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth())
+            OutlinedButton(onClick={secret="";understood=false;archivePins=emptyMap();archiveError=null;restoreDialog=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {Text("Ripristina da backup")}
             Text("Conserva password e file al sicuro. Senza la password il backup non è recuperabile. Il ripristino sostituisce tutti i dati locali.",fontSize=11.sp,color=TextSecondary)
         }}
         if(model.ui.demoCount>0) {
@@ -588,7 +599,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }}
         item {Panel(Modifier.fillMaxWidth()) {
             UbicoraWordmark(compact=true)
-            Text("Versione 4.1.5 · Alpha",color=TextSecondary,fontSize=12.sp)
+            Text("Versione ${BuildConfig.VERSION_NAME} · Alpha",color=TextSecondary,fontSize=12.sp)
             Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }
@@ -606,19 +617,26 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     },confirmButton={TextButton(onClick={model.removeDemo();confirmDemoRemoval=false}){Text("Rimuovi demo",color=Danger)}},
         dismissButton={TextButton(onClick={confirmDemoRemoval=false}){Text("Annulla")}})
     if(backupDialog) AlertDialog(onDismissRequest={backupDialog=false},title={Text("Backup cifrato")},text={
-        Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+        Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)) {
             Text("Scegli una password di almeno 8 caratteri e conservala: protegge tutto l'archivio, inclusi PIN e fotografie.",fontSize=12.sp,color=TextSecondary)
+            ArchivePins(model.ui.profiles,archivePins,{id,pin->archivePins=archivePins+(id to pin)})
+            archiveError?.let{Text(it,color=Danger)}
             OutlinedTextField(secret,onValueChange={secret=it},label={Text("Password del backup")},
                 visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
             OutlinedTextField(secretConfirm,onValueChange={secretConfirm=it},label={Text("Conferma password")},
                 visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
         }
-    },confirmButton={TextButton(onClick={onBackup(secret);backupDialog=false;secret="";secretConfirm=""},
+    },confirmButton={TextButton(onClick={archiveScope.launch {
+        try {model.authorizeArchive(archivePins);onBackup(secret);backupDialog=false;secret="";secretConfirm="";archivePins=emptyMap()}
+        catch(e:Exception){archiveError=e.message}
+    }},
         enabled=secret.length>=8 && secret==secretConfirm && !model.ui.busy){Text("Scegli dove salvare")}},
         dismissButton={TextButton(onClick={backupDialog=false}){Text("Annulla")}})
     if(restoreDialog) AlertDialog(onDismissRequest={restoreDialog=false},title={Text("Ripristino completo")},text={
-        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Text("ATTENZIONE: il ripristino sostituisce TUTTI i profili, magazzini, articoli, foto e movimenti esistenti su questo telefono.",color=Amber,fontSize=12.sp)
+            ArchivePins(model.ui.profiles,archivePins,{id,pin->archivePins=archivePins+(id to pin)})
+            archiveError?.let{Text(it,color=Danger)}
             OutlinedTextField(secret,onValueChange={secret=it},label={Text("Password del backup")},
                 visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
             Row(verticalAlignment=Alignment.CenterVertically) {
@@ -626,7 +644,15 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 Text("Ho capito: i dati attuali saranno sostituiti",fontSize=12.sp)
             }
         }
-    },confirmButton={TextButton(onClick={onRestore(secret);restoreDialog=false;secret=""},
+    },confirmButton={TextButton(onClick={archiveScope.launch {
+        try {model.authorizeArchive(archivePins);onRestore(secret);restoreDialog=false;secret="";archivePins=emptyMap()}
+        catch(e:Exception){archiveError=e.message}
+    }},
         enabled=secret.length>=8 && understood && !model.ui.busy){Text("Seleziona backup",color=Amber)}},
         dismissButton={TextButton(onClick={restoreDialog=false}){Text("Annulla")}})
+}
+
+@Composable private fun ArchivePins(profiles:List<Profile>,pins:Map<Long,String>,onChange:(Long,String)->Unit) {
+    Text("L'operazione riguarda tutti i profili: verifica ciascun PIN locale.",fontSize=12.sp,color=TextSecondary)
+    profiles.forEach { p -> Input(pins[p.id].orEmpty(),{onChange(p.id,it.filter(Char::isDigit).take(8))},"PIN ${p.name}",number=true,password=true) }
 }

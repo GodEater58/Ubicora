@@ -1,7 +1,7 @@
 """Tests SQLite aggregation and additive manager schema, no Android runtime."""
 import sqlite3
 from pathlib import Path
-src=(Path(__file__).resolve().parents[1]/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text()
+src=(Path(__file__).resolve().parents[1]/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(encoding='utf-8')
 for column in ('unit_cost REAL DEFAULT NULL','supplier TEXT NOT NULL DEFAULT','lead_days INTEGER DEFAULT NULL','ALTER TABLE items ADD COLUMN unit_cost','ALTER TABLE items ADD COLUMN supplier','ALTER TABLE items ADD COLUMN lead_days'):
     assert column in src, column
 db=sqlite3.connect(':memory:')

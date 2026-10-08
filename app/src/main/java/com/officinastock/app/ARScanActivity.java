@@ -81,7 +81,14 @@ public class ARScanActivity extends Activity implements GLSurfaceView.Renderer {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.rgb(9,18,27));
         frame.setOnApplyWindowInsetsListener((v,insets)->{
-            v.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom());return insets;
+            int left=insets.getSystemWindowInsetLeft(),topInset=insets.getSystemWindowInsetTop();
+            int right=insets.getSystemWindowInsetRight(),bottomInset=insets.getSystemWindowInsetBottom();
+            if(android.os.Build.VERSION.SDK_INT>=28 && insets.getDisplayCutout()!=null){
+                android.view.DisplayCutout cutout=insets.getDisplayCutout();
+                left=Math.max(left,cutout.getSafeInsetLeft());right=Math.max(right,cutout.getSafeInsetRight());
+                topInset=Math.max(topInset,cutout.getSafeInsetTop());bottomInset=Math.max(bottomInset,cutout.getSafeInsetBottom());
+            }
+            v.setPadding(left,topInset,right,bottomInset);return insets;
         });
         cameraSurface=new GLSurfaceView(this);
         cameraSurface.setEGLContextClientVersion(2);
@@ -170,6 +177,14 @@ public class ARScanActivity extends Activity implements GLSurfaceView.Renderer {
         int[] ok=new int[1];GLES20.glGetShaderiv(shader,GLES20.GL_COMPILE_STATUS,ok,0);
         if(ok[0]!=GLES20.GL_TRUE)throw new IllegalStateException("OpenGL shader: "+GLES20.glGetShaderInfoLog(shader));return shader;}
     @Override public void onSurfaceCreated(GL10 gl,EGLConfig cfg){
+        try { initializeGraphics(); }
+        catch(RuntimeException error){
+            glTexture=0;surfaceRunning=false;
+            setStatus("Grafica AR non disponibile. Torna alla mappa 2D.");
+            runOnUiThread(()->saveButton.setEnabled(false));
+        }
+    }
+    private void initializeGraphics(){
         GLES20.glClearColor(0.03f,.07f,.11f,1);
         textureBoundSession=null;textureBoundName=-1;configuredRotation=-1;
         int[] texture=new int[1];GLES20.glGenTextures(1,texture,0);glTexture=texture[0];
