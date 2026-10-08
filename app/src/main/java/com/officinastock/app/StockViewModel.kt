@@ -30,7 +30,8 @@ data class StockUiState(
     val busy: Boolean = false,
     val message: String? = null,
     val initialized: Boolean = false,
-    val sessionLocked: Boolean = false
+    val sessionLocked: Boolean = false,
+    val csvPreviewCount: Int? = null
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -39,9 +40,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     init { refresh() }
     private var backgroundGeneration=0L
     private var archiveAuthorization:Set<Long>?=null
+    private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null) }
+    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -120,7 +122,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
     }
-    fun signOut() { if(!ui.busy) {archiveAuthorization=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
+    fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
     fun leaveWarehouse() { if(!ui.busy) ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList()) }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
