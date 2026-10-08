@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <application android:label="Officina Stock 4" android:theme="@style/AppTheme"
+        android:allowBackup="false" android:usesCleartextTraffic="false"
+        android:icon="@drawable/ic_officina">
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <activity android:name=".ARScanActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".MainActivity" android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

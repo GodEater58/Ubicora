@@ -1,0 +1,30 @@
+name: Build Android Native Debug APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - name: Verify SQLite contract
+        run: python3 tests/sqlite_contract_test.py
+      - name: Build and test
+        run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean testDebugUnitTest assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: officina-stock-4-native-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

@@ -1,0 +1,24 @@
+package com.officinastock.app
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class StockRulesTest {
+    @Test fun skuNormalized() = assertEquals("M8-1",StockRules.sku(" m8-1 "))
+    @Test fun negativeStockBlocked() {
+        assertThrows(IllegalArgumentException::class.java) { StockRules.applyDelta(2.0,-3.0) }
+    }
+    @Test fun nonFiniteBlocked() {
+        assertFalse(StockRules.validQuantity(Double.NaN))
+        assertFalse(StockRules.validQuantity(Double.POSITIVE_INFINITY))
+    }
+    @Test fun mapCoordinatesClamped() {
+        assertEquals(0f,StockRules.mapPosition(-20f),.001f)
+        assertEquals(100f,StockRules.mapPosition(150f),.001f)
+    }
+    @Test fun degenerateWallBlocked() {
+        assertThrows(IllegalArgumentException::class.java) {
+            StockRules.normalizeWall(floatArrayOf(0f,0f,0f,0f))
+        }
+    }
+}

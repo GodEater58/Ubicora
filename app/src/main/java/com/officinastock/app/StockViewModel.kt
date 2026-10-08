@@ -1,0 +1,121 @@
+package com.officinastock.app
+
+import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Dati persistiti in SQLite, stato effimero in Compose, operazioni fuori dal thread grafico. */
+data class StockUiState(
+    val profiles: List<Profile> = emptyList(),
+    val profile: Profile? = null,
+    val warehouses: List<Warehouse> = emptyList(),
+    val warehouse: Warehouse? = null,
+    val items: List<StockItem> = emptyList(),
+    val placements: List<Placement> = emptyList(),
+    val walls: List<Wall> = emptyList(),
+    val movements: List<Movement> = emptyList(),
+    val loans: List<Loan> = emptyList(),
+    val busy: Boolean = false,
+    val message: String? = null
+)
+class StockViewModel(app: Application): AndroidViewModel(app) {
+    private val db = StockDb(app.applicationContext)
+    var ui by mutableStateOf(StockUiState(profiles=db.profiles()))
+        private set
+
+    private fun execute(action: () -> Unit) {
+        if(ui.busy) return
+        ui=ui.copy(busy=true, message=null)
+        viewModelScope.launch {
+            val failure=withContext(Dispatchers.IO) { runCatching { action() }.exceptionOrNull()?.message }
+            reloadAfterSelection(failure)
+        }
+    }
+    private suspend fun reload(error: String? = null) {
+        val id=ui.profile?.id;val warehouseId=ui.warehouse?.id
+        val snapshot=withContext(Dispatchers.IO) {
+            val profiles=db.profiles()
+            val profile=profiles.firstOrNull{it.id==id}
+            val warehouses=profile?.let{db.warehouses(it.id)} ?: emptyList()
+            val warehouse=warehouses.firstOrNull{it.id==warehouseId}
+            StockUiState(profiles,profile,warehouses,warehouse,
+                warehouse?.let { db.items(it.id) } ?: emptyList(),
+                warehouse?.let { db.placements(it.id) } ?: emptyList(),
+                warehouse?.let { db.walls(it.id) } ?: emptyList(),
+                warehouse?.let { db.movements(it.id) } ?: emptyList(),
+                warehouse?.let { db.activeLoans(it.id) } ?: emptyList(),
+                busy=false,message=error)
+        }
+        ui=snapshot
+    }
+    fun dismissMessage(){ui=ui.copy(message=null)}
+    fun createProfile(name: String,pin: String) = execute {
+        val id=db.createProfile(name,pin)
+        // Il nuovo profilo è selezionato solo dopo la creazione completata.
+        val selected=db.profiles().firstOrNull{it.id==id}
+        if(selected!=null) pendingProfileId=id
+    }
+    private var pendingProfileId: Long? = null
+    private var pendingWarehouseId: Long? = null
+    fun unlock(profile: Profile,pin: String) = execute {
+        require(db.authenticate(profile.id,pin)) { "PIN errato" }
+        pendingProfileId=profile.id
+    }
+    fun signOut() { if(!ui.busy) ui=StockUiState(profiles=ui.profiles) }
+    fun leaveWarehouse() { if(!ui.busy) ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList()) }
+    fun selectWarehouse(w: Warehouse) {
+        if(ui.busy||ui.profile?.id!=w.profileId)return
+        ui=ui.copy(warehouse=w)
+        execute {} // ricarica tutte le liste per il magazzino scelto
+    }
+    fun createWarehouse(name: String,location: String) = execute {
+        val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
+        pendingWarehouseId=db.createWarehouse(pid,name,location)
+    }
+    fun addItem(sku:String,name:String,cat:String,qty:Double,min:Double,unit:String,note:String) = execute {
+        db.addItem(requireWarehouse(),sku,name,cat,qty,min,unit,note)
+    }
+    fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
+    fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
+    fun returnLoan(id:Long) = execute {db.returnLoan(id)}
+    fun addPlacement(kind:String,label:String,x:Float=50f,y:Float=50f) = execute {
+        db.addPlacement(requireWarehouse(),kind,label,x,y)
+    }
+    // Durante il drag aggiorniamo l'UI immediatamente; il commit avviene solo al rilascio.
+    fun previewMove(id:Long,x:Float,y:Float) {
+        ui=ui.copy(placements=ui.placements.map{if(it.id==id && !it.locked)it.copy(x=StockRules.mapPosition(x),y=StockRules.mapPosition(y)) else it})
+    }
+    fun commitMove(id:Long,x:Float,y:Float) = execute { db.movePlacement(id,x,y) }
+    fun lockPlacement(id:Long,locked:Boolean)=execute{db.lockPlacement(id,locked)}
+    fun deletePlacement(id:Long)=execute{db.deletePlacement(id)}
+    fun assignItem(itemId:Long,placementId:Long?)=execute{db.assignItem(itemId,placementId)}
+    fun addWall(coords:FloatArray)=execute{db.addWall(requireWarehouse(),coords)}
+    fun deleteWall(id:Long)=execute{db.deleteWall(id)}
+    fun importAr(json:String)=execute{db.importArScan(requireWarehouse(),json)}
+    fun seedDemo() = execute { db.seedDemo(requireWarehouse()) }
+    fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
+    fun refresh()=execute{}
+    private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
+
+    // Consente di aggiornare simultaneamente profilo e magazzino, evitando ricariche stale.
+    private suspend fun reloadAfterSelection(error:String?) {
+        val selectedProfile=pendingProfileId
+        val selectedWarehouse=pendingWarehouseId
+        if(selectedProfile!=null) {
+            val p=withContext(Dispatchers.IO){db.profiles().firstOrNull{it.id==selectedProfile}}
+            ui=ui.copy(profile=p,warehouse=null)
+        }
+        if(selectedWarehouse!=null) {
+            val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}
+            ui=ui.copy(warehouse=w)
+        }
+        pendingProfileId=null;pendingWarehouseId=null
+        reload(error)
+    }
+}
