@@ -22,6 +22,7 @@ data class StockUiState(
     val walls: List<Wall> = emptyList(),
     val movements: List<Movement> = emptyList(),
     val loans: List<Loan> = emptyList(),
+    val manager: ManagerSnapshot = ManagerSnapshot(),
     val createdItemId: Long? = null,
     val busy: Boolean = false,
     val message: String? = null
@@ -54,6 +55,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 warehouse?.let { db.walls(it.id) } ?: emptyList(),
                 warehouse?.let { db.movements(it.id) } ?: emptyList(),
                 warehouse?.let { db.activeLoans(it.id) } ?: emptyList(),
+                warehouse?.let {
+                    val now=System.currentTimeMillis()
+                    val day=86_400_000L
+                    ManagerSnapshot(db.dailyActivity(it.id,now-90*day),db.usageSummary(it.id,now))
+                } ?: ManagerSnapshot(),
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error)
         }
@@ -84,10 +90,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
-    fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null) = execute {
+    fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
+                cost:Double?=null,supplier:String="",leadDays:Int?=null) = execute {
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
-            pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture)
+            pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
         } catch(t:Throwable) {
             PhotoFiles.delete(getApplication<Application>(),picture)
             throw t
@@ -112,6 +119,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val current=requireNotNull(db.item(itemId)){"Articolo inesistente"}
         db.updatePhoto(itemId,null)
         PhotoFiles.delete(getApplication<Application>(),current.photoFile)
+    }
+    fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
+        db.updatePurchase(itemId,cost,supplier,leadDays)
     }
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }

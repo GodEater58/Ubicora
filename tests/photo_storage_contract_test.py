@@ -7,7 +7,7 @@ source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text()
 photo=(root/'app/src/main/java/com/officinastock/app/PhotoFiles.kt').read_text()
 ui=(root/'app/src/main/java/com/officinastock/app/ArticlePhotoField.kt').read_text()
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text()
-assert 'null, 3)' in source, 'Versione DB non aggiornata'
+assert 'null, 4)' in source, 'Versione DB non aggiornata'
 assert 'ALTER TABLE items ADD COLUMN photo_file TEXT DEFAULT NULL' in source
 assert 'photo_file TEXT DEFAULT NULL' in source
 assert 'fun updatePhoto(itemId:' in source
@@ -31,5 +31,5 @@ con.execute("UPDATE items SET photo_file='item_f0d41e1f-4dc5-4b84-9747-3d6468480
 assert con.execute('SELECT sku,quantity,photo_file FROM items WHERE id=7').fetchone()[1]==12
 con.execute('UPDATE items SET photo_file=NULL WHERE id=7')
 assert con.execute('SELECT sku,name,quantity,photo_file FROM items WHERE id=7').fetchone()==('RIC-000001','Cuscinetto',12,None)
-print('OK: SQLite v3 additive schema + photo replacement/deletion preserve item')
+print('OK: SQLite v3/v4 additive schema + photo replacement/deletion preserve item')
 print('OK: camera/gallery retry and FileProvider contract')

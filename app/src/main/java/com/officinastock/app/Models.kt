@@ -5,7 +5,8 @@ data class Warehouse(val id: Long, val profileId: Long, val name: String, val lo
 data class StockItem(
     val id: Long, val warehouseId: Long, val sku: String, val name: String, val category: String,
     val quantity: Double, val minimum: Double, val unit: String, val placementId: Long?, val note: String,
-    val photoFile: String? = null
+    val photoFile: String? = null,
+    val unitCost: Double? = null, val supplier: String = "", val leadDays: Int? = null
 ) { val lowStock get() = quantity <= minimum }
 data class Placement(val id: Long, val warehouseId: Long, val kind: String, val label: String,
     val x: Float, val y: Float, val locked: Boolean)

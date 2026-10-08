@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 402
-        versionName = "4.0.2-native-photo-map"
+        versionCode = 403
+        versionName = "4.0.3-native-manager"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

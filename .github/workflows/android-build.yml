@@ -29,7 +29,7 @@ jobs:
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
       - name: Verify SQLite contract
-        run: python3 tests/sqlite_contract_test.py && python3 tests/photo_storage_contract_test.py
+        run: python3 tests/sqlite_contract_test.py && python3 tests/photo_storage_contract_test.py && python3 tests/manager_contract_test.py
       - name: Build and test
         run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean testDebugUnitTest assembleDebug
       - uses: actions/upload-artifact@v4
