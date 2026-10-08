@@ -330,6 +330,24 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         JOIN items i ON i.id=m.item_id WHERE i.warehouse_id=? ORDER BY m.created_at DESC,m.id DESC LIMIT 250""",
         arrayOf(warehouseId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6))) } }
+    /** Cronologia paginata direttamente in SQLite: filtri applicati prima di LIMIT/OFFSET. */
+    fun movementsPage(warehouseId: Long, since: Long, direction: Int, offset: Int, limit: Int = 101): List<Movement> {
+        require(since >= 0L && direction in -1..1 && offset >= 0 && limit in 1..101) { "Parametri cronologia non validi" }
+        val directionSql = when(direction) {
+            1 -> " AND m.delta>0"
+            -1 -> " AND m.delta<0"
+            else -> ""
+        }
+        return readableDatabase.rawQuery(
+            """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at FROM movements m
+               JOIN items i ON i.id=m.item_id
+               WHERE i.warehouse_id=? AND m.created_at>=?$directionSql
+               ORDER BY m.created_at DESC,m.id DESC LIMIT ? OFFSET ?""",
+            arrayOf(warehouseId.toString(),since.toString(),limit.toString(),offset.toString())
+        ).use { c -> buildList {
+            while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6)))
+        } }
+    }
     fun lend(itemId: Long, borrower: String, amount: Double) {
         require(borrower.trim().isNotEmpty() && amount > 0 && amount.isFinite()) { "Destinatario e quantità validi obbligatori" }
         writableDatabase.apply { beginTransaction();try {
