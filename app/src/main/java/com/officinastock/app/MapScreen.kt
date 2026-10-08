@@ -14,6 +14,9 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
@@ -114,14 +117,14 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal=12.dp)) {
-            BoxWithConstraints(Modifier.fillMaxSize().border(BorderStroke(1.dp,Color.White.copy(alpha=.13f)),RoundedCornerShape(24.dp)).background(FloorBackground,RoundedCornerShape(24.dp))) {
+        Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal=12.dp).clipToBounds()) {
+            BoxWithConstraints(Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp)).border(BorderStroke(1.dp,Color.White.copy(alpha=.13f)),RoundedCornerShape(24.dp)).background(FloorBackground,RoundedCornerShape(24.dp))) {
                 val density=LocalDensity.current
                 val w=with(density){maxWidth.toPx()}
                 val h=with(density){maxHeight.toPx()}
                 val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
                 // One gesture owner. Unlike overlapping tap/drag handlers, this cannot steal its own wall strokes.
-                Canvas(Modifier.fillMaxSize().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
+                Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
                     awaitEachGesture {
                         val down=awaitFirstDown(requireUnconsumed=false)
                         val cameraNow=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
@@ -154,8 +157,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                                     val mapped=if(snapGrid)PlanGeometry.snap(pos) else pos
                                     model.previewMove(target.id,mapped.x,mapped.y)
                                 }else if(mode!=EditorTool.WALL){
-                                    panX=(originalPanX+last.x-initial.x).coerceIn(-w*.75f,w*.75f)
-                                    panY=(originalPanY+last.y-initial.y).coerceIn(-h*.75f,h*.75f)
+                                    val bounded=cameraNow.clampedPan(originalPanX+last.x-initial.x,originalPanY+last.y-initial.y)
+                                    panX=bounded.x; panY=bounded.y
                                 }
                                 change.consume()
                             }
@@ -279,7 +282,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                     }
                 }
                 Column(Modifier.align(Alignment.CenterEnd).padding(end=10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    SmallFloatingControl(Icons.Outlined.Add,"Zoom +",{zoom=(zoom*1.25f).coerceAtMost(5f)})
+                    SmallFloatingControl(Icons.Outlined.Add,"Zoom +",{zoom=(zoom*1.25f).coerceAtMost(4f)})
                     SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",{zoom=(zoom/1.25f).coerceAtLeast(.7f)})
                     SmallFloatingControl(Icons.Outlined.CenterFocusStrong,"Inquadra tutto",{zoom=1f;panX=0f;panY=0f})
                 }
