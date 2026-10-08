@@ -74,7 +74,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 SmallMetric("MOV. ENTRATA",report.inboundEvents.toString(),"Operazioni nei $days giorni",Sky,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.INBOUND,days)})
                 SmallMetric("MOV. USCITA",report.outboundEvents.toString(),"Operazioni nei $days giorni",Amber,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.OUTBOUND,days)})
             }
-            Panel(Modifier.fillMaxWidth()) {
+            Panel(Modifier.fillMaxWidth().clickable { onActivityFocus(ActivityFocus.ALL,days) }) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Icon(Icons.Outlined.BarChart,null,tint=Mint)
                     Spacer(Modifier.width(8.dp))
@@ -100,7 +100,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 Text("${report.lowStock} referenze sotto soglia o esaurite · ${report.missingLocation} senza ubicazione",fontSize=12.sp,color=TextSecondary)
                 if(report.reorder.isEmpty()) Text("Nessun articolo critico con le soglie attuali.",fontSize=12.sp,color=Mint)
                 report.reorder.take(5).forEach { risk ->
-                    Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().clickable { onItemFocus(risk.item.id) }) {
                         Icon(if(risk.item.quantity==0.0)Icons.Outlined.ErrorOutline else Icons.Outlined.Schedule,null,
                             tint=if(risk.item.quantity==0.0)Danger else Amber,modifier=Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
@@ -112,13 +112,13 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                         if(risk.leadRisk) Text("Rischio",color=Danger,fontSize=11.sp,fontWeight=FontWeight.Bold)
                     }
                 }
-                OutlinedButton(onClick=onReorder,modifier=Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick={onStockFocus(StockFocus.CRITICAL)},modifier=Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.Inventory2,null,modifier=Modifier.size(18.dp))
                     Spacer(Modifier.width(7.dp))
                     Text("Apri inventario")
                 }
             }
-            Panel(Modifier.fillMaxWidth()) {
+            Panel(Modifier.fillMaxWidth().clickable { onStockFocus(StockFocus.PRICED) }) {
                 Text("Capitale immobilizzato per categoria",fontSize=16.sp,fontWeight=FontWeight.Bold)
                 Text("Giacenza × costo unitario, solo articoli valorizzati",fontSize=11.sp,color=TextSecondary)
                 if(report.categoryValues.isEmpty()) Text("Inserisci i costi unitari per attivare il grafico.",color=TextSecondary,fontSize=12.sp)
@@ -138,7 +138,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 Text("Prelievi valorizzati nel periodo, prestiti esclusi. A ≈ 80%, B ≈ 15%, C ≈ 5%.",fontSize=11.sp,color=TextSecondary)
                 if(report.abc.isEmpty()) Text("Servono prelievi registrati e costi unitari per elaborare la classificazione.",fontSize=12.sp,color=TextSecondary)
                 report.abc.take(6).forEach {line ->
-                    Row(verticalAlignment=Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { onItemFocus(line.item.id) },verticalAlignment=Alignment.CenterVertically) {
                         Surface(color=when(line.group){"A"->Amber.copy(alpha=.18f);"B"->Sky.copy(alpha=.18f);else->Mint.copy(alpha=.14f)},shape=RoundedCornerShape(8.dp)) {
                             Text(line.group,modifier=Modifier.padding(horizontal=11.dp,vertical=6.dp),fontWeight=FontWeight.Bold)
                         }
@@ -154,7 +154,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 Text("Utilizzo e scorte ferme",fontSize=16.sp,fontWeight=FontWeight.Bold)
                 Text("${report.noWithdrawal90} referenze senza prelievi registrati negli ultimi 90 giorni. Include quelle nuove: non equivale a obsolescenza.",fontSize=12.sp,color=TextSecondary)
                 report.topConsumed.take(5).forEach { (item,qty) ->
-                    Row {
+                    Row(Modifier.fillMaxWidth().clickable { onItemFocus(item.id) }) {
                         Text(item.name,modifier=Modifier.weight(1f),fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                         Text("${amount(qty)} ${item.unit}",color=Sky,fontSize=12.sp)
                     }
