@@ -19,7 +19,7 @@ checks={
     'Map labels use density-aware sp': '14.sp.toPx()' in map_screen and 'selectedLabelPx' in map_screen,
     'Map labels draw legible chips': 'drawText(label,centerX,' in map_screen and 'Color(0xF20B2332)' in map_screen,
     'Map panning bounded': '.clampedPan(' in map_screen,
-    'History limit disclosed': 'ultime 250 registrazioni' in screens,
+    'History paginated with filtered SQLite queries': 'model.historyPage(warehouseId,focus,days,page)' in screens and 'Mostra altre operazioni' in screens and 'fun movementsPage(' in (p/'StockDb.kt').read_text(encoding='utf-8'),
     'Package id preserved': 'applicationId = "com.ubicora.app"' in gradle
 }
 for k,v in checks.items(): print(('PASS' if v else 'FAIL')+' '+k)
