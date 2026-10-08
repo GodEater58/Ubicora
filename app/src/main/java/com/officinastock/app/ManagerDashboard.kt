@@ -67,12 +67,12 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 }
             }
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                SmallMetric("VALORE NOTO",euro(report.knownStockValue),"${report.pricedCount}/${report.itemCount} costi noti",Mint,Modifier.weight(1f))
-                SmallMetric("ESAURITI",report.zeroStock.toString(),"Referenze a zero",Danger,Modifier.weight(1f))
+                SmallMetric("VALORE NOTO",euro(report.knownStockValue),"${report.pricedCount}/${report.itemCount} costi noti",Mint,Modifier.weight(1f),onClick={onStockFocus(StockFocus.PRICED)})
+                SmallMetric("ESAURITI",report.zeroStock.toString(),"Referenze a zero",Danger,Modifier.weight(1f),onClick={onStockFocus(StockFocus.EMPTY)})
             }
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                SmallMetric("MOV. ENTRATA",report.inboundEvents.toString(),"Operazioni nei $days giorni",Sky,Modifier.weight(1f))
-                SmallMetric("MOV. USCITA",report.outboundEvents.toString(),"Operazioni nei $days giorni",Amber,Modifier.weight(1f))
+                SmallMetric("MOV. ENTRATA",report.inboundEvents.toString(),"Operazioni nei $days giorni",Sky,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.INBOUND,days)})
+                SmallMetric("MOV. USCITA",report.outboundEvents.toString(),"Operazioni nei $days giorni",Amber,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.OUTBOUND,days)})
             }
             Panel(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
