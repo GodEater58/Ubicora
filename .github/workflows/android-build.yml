@@ -41,6 +41,14 @@ jobs:
         run: python3 tests/brand_identity_contract_test.py
       - name: Build and test
         run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean lint testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease assembleDebugAndroidTest
+      - name: Audit signing compatibility against archived reference
+        run: bash scripts/check-signing.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ubicora-signing-compatibility
+          path: app/build/reports/signing-compatibility*
+          if-no-files-found: warn
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
