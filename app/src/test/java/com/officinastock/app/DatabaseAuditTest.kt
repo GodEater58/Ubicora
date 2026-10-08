@@ -88,6 +88,16 @@ class DatabaseAuditTest {
         rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
         assertEquals("Cuscinetto",db.item(id)!!.name)
     }
+    @Test fun csvImportRollsBackDuplicateAndPreservesOriginal(){
+        val original=item()
+        val row=CsvImportRow("RIC-001201","Other","Ricambi",2.0,1.0,"pz","","",null,"",null)
+        assertEquals(1,db.importCsv(warehouse,listOf(row)))
+        assertEquals(10.0,db.item(original)!!.quantity,0.0)
+        val before=db.items(warehouse).size
+        rejects { db.importCsv(warehouse,listOf(row)) }
+        assertEquals(before,db.items(warehouse).size)
+        assertEquals("RIC-001202",db.item(db.addItem(warehouse,"Third","Ricambi",0.0,0.0,"pz",""))!!.sku)
+    }
     @Test fun fullMovementHistoryCanBePagedAndFilteredWithoutTruncation(){
         val id=item()
         val base=System.currentTimeMillis()+10_000L
