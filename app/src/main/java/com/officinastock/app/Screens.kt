@@ -38,7 +38,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         Surface(color=Color(0xFF143D48),shape=RoundedCornerShape(if(compact)14.dp else 22.dp)) {
             androidx.compose.foundation.Image(
-                painter=painterResource(R.drawable.ubicora_selected_art),
+                painter=painterResource(R.drawable.ic_ubicora_u_selected),
                 contentDescription="Simbolo Ubicora",
                 modifier=Modifier.size(if(compact)50.dp else 76.dp))
         }
@@ -157,7 +157,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         item {
             Column {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.foundation.Image(painterResource(R.drawable.ubicora_selected_art),contentDescription=null,modifier=Modifier.size(23.dp))
+                    androidx.compose.foundation.Image(painterResource(R.drawable.ic_ubicora_u_selected),contentDescription=null,modifier=Modifier.size(23.dp))
                     Text("UBICORA  /  CONTROLLO OPERATIVO",color=Mint,letterSpacing=1.2.sp,fontWeight=FontWeight.Bold,fontSize=10.sp)
                 }
                 Spacer(Modifier.height(5.dp))
