@@ -21,6 +21,7 @@ data class StockUiState(
     val walls: List<Wall> = emptyList(),
     val movements: List<Movement> = emptyList(),
     val loans: List<Loan> = emptyList(),
+    val createdItemId: Long? = null,
     val busy: Boolean = false,
     val message: String? = null
 )
@@ -29,6 +30,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     var ui by mutableStateOf(StockUiState(profiles=db.profiles()))
         private set
 
+    private var pendingNewItem: Long? = null
+    fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
     private fun execute(action: () -> Unit) {
         if(ui.busy) return
         ui=ui.copy(busy=true, message=null)
@@ -50,9 +53,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 warehouse?.let { db.walls(it.id) } ?: emptyList(),
                 warehouse?.let { db.movements(it.id) } ?: emptyList(),
                 warehouse?.let { db.activeLoans(it.id) } ?: emptyList(),
+                createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error)
         }
         ui=snapshot
+        pendingNewItem = null
     }
     fun dismissMessage(){ui=ui.copy(message=null)}
     fun createProfile(name: String,pin: String) = execute {
@@ -78,8 +83,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
-    fun addItem(sku:String,name:String,cat:String,qty:Double,min:Double,unit:String,note:String) = execute {
-        db.addItem(requireWarehouse(),sku,name,cat,qty,min,unit,note)
+    fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String) = execute {
+        pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note)
     }
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }

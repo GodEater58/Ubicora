@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StockRulesTest {
+    @Test fun categorySkuCodes() {
+        assertEquals("RIC-000001",ArticleCodes.format(ArticleCodes.prefix("Ricambi"),1))
+        assertEquals("ELE-000012",ArticleCodes.format(ArticleCodes.prefix("Elettrico"),12))
+        assertEquals("DPI-999999",ArticleCodes.format(ArticleCodes.prefix("DPI"),999999))
+        assertThrows(IllegalArgumentException::class.java){ ArticleCodes.prefix("Non esistente") }
+        assertThrows(IllegalArgumentException::class.java){ ArticleCodes.format("RIC",0) }
+    }
+    @Test fun payloadIdentifiesWarehouse() {
+        assertEquals("OFFICINA-STOCK:1:W27:RIC-000001",ArticleCodes.payload(27,"RIC-000001"))
+    }
     @Test fun skuNormalized() = assertEquals("M8-1",StockRules.sku(" m8-1 "))
     @Test fun negativeStockBlocked() {
         assertThrows(IllegalArgumentException::class.java) { StockRules.applyDelta(2.0,-3.0) }

@@ -30,3 +30,20 @@ object StockRules {
         return raw
     }
 }
+
+/** Codifica assegnata esclusivamente dal database al momento del salvataggio. */
+object ArticleCodes {
+    val categoryPrefixes = linkedMapOf(
+        "Ricambi" to "RIC", "Utensili" to "UTE", "Elettrico" to "ELE",
+        "Pneumatica" to "PNE", "Idraulica" to "IDR", "Consumabili" to "CON",
+        "DPI" to "DPI", "Meccanica" to "MEC", "Altro" to "ALT"
+    )
+    fun prefix(category: String): String = categoryPrefixes[category]
+        ?: throw IllegalArgumentException("Categoria non riconosciuta")
+    fun format(prefix: String, serial: Long): String {
+        require(prefix in categoryPrefixes.values && serial in 1..999999999L) { "Codice articolo non valido" }
+        return "%s-%06d".format(java.util.Locale.ROOT, prefix, serial)
+    }
+    fun payload(warehouseId: Long, sku: String): String =
+        "OFFICINA-STOCK:1:W$warehouseId:$sku"
+}

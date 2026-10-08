@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 1) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
         db.execSQL("""CREATE TABLE profiles (
@@ -45,6 +45,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
             x1 REAL NOT NULL, y1 REAL NOT NULL, x2 REAL NOT NULL, y2 REAL NOT NULL,
             source TEXT NOT NULL DEFAULT 'manual')""")
+        createSkuSequences(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -52,8 +53,39 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Le future migrazioni devono essere additive: nessun DROP TABLE.
-        throw IllegalStateException("Migrazione database mancante: $oldVersion → $newVersion")
+        // Aggiornamento additivo: conserva articoli, movimenti, magazzini e profili della 4.0.0.
+        if (oldVersion < 2) {
+            createSkuSequences(db)
+            db.rawQuery("SELECT sku FROM items", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val sku = cursor.getString(0)
+                    val prefix = sku.substringBefore('-', "")
+                    val serial = sku.substringAfter('-', "").toLongOrNull()
+                    if (prefix in ArticleCodes.categoryPrefixes.values && serial != null && serial in 1..999999999L) {
+                        db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)", arrayOf(prefix))
+                        db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?", arrayOf(serial+1,prefix))
+                    }
+                }
+            }
+        }
+    }
+    private fun createSkuSequences(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS sku_sequences (
+            prefix TEXT PRIMARY KEY NOT NULL,
+            next_value INTEGER NOT NULL CHECK(next_value > 0)
+        )""")
+    }
+    /** Riserva il progressivo nella stessa transazione che inserisce l'articolo. */
+    private fun nextSku(db: SQLiteDatabase, category: String): String {
+        val prefix = ArticleCodes.prefix(category)
+        db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)", arrayOf(prefix))
+        val number = db.rawQuery("SELECT next_value FROM sku_sequences WHERE prefix=?", arrayOf(prefix)).use {
+            require(it.moveToFirst()) { "Numerazione non disponibile" }
+            it.getLong(0)
+        }
+        val code = ArticleCodes.format(prefix,number)
+        db.execSQL("UPDATE sku_sequences SET next_value=? WHERE prefix=?", arrayOf(number+1,prefix))
+        return code
     }
     private fun salt() = ByteArray(16).also { SecureRandom().nextBytes(it) }
     private fun proof(pin: String, salt: ByteArray): String {
@@ -107,22 +139,23 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     fun item(id: Long): StockItem? = readableDatabase.rawQuery(
         "SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note FROM items WHERE id=?",arrayOf(id.toString())
     ).use { if(it.moveToFirst()) it.toItem() else null }
-    fun addItem(warehouseId: Long, skuInput: String, name: String, category: String,
+    fun addItem(warehouseId: Long, name: String, category: String,
                 quantity: Double, minimum: Double, unit: String, note: String): Long {
-        val sku = StockRules.sku(skuInput)
-        require(sku.isNotEmpty() && name.trim().isNotEmpty()) { "Codice e descrizione obbligatori" }
+        require(name.trim().isNotEmpty()) { "Inserisci il nome dell'articolo" }
+        ArticleCodes.prefix(category) // Verifica prima di aprire la transazione.
         require(StockRules.validQuantity(quantity) && StockRules.validQuantity(minimum)) { "Quantità non valide" }
         val db = writableDatabase
         db.beginTransaction()
         try {
+            val sku = nextSku(db,category)
             val id = db.insertOrThrow("items",null,ContentValues().apply {
-                put("warehouse_id",warehouseId);put("sku",sku);put("name",name.trim());put("category",category.trim().ifEmpty { "Altro" })
+                put("warehouse_id",warehouseId);put("sku",sku);put("name",name.trim());put("category",category)
                 put("quantity",quantity);put("minimum",minimum);put("unit",unit.trim().ifEmpty { "pz" });put("note",note.trim())
             })
             if(quantity > 0) recordMovement(db,id,quantity,"Carico iniziale")
             db.setTransactionSuccessful()
             return id
-        } catch(e: SQLiteConstraintException) { throw IllegalArgumentException("Codice già utilizzato in questo magazzino",e) }
+        } catch(e: SQLiteConstraintException) { throw IllegalArgumentException("Codice già utilizzato. Riprova.",e) }
         finally { db.endTransaction() }
     }
     private fun recordMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String) {
@@ -271,7 +304,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             )
             for(row in data) {
                 val id=db.insertOrThrow("items",null,ContentValues().apply {
-                    put("warehouse_id",warehouseId);put("sku",row[0]);put("name",row[1]);put("category",row[2]);
+                    put("warehouse_id",warehouseId);put("sku",nextSku(db,row[2]));put("name",row[1]);put("category",row[2]);
                     put("quantity",row[3].toDouble());put("minimum",row[4].toDouble());put("unit",row[5]);
                     put("placement_id",ids[row[6].toInt()]);put("note","Dati dimostrativi")
                 })

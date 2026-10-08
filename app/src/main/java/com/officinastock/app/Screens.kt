@@ -225,6 +225,15 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var lowOnly by remember{mutableStateOf(false)}
     var add by remember{mutableStateOf(false)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
+    var labelItem by remember { mutableStateOf<StockItem?>(null) }
+    LaunchedEffect(u.createdItemId,u.items) {
+        u.createdItemId?.let { id ->
+            u.items.firstOrNull { it.id == id }?.let { saved ->
+                labelItem=saved
+                model.acknowledgeNewItem()
+            }
+        }
+    }
     val filtered=remember(u.items,query,lowOnly) {u.items.filter {
         (!lowOnly||it.lowStock) && (query.isBlank()||listOf(it.name,it.sku,it.category).any{v->v.contains(query,true)})
     }}
@@ -260,25 +269,29 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
         }
     }
-    if(add) NewItemDialog(onClose={add=false},save={sku,name,cat,qty,min,unit,note->
-        model.addItem(sku,name,cat,qty,min,unit,note);add=false
+    if(add) NewItemDialog(onClose={add=false},save={name,cat,qty,min,unit,note->
+        model.addItem(name,cat,qty,min,unit,note);add=false
     })
+    labelItem?.let { current ->
+        QrLabelDialog(current,onDismiss={labelItem=null})
+    }
     selected?.let { item ->
         val current=u.items.firstOrNull{it.id==item.id}
         if(current==null) selected=null else ItemDialog(current,u.placements,model,onDismiss={selected=null})
     }
 }
 
-@Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,String,Double,Double,String,String)->Unit) {
-    var sku by remember{mutableStateOf("")};var name by remember{mutableStateOf("")}
-    var category by remember{mutableStateOf("Ricambi")};var qty by remember{mutableStateOf("0")}
-    var min by remember{mutableStateOf("0")};var unit by remember{mutableStateOf("pz")}
-    var note by remember{mutableStateOf("")}
-    val categories=listOf("Ricambi","Utensili","Elettrico","Pneumatica","Idraulica","Consumabili","DPI","Meccanica","Altro")
+@Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,Double,Double,String,String)->Unit) {
+    var name by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("Ricambi") }
+    var qty by remember { mutableStateOf("0") }
+    var min by remember { mutableStateOf("0") }
+    var unit by remember { mutableStateOf("pz") }
+    var note by remember { mutableStateOf("") }
+    val categories=ArticleCodes.categoryPrefixes.keys.toList()
     AlertDialog(onDismissRequest=onClose,title={Text("Nuovo articolo")},text={
         Column(Modifier.heightIn(max=470.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Input(sku,{sku=it},"Codice univoco")
-            Input(name,{name=it},"Descrizione")
+            Input(name,{name=it},"Nome articolo")
             Text("Categoria",color=TextSecondary,fontSize=12.sp)
             Column { categories.chunked(3).forEach { group->
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
@@ -287,13 +300,19 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             } }
+            Surface(color=Mint.copy(alpha=.10f),shape=RoundedCornerShape(12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("Codice automatico",color=Mint,fontWeight=FontWeight.SemiBold)
+                    Text("${ArticleCodes.prefix(category)}-######  ·  progressivo assegnato al salvataggio",fontSize=12.sp,color=TextSecondary)
+                }
+            }
+            Input(note,{note=it},"Descrizione (facoltativa)")
             Input(qty,{qty=it},"Quantità iniziale",number=true)
             Input(min,{min=it},"Soglia minima",number=true)
             Input(unit,{unit=it},"Unità (pz, m, kg...)")
-            Input(note,{note=it},"Note")
         }
-    },confirmButton={TextButton(onClick={save(sku,name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note)},
-        enabled=sku.isNotBlank()&&name.isNotBlank()&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true){Text("Salva")}},
+    },confirmButton={TextButton(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note)},
+        enabled=name.isNotBlank()&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true){Text("Salva")}},
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
 
@@ -303,9 +322,15 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var note by remember(item.id){mutableStateOf("")}
     var borrower by remember(item.id){mutableStateOf("")}
     var pickingLocation by remember { mutableStateOf(false) }
+    var showQrLabel by remember(item.id) { mutableStateOf(false) }
     AlertDialog(onDismissRequest=onDismiss,title={Text(item.name)},text={
         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Text("Codice ${item.sku} · ${item.category}",color=TextSecondary)
+            OutlinedButton(onClick={showQrLabel=true},modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.QrCode2,contentDescription=null)
+                Spacer(Modifier.width(8.dp))
+                Text("Etichetta QR · Visualizza / Stampa")
+            }
             Text("Disponibili: ${amount(item.quantity)} ${item.unit}",fontWeight=FontWeight.Bold,fontSize=21.sp,color=Mint)
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 listOf("carico","prelievo","prestito").forEach {
@@ -327,6 +352,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         onDismiss()
     },enabled=quantity.replace(',','.').toDoubleOrNull()?.let{it>0&&it.isFinite()}==true&&(action!="prestito"||borrower.isNotBlank())){Text("Conferma")}},
         dismissButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
+    if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
     if(pickingLocation) AlertDialog(onDismissRequest={pickingLocation=false},title={Text("Assegna ubicazione")},text={
         Column(Modifier.heightIn(max=340.dp).verticalScroll(rememberScrollState())) {
             TextButton(onClick={model.assignItem(item.id,null);pickingLocation=false}){Text("Nessuna ubicazione")}
