@@ -24,7 +24,7 @@ class CsvImportTest {
     @Test fun rejectsDuplicateRowsIncorrectHeaderAndMalformedQuotes() {
         rejects("wrong;header\n"+row())
         rejects(header+"\n"+row()+"\n"+row()+"\n")
-        rejects(header+"\n"+row().replace("RIC-000321","ELE-000321"))
+        rejects(header+"\n"+row().replace("RIC-000321","ABC-000321"))
         rejects(header+"\n"+row().dropLast(1))
         rejects(header+"\n"+row().replace("3.5","-9"))
     }
