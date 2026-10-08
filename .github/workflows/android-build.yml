@@ -17,9 +17,13 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Locate preinstalled Android SDK
+        shell: bash
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager --version
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMGR"
+          echo "$(dirname "$SDKMGR")" >> "$GITHUB_PATH"
+          "$SDKMGR" --version
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses > /dev/null || true
