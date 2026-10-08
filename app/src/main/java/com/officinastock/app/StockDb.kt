@@ -353,6 +353,23 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         require(delta.isFinite() && delta != 0.0) { "Inserisci una quantità diversa da zero" }
         writableDatabase.apply { beginTransaction();try { adjust(this,itemId,delta,note.ifBlank { if(delta>0) "Carico" else "Prelievo" });setTransactionSuccessful() } finally { endTransaction() } }
     }
+    /** Rettifica inventario transazionale, con un movimento di audit obbligatorio. */
+    fun reconcileQuantity(itemId: Long, counted: Double, reason: String) {
+        require(StockRules.validQuantity(counted)) { "Conteggio non valido" }
+        require(reason.trim().length in 3..250) { "Indica un motivo di almeno 3 caratteri" }
+        val sql=writableDatabase
+        sql.beginTransaction()
+        try {
+            val old=sql.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { c ->
+                require(c.moveToFirst()) { "Articolo non trovato" }
+                c.getDouble(0)
+            }
+            val delta=counted-old
+            require(delta.isFinite() && delta!=0.0) { "Nessuna differenza da rettificare" }
+            adjust(sql,itemId,delta,"Rettifica inventario: " + reason.trim())
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
+    }
     fun movements(warehouseId: Long): List<Movement> = readableDatabase.rawQuery(
         """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at FROM movements m
         JOIN items i ON i.id=m.item_id WHERE i.warehouse_id=? ORDER BY m.created_at DESC,m.id DESC LIMIT 250""",
