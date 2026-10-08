@@ -1,6 +1,7 @@
 package com.officinastock.app
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -83,8 +84,34 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
-    fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String) = execute {
-        pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note)
+    fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null) = execute {
+        val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
+        try {
+            pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture)
+        } catch(t:Throwable) {
+            PhotoFiles.delete(getApplication<Application>(),picture)
+            throw t
+        } finally {
+            photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
+        }
+    }
+    fun replaceItemPhoto(itemId:Long,photoUri:String) = execute {
+        val current=requireNotNull(db.item(itemId)){"Articolo inesistente"}
+        val saved=PhotoFiles.save(getApplication<Application>(),Uri.parse(photoUri))
+        try {
+            db.updatePhoto(itemId,saved)
+            PhotoFiles.delete(getApplication<Application>(),current.photoFile)
+        } catch(t:Throwable) {
+            PhotoFiles.delete(getApplication<Application>(),saved)
+            throw t
+        } finally {
+            PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(photoUri))
+        }
+    }
+    fun removeItemPhoto(itemId:Long) = execute {
+        val current=requireNotNull(db.item(itemId)){"Articolo inesistente"}
+        db.updatePhoto(itemId,null)
+        PhotoFiles.delete(getApplication<Application>(),current.photoFile)
     }
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }

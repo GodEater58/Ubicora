@@ -6,6 +6,11 @@
     <application android:label="Officina Stock 4" android:theme="@style/AppTheme"
         android:allowBackup="false" android:usesCleartextTraffic="false"
         android:icon="@drawable/ic_officina">
+        <provider android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/photo_paths" />
+        </provider>
         <meta-data android:name="com.google.ar.core" android:value="optional" />
         <activity android:name=".ARScanActivity" android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -251,7 +252,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             items(filtered,key={it.id}) { entry ->
                 Panel(Modifier.fillMaxWidth().clickable{selected=entry}) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        Surface(color=if(entry.lowStock)Amber.copy(alpha=.13f) else Mint.copy(alpha=.12f),shape=RoundedCornerShape(14.dp)) {
+                        if(entry.photoFile!=null) ArticleThumbnail(entry.photoFile)
+                        else Surface(color=if(entry.lowStock)Amber.copy(alpha=.13f) else Mint.copy(alpha=.12f),shape=RoundedCornerShape(14.dp)) {
                             Icon(Icons.Outlined.Inventory2,null,tint=if(entry.lowStock)Amber else Mint,modifier=Modifier.padding(12.dp))
                         }
                         Spacer(Modifier.width(12.dp))
@@ -269,8 +271,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
         }
     }
-    if(add) NewItemDialog(onClose={add=false},save={name,cat,qty,min,unit,note->
-        model.addItem(name,cat,qty,min,unit,note);add=false
+    if(add) NewItemDialog(onClose={add=false},save={name,cat,qty,min,unit,note,photoUri->
+        model.addItem(name,cat,qty,min,unit,note,photoUri);add=false
     })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})
@@ -281,13 +283,14 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
-@Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,Double,Double,String,String)->Unit) {
+@Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,Double,Double,String,String,String?)->Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Ricambi") }
     var qty by remember { mutableStateOf("0") }
     var min by remember { mutableStateOf("0") }
     var unit by remember { mutableStateOf("pz") }
     var note by remember { mutableStateOf("") }
+    var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
     val categories=ArticleCodes.categoryPrefixes.keys.toList()
     AlertDialog(onDismissRequest=onClose,title={Text("Nuovo articolo")},text={
         Column(Modifier.heightIn(max=470.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -310,8 +313,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Input(qty,{qty=it},"Quantità iniziale",number=true)
             Input(min,{min=it},"Soglia minima",number=true)
             Input(unit,{unit=it},"Unità (pz, m, kg...)")
+            ArticlePhotoField(savedPhoto=null,selectedUri=photoUri,
+                onSelected={photoUri=it},onApply=null,onRemoveSaved=null)
         }
-    },confirmButton={TextButton(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note)},
+    },confirmButton={TextButton(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note,photoUri)},
         enabled=name.isNotBlank()&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true){Text("Salva")}},
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
@@ -324,7 +329,11 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var pickingLocation by remember { mutableStateOf(false) }
     var showQrLabel by remember(item.id) { mutableStateOf(false) }
     AlertDialog(onDismissRequest=onDismiss,title={Text(item.name)},text={
-        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.heightIn(max=510.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            ArticlePhotoField(savedPhoto=item.photoFile,selectedUri=null,
+                onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},
+                onRemoveSaved={model.removeItemPhoto(item.id)},busy=model.ui.busy)
             Text("Codice ${item.sku} · ${item.category}",color=TextSecondary)
             OutlinedButton(onClick={showQrLabel=true},modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.QrCode2,contentDescription=null)

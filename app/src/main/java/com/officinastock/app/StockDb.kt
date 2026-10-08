@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 2) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
         db.execSQL("""CREATE TABLE profiles (
@@ -33,7 +33,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             quantity REAL NOT NULL DEFAULT 0 CHECK(quantity >= 0),
             minimum REAL NOT NULL DEFAULT 0 CHECK(minimum >= 0),
             unit TEXT NOT NULL DEFAULT 'pz', placement_id INTEGER REFERENCES placements(id) ON DELETE SET NULL,
-            note TEXT NOT NULL DEFAULT '', UNIQUE(warehouse_id,sku))""")
+            note TEXT NOT NULL DEFAULT '', photo_file TEXT DEFAULT NULL, UNIQUE(warehouse_id,sku))""")
         db.execSQL("""CREATE TABLE movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
             delta REAL NOT NULL, note TEXT NOT NULL, created_at INTEGER NOT NULL)""")
@@ -67,6 +67,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                     }
                 }
             }
+        }
+        if (oldVersion < 3 && newVersion >= 3) {
+            db.execSQL("ALTER TABLE items ADD COLUMN photo_file TEXT DEFAULT NULL")
         }
     }
     private fun createSkuSequences(db: SQLiteDatabase) {
@@ -124,7 +127,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         "SELECT id,profile_id,name,location FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3))) } }
     fun items(warehouseId: Long, filter: String = ""): List<StockItem> {
-        val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note
+        val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file
             FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ?)
             ORDER BY name COLLATE NOCASE,id LIMIT 20000"""
         val safeFilter = "%${filter.trim().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")}%"
@@ -135,12 +138,13 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
     }
     private fun Cursor.toItem() = StockItem(getLong(0),getLong(1),getString(2),getString(3),getString(4),
-        getDouble(5),getDouble(6),getString(7),if(isNull(8)) null else getLong(8),getString(9))
+        getDouble(5),getDouble(6),getString(7),if(isNull(8)) null else getLong(8),getString(9),
+        if(isNull(10)) null else getString(10))
     fun item(id: Long): StockItem? = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note FROM items WHERE id=?",arrayOf(id.toString())
+        "SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file FROM items WHERE id=?",arrayOf(id.toString())
     ).use { if(it.moveToFirst()) it.toItem() else null }
     fun addItem(warehouseId: Long, name: String, category: String,
-                quantity: Double, minimum: Double, unit: String, note: String): Long {
+                quantity: Double, minimum: Double, unit: String, note: String, photoFile: String? = null): Long {
         require(name.trim().isNotEmpty()) { "Inserisci il nome dell'articolo" }
         ArticleCodes.prefix(category) // Verifica prima di aprire la transazione.
         require(StockRules.validQuantity(quantity) && StockRules.validQuantity(minimum)) { "Quantità non valide" }
@@ -151,12 +155,18 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             val id = db.insertOrThrow("items",null,ContentValues().apply {
                 put("warehouse_id",warehouseId);put("sku",sku);put("name",name.trim());put("category",category)
                 put("quantity",quantity);put("minimum",minimum);put("unit",unit.trim().ifEmpty { "pz" });put("note",note.trim())
+                if (photoFile != null) put("photo_file",photoFile)
             })
             if(quantity > 0) recordMovement(db,id,quantity,"Carico iniziale")
             db.setTransactionSuccessful()
             return id
         } catch(e: SQLiteConstraintException) { throw IllegalArgumentException("Codice già utilizzato. Riprova.",e) }
         finally { db.endTransaction() }
+    }
+    fun updatePhoto(itemId: Long, photoFile: String?) {
+        val values=ContentValues().apply { if(photoFile==null) putNull("photo_file") else put("photo_file",photoFile) }
+        val count=writableDatabase.update("items",values,"id=?",arrayOf(itemId.toString()))
+        require(count==1) { "Articolo non trovato, foto non modificata" }
     }
     private fun recordMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String) {
         db.insertOrThrow("movements",null,ContentValues().apply {
