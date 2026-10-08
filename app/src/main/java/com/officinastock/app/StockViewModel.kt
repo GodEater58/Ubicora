@@ -42,7 +42,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val warehouse=ui.warehouse ?: return
         val target=ArticleCodes.parseScan(raw)
         if(target == null) {
-            ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Officina Stock.")
+            ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Ubicora o Officina Stock.")
             return
         }
         if(target.warehouseId != null && target.warehouseId != warehouse.id) {

@@ -3,9 +3,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
-    <application android:label="Officina Stock 4" android:theme="@style/AppTheme"
+    <application android:label="@string/app_name" android:theme="@style/AppTheme"
         android:allowBackup="false" android:usesCleartextTraffic="false"
-        android:icon="@drawable/ic_officina">
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false" android:grantUriPermissions="true">

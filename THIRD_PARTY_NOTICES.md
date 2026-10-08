@@ -1,7 +1,7 @@
 # Attribuzioni e licenze di terze parti
 
-OFFICINA STOCK — NOTIFICHE COMPONENTI DI TERZE PARTI
-Versione di riferimento: 4.1.4 Alpha — 8 ottobre 2026.
+UBICORA — NOTIFICHE COMPONENTI DI TERZE PARTI
+Versione di riferimento: 4.1.5 Alpha — 8 ottobre 2026.
 
 LICENZE OPEN SOURCE: librerie esplicitamente dichiarate a runtime.
 Per i componenti sotto indicati soggetti ad Apache License 2.0, il testo completo

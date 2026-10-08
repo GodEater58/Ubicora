@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -32,6 +33,24 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
     }
 }
+/** Identita visiva Ubicora. Il marchio non modifica i codici QR o il database. */
+@Composable fun UbicoraWordmark(compact:Boolean=false) {
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        Surface(color=Color(0xFF143D48),shape=RoundedCornerShape(if(compact)14.dp else 22.dp)) {
+            androidx.compose.foundation.Image(
+                painter=painterResource(R.drawable.ic_ubicora_foreground),
+                contentDescription="Simbolo Ubicora",
+                modifier=Modifier.size(if(compact)50.dp else 76.dp))
+        }
+        Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
+            Text("Ubicora",color=TextPrimary,fontSize=if(compact)23.sp else 32.sp,
+                fontWeight=FontWeight.ExtraBold,letterSpacing=(-0.8).sp)
+            Text("INVENTARIO  ·  SPAZI  ·  ANALISI",color=Mint,fontSize=if(compact)8.sp else 9.sp,
+                fontWeight=FontWeight.Bold,letterSpacing=0.7.sp)
+        }
+    }
+}
+
 @Composable fun SectionTitle(title:String,subtitle:String="",modifier:Modifier=Modifier) {
     Column(modifier,verticalArrangement=Arrangement.spacedBy(3.dp)) {
         Text(title,color=TextPrimary,fontSize=20.sp,fontWeight=FontWeight.Bold)
@@ -50,12 +69,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 @Composable fun NewProfileScreen(model:StockViewModel,first:Boolean) {
     var name by remember{mutableStateOf("")};var pin by remember{mutableStateOf("")}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp),verticalArrangement=Arrangement.Center) {
-        Surface(color=Mint.copy(alpha=.15f),shape=RoundedCornerShape(24.dp)){
-            Icon(Icons.Outlined.Warehouse,null,tint=Mint,modifier=Modifier.padding(20.dp).size(42.dp))
-        }
-        Spacer(Modifier.height(26.dp))
-        Text("OFFICINA  /  STOCK",color=Mint,letterSpacing=3.sp,fontWeight=FontWeight.Bold,fontSize=12.sp)
-        Spacer(Modifier.height(10.dp))
+        UbicoraWordmark()
+        Spacer(Modifier.height(34.dp))
         Text("Il tuo spazio.\nTutto sotto controllo.",fontSize=35.sp,color=TextPrimary,lineHeight=39.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(9.dp))
         Text("Crea un ambiente locale privato o professionale. Nessun account online richiesto.",color=TextSecondary)
@@ -77,7 +92,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     if(creating){NewProfileScreen(model,false);return}
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Spacer(Modifier.height(36.dp))
-        Text("OFFICINA STOCK 4.0",color=Mint,letterSpacing=2.sp,fontWeight=FontWeight.Bold)
+        UbicoraWordmark(compact=true)
         Spacer(Modifier.height(14.dp))
         SectionTitle("Scegli il tuo profilo","I magazzini di ogni profilo rimangono separati")
         Spacer(Modifier.height(24.dp))
@@ -141,7 +156,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(17.dp),verticalArrangement=Arrangement.spacedBy(17.dp)) {
         item {
             Column {
-                Text("CONTROLLO OPERATIVO",color=Mint,letterSpacing=2.sp,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.foundation.Image(painterResource(R.drawable.ic_ubicora_foreground),contentDescription=null,modifier=Modifier.size(23.dp))
+                    Text("UBICORA  /  CONTROLLO OPERATIVO",color=Mint,letterSpacing=1.2.sp,fontWeight=FontWeight.Bold,fontSize=10.sp)
+                }
                 Spacer(Modifier.height(5.dp))
                 Text(u.warehouse?.name ?: "Magazzino",fontSize=30.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
                 Text("${u.warehouse?.location?.ifBlank{"Area di lavoro"}}  ·  ${u.profile?.name}",color=TextSecondary,fontSize=13.sp)
@@ -497,7 +515,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             }
         }}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("Officina Stock 4.1.4 · Compliance Alpha",fontWeight=FontWeight.SemiBold)
+            UbicoraWordmark(compact=true)
+            Text("Versione 4.1.5 · Alpha",color=TextSecondary,fontSize=12.sp)
             Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }

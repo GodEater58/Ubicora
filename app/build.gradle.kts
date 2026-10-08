@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 414
-        versionName = "4.1.4-compliance-alpha"
+        versionCode = 415
+        versionName = "4.1.5-ubicora-rebrand"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

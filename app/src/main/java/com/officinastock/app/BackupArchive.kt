@@ -33,6 +33,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         BackupCipher.encrypt(dest,password).use { sealed ->
                 ZipOutputStream(BufferedOutputStream(sealed)).use {zip ->
                     zip.putNextEntry(ZipEntry("manifest.json"))
+                    // Format ID legacy: non cambiare per mantenere compatibilita con backup 4.1.2+.
                     zip.write(JSONObject().put("app","OfficinaStock").put("schema",1)
                         .put("createdAt",System.currentTimeMillis())
                         .put("tables",tables.size).toString().toByteArray(Charsets.UTF_8))

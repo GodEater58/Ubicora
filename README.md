@@ -1,8 +1,8 @@
-# Officina Stock / progetto Ubicora — Android nativo 4.1.4 Alpha
+# Ubicora — Android nativo 4.1.5 Alpha
 
 App locale per inventario di più magazzini e profili, con codici automatici per categoria, etichette QR, scanner QR, fotografie, movimenti, prestiti, planimetria metrica, statistiche manageriali e backup completo cifrato. L'app non richiede un account cloud per il funzionamento dell'inventario. La scansione AR utilizza Google Play Services per AR su dispositivi compatibili.
 
-**Stato attuale:** versione di test. Non è legalmente certificata né pronta alla distribuzione commerciale. “Ubicora” è solo un candidato di marchio in verifica; l'app conserva il nome e `applicationId=com.officinastock.app` per compatibilità con la precedente versione.
+**Stato attuale:** versione di test. Non è legalmente certificata né pronta alla distribuzione commerciale. “Ubicora” è il nome visualizzato nell’app, ma la registrabilità del marchio deve essere ancora verificata; il solo identificativo tecnico `applicationId=com.officinastock.app` rimane invariato per compatibilità.
 
 ## Build
 

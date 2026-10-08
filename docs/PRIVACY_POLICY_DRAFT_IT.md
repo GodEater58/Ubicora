@@ -1,4 +1,4 @@
-# BOZZA — Informativa sulla privacy di Officina Stock
+# BOZZA — Informativa sulla privacy di Ubicora
 
 **NON PUBBLICARE SENZA COMPLETARE I DATI DEL TITOLARE E LA VERIFICA DEL TRATTAMENTO EFFETTIVO.**
 
@@ -9,7 +9,7 @@ Ultimo aggiornamento: 8 ottobre 2026.
 - Titolare del trattamento: **[NOME / RAGIONE SOCIALE DA COMPLETARE]**
 - Indirizzo/sede: **[DA COMPLETARE]**
 - Contatto privacy: **[EMAIL DA COMPLETARE]**
-- Nome commerciale: **Officina Stock** (eventuale nuovo marchio solo dopo verifica).
+- Nome commerciale: **Ubicora** (nome operativo in fase di verifica marchio).
 
 ## Dati trattati e finalità
 

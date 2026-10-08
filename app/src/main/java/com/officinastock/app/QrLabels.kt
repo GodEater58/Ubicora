@@ -39,7 +39,7 @@ import java.io.FileOutputStream
 object QrLabels {
     fun bitmap(item: StockItem, size: Int = 480): Bitmap {
         val value=ArticleCodes.payload(item.warehouseId,item.sku)
-        val matrix=MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE,size,size,
+        val matrix=MultiFormatWriter().encode(value, BarcodeFormat.QR,size,size,
             mapOf(EncodeHintType.CHARACTER_SET to "UTF-8",
                   EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
                   EncodeHintType.MARGIN to 2))
@@ -56,7 +56,7 @@ object QrLabels {
             .setResolution(PrintAttributes.Resolution("print_300","300 dpi",300,300))
             .setColorMode(PrintAttributes.COLOR_MODE_MONOCHROME)
             .setMinMargins(PrintAttributes.Margins.NO_MARGINS).build()
-        manager.print("Officina Stock ${item.sku}", LabelDocumentAdapter(item), attributes)
+        manager.print("Ubicora ${item.sku}", LabelDocumentAdapter(item), attributes)
     }
 }
 
@@ -94,7 +94,7 @@ private class LabelDocumentAdapter(private val item: StockItem): PrintDocumentAd
             canvas.drawText(clipped,101f,48f,paint)
             paint.textSize=6.5f
             canvas.drawText(item.category,101f,61f,paint)
-            canvas.drawText("Officina Stock",101f,90f,paint)
+            canvas.drawText("Ubicora",101f,90f,paint)
             document.finishPage(page)
             FileOutputStream(destination.fileDescriptor).use {document.writeTo(it)}
             callback.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))

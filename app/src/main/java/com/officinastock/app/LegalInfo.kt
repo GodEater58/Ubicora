@@ -57,7 +57,7 @@ fun LegalInfoDialog(onDismiss: () -> Unit) {
             if(licenses) {
                 SelectionContainer {Text(licensesText,fontSize=11.sp)}
             } else {
-                Text("Officina Stock: gestione inventario con dati memorizzati sul dispositivo.",fontWeight=FontWeight.Bold)
+                Text("Ubicora: gestione inventario con dati memorizzati sul dispositivo.",fontWeight=FontWeight.Bold)
                 Text("Profili, PIN, articoli, movimenti, prestiti e planimetrie sono registrati localmente. Il PIN limita l'accesso nell'app, ma il database non è cifrato.",fontSize=13.sp)
                 Text("La fotocamera serve a scansionare codici QR, fotografare articoli e, su richiesta, mappare l'ambiente. Le foto degli articoli sono salvate nell'archivio privato dell'app.",fontSize=13.sp)
                 Text("Puoi esportare CSV non cifrati o backup completi cifrati con password. La destinazione dei file esportati viene scelta da te; conserva i backup con cura.",fontSize=13.sp)

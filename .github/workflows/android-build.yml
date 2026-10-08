@@ -32,6 +32,8 @@ jobs:
         run: python3 tests/sqlite_contract_test.py && python3 tests/photo_storage_contract_test.py && python3 tests/manager_contract_test.py && python3 tests/plan_editor_contract_test.py && python3 tests/scanner_contract_test.py && python3 tests/backup_demo_contract_test.py && python3 tests/demo_full_contract_test.py
       - name: Verify compliance integration
         run: python3 tests/compliance_contract_test.py
+      - name: Verify Ubicora branding and compatibility
+        run: python3 tests/brand_identity_contract_test.py
       - name: Build and test
         run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean testDebugUnitTest assembleDebug
       - name: Record resolved runtime dependencies
