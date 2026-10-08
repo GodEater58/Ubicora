@@ -123,7 +123,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         pendingProfileId=profile.id
     }
     fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
-    fun leaveWarehouse() { if(!ui.busy) ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList()) }
+    fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         ui=ui.copy(warehouse=w)
