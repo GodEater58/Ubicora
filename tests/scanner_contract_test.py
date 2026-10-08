@@ -9,7 +9,9 @@ assert "parseScan(raw: String)" in models
 assert '"OFFICINA-STOCK:1:W$warehouseId:$sku"' in models
 assert 'ScanContract()' in main and 'ScanOptions.QR_CODE' in main
 assert "scannedItemId" in vm and "target.warehouseId != warehouse.id" in vm
-assert "InventoryScreen(model,onScan)" in main
+assert "InventoryScreen(model,onScan" in main, "Lo scanner deve essere collegato alla schermata inventario"
+assert "ScanContract()" in main and "onScan" in main, "Il comando scanner deve restare disponibile"
+assert "LaunchedEffect(u.scannedItemId,u.items)" in screens, "Il QR deve aprire la scheda articolo"
 assert "LaunchedEffect(u.scannedItemId,u.items)" in screens
 assert 'zxing-android-embedded:4.3.0' in build
 print("Scanner QR: payload warehouse, scanner, UI e lookup presenti")
