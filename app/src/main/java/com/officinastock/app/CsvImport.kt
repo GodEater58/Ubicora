@@ -70,9 +70,9 @@ object CsvImport {
             val sku=v[0].trim().uppercase(java.util.Locale.ROOT)
             val prefix=ArticleCodes.categoryPrefixes[v[2]]
             val serial=sku.substringAfter('-', "").toLongOrNull()
-            require(prefix!=null && sku.startsWith("$"+"prefix-") && serial!=null && serial in 1..999999999L &&
+            require(prefix!=null && sku.startsWith(prefix + "-") && serial!=null && serial in 1..999999999L &&
                 Regex("^[A-Z]{3}-[0-9]{6,9}$").matches(sku)) { "Riga ${index+2}: codice o categoria non validi" }
-            require(seen.add(sku)) { "Codice duplicato nel CSV: $"+"sku" }
+            require(seen.add(sku)) { "Codice duplicato nel CSV" }
             val qty=v[3].replace(',','.').toDoubleOrNull()
             val min=v[4].replace(',','.').toDoubleOrNull()
             val cost=if(v[8].isBlank())null else v[8].replace(',','.').toDoubleOrNull()
