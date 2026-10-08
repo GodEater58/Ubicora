@@ -264,7 +264,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             drawCircle(Amber,5f,b)
                         }
                     }
-                    for(f in state.placements){
+                    val occupiedLabelBoxes=mutableListOf<android.graphics.RectF>()
+                    for(f in state.placements.sortedBy { if(it.id==selectedId) 1 else 0 }){
                         val pos=camera.toScreen(PointMetres(f.x,f.y));val center=Offset(pos.x,pos.y)
                         val fw=f.width*camera.scale;val fh=f.depth*camera.scale
                         val selected=f.id==selectedId
@@ -316,8 +317,16 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             val centerX=center.x.coerceIn(bubbleW/2f+6f,size.width-bubbleW/2f-6f)
                             val below=center.y+fh/2f+labelGapPx+labelHeightPx/2f
                             val above=center.y-fh/2f-labelGapPx-labelHeightPx/2f
-                            val centerY=camera.insetCoordinate(if(below+labelHeightPx/2f>size.height-6f)above else below,size.height,labelHeightPx/2f+6f)
+                            val labelY=listOf(below,above).map { camera.insetCoordinate(it,size.height,labelHeightPx/2f+6f) }
+                            val clearY=labelY.firstOrNull { cy ->
+                                val rect=android.graphics.RectF(centerX-bubbleW/2f,cy-labelHeightPx/2f,
+                                    centerX+bubbleW/2f,cy+labelHeightPx/2f)
+                                occupiedLabelBoxes.none { android.graphics.RectF.intersects(it,rect) }
+                            }
+                            if(clearY!=null || selected) {
+                            val centerY=clearY ?: labelY.first()
                             val origin=Offset(centerX-bubbleW/2f,centerY-labelHeightPx/2f)
+                            occupiedLabelBoxes.add(android.graphics.RectF(origin.x,origin.y,origin.x+bubbleW,origin.y+labelHeightPx))
                             drawRoundRect(
                                 Color(0xF20B2332),topLeft=origin,
                                 size=Size(bubbleW,labelHeightPx),cornerRadius=CornerRadius(8f)
@@ -330,6 +339,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             drawIntoCanvas { cv ->
                                 cv.nativeCanvas.drawText(label,centerX,
                                     centerY-(labelPaint.ascent()+labelPaint.descent())/2f,labelPaint)
+                            }
                             }
                         }
                     }
