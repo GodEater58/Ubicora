@@ -62,8 +62,10 @@ import kotlin.math.roundToInt
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal=12.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF0B1C2B))) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density=LocalDensity.current
-                val w=with(density){maxWidth.toPx()}
-                val h=with(density){maxHeight.toPx()}
+                val mapMaxWidth=maxWidth
+                val mapMaxHeight=maxHeight
+                val w=with(density){mapMaxWidth.toPx()}
+                val h=with(density){mapMaxHeight.toPx()}
                 Box(Modifier.fillMaxSize()
                     .pointerInput(w,h) { detectTransformGestures { _,pan,magnify,_ ->
                         zoom=(zoom*magnify).coerceIn(1f,3.5f)
@@ -106,7 +108,7 @@ import kotlin.math.roundToInt
                         }
                         if(!wallMode) u.placements.forEach { p ->
                             MapPin(p=p,items=u.items.count{it.placementId==p.id},
-                                labelVisible=showLabels,maxWidth=maxWidth,maxHeight=maxHeight,
+                                labelVisible=showLabels,maxWidth=mapMaxWidth,maxHeight=mapMaxHeight,
                                 widthPx=w,heightPx=h,zoom=zoom,
                                 selected=(p.id==selectedId),
                                 onTap={selectedId=p.id},
