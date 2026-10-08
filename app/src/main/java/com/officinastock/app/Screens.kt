@@ -149,7 +149,12 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         dismissButton={TextButton(onClick={show=false}){Text("Annulla")}})
 }
 
-@Composable fun DashboardScreen(model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit) {
+@Composable fun DashboardScreen(
+    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,
+    onStockFocus:(StockFocus)->Unit,
+    onActivityFocus:(ActivityFocus,Int)->Unit,
+    onItemFocus:(Long)->Unit
+) {
     val u=model.ui
     val count=u.items.size;val critical=u.items.count{it.lowStock}
     val recently=u.movements.take(4)
@@ -166,7 +171,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             }
         }
         item {
-            Surface(shape=RoundedCornerShape(26.dp),color=Color.Transparent,modifier=Modifier.fillMaxWidth()) {
+            Surface(shape=RoundedCornerShape(26.dp),color=Color.Transparent,
+                modifier=Modifier.fillMaxWidth().clickable {
+                    onStockFocus(if(critical>0)StockFocus.CRITICAL else StockFocus.ALL)
+                }) {
                 Column(Modifier.background(HeroBrush).padding(23.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Icon(Icons.Outlined.QueryStats,null,tint=Mint)
@@ -179,23 +187,27 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     LinearProgressIndicator(progress={ if(count==0)0f else (1f-critical.toFloat()/count).coerceIn(0f,1f) },
                         modifier=Modifier.fillMaxWidth().height(7.dp),color=Mint,trackColor=Color.White.copy(alpha=.12f))
                     Spacer(Modifier.height(8.dp))
-                    Text("${count-critical} di $count referenze sopra la soglia",fontSize=11.sp,color=TextSecondary)
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("${count-critical} di $count referenze sopra la soglia",fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
+                        Text("Apri inventario ›",fontSize=11.sp,color=Mint,fontWeight=FontWeight.Bold)
+                    }
                 }
             }
         }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                SmallMetric("REFERENZE",count.toString(),"A catalogo",Mint,Modifier.weight(1f))
-                SmallMetric("DA RIORDINARE",critical.toString(),"Sotto soglia",Amber,Modifier.weight(1f))
+                SmallMetric("REFERENZE",count.toString(),"A catalogo",Mint,Modifier.weight(1f),onClick={onStockFocus(StockFocus.ALL)})
+                SmallMetric("DA RIORDINARE",critical.toString(),"Sotto soglia",Amber,Modifier.weight(1f),onClick={onStockFocus(StockFocus.CRITICAL)})
             }
         }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                SmallMetric("UBICAZIONI",u.placements.size.toString(),"Nella planimetria",Sky,Modifier.weight(1f))
-                SmallMetric("IN UTILIZZO",u.loans.size.toString(),"Prestiti aperti",TextPrimary,Modifier.weight(1f))
+                SmallMetric("UBICAZIONI",u.placements.size.toString(),"Nella planimetria",Sky,Modifier.weight(1f),onClick=goMap)
+                SmallMetric("IN UTILIZZO",u.loans.size.toString(),"Prestiti aperti",TextPrimary,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.LOANS,0)})
             }
         }
-        item { ManagerAnalyticsPanel(u.items,u.manager,onReorder=goStock) }
+        item { ManagerAnalyticsPanel(u.items,u.manager,
+            onStockFocus=onStockFocus,onActivityFocus=onActivityFocus,onItemFocus=onItemFocus) }
         item { SectionTitle("Accesso rapido","Azioni frequenti, senza menu inutili") }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -206,15 +218,18 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }
         item {SectionTitle("Ultime attività")}
         if(recently.isEmpty()) item { Panel(Modifier.fillMaxWidth()){Text("Non ci sono ancora movimenti. Aggiungi il primo articolo.",color=TextSecondary)} }
-        items(recently,key={it.id}) { move -> MovementRow(move) }
+        items(recently,key={it.id}) { move -> MovementRow(move,onClick=goMoves) }
         item{Spacer(Modifier.height(8.dp))}
     }
 }
-@Composable fun SmallMetric(label:String,value:String,subtitle:String,color:Color,modifier:Modifier=Modifier) {
-    Panel(modifier){
+@Composable fun SmallMetric(label:String,value:String,subtitle:String,color:Color,modifier:Modifier=Modifier,onClick:(()->Unit)?=null) {
+    Panel(if(onClick!=null) modifier.clickable(onClick=onClick) else modifier){
         Text(label,color=TextSecondary,fontSize=10.sp,letterSpacing=1.sp,fontWeight=FontWeight.Bold,maxLines=1)
         Text(value,color=color,fontSize=27.sp,fontWeight=FontWeight.Bold,maxLines=1)
-        Text(subtitle,color=TextSecondary,fontSize=11.sp)
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            Text(subtitle,color=TextSecondary,fontSize=11.sp,modifier=Modifier.weight(1f),maxLines=2)
+            if(onClick!=null) Icon(Icons.Outlined.ChevronRight,"Apri dettaglio",tint=color,modifier=Modifier.size(17.dp))
+        }
     }
 }
 @Composable fun QuickAction(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,click:()->Unit,modifier:Modifier=Modifier) {
@@ -225,8 +240,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }
     }
 }
-@Composable fun MovementRow(move:Movement) {
-    Panel(Modifier.fillMaxWidth()) {
+@Composable fun MovementRow(move:Movement,onClick:(()->Unit)?=null) {
+    Panel(Modifier.fillMaxWidth().then(if(onClick!=null)Modifier.clickable(onClick=onClick) else Modifier)) {
         Row(verticalAlignment=Alignment.CenterVertically) {
             Icon(if(move.delta>=0) Icons.Outlined.SouthWest else Icons.Outlined.NorthEast,null,tint=if(move.delta>=0)Mint else Amber)
             Spacer(Modifier.width(12.dp))
@@ -235,21 +250,26 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 Text("${move.sku} · ${move.note} · ${date(move.createdAt)}",fontSize=11.sp,color=TextSecondary,maxLines=2)
             }
             Text("${if(move.delta>0)"+" else ""}${amount(move.delta)}",color=if(move.delta>=0)Mint else Amber,fontWeight=FontWeight.Bold)
+            if(onClick!=null) {
+                Spacer(Modifier.width(5.dp))
+                Icon(Icons.Outlined.ChevronRight,"Apri attività",tint=TextSecondary,modifier=Modifier.size(17.dp))
+            }
         }
     }
 }
 
-@Composable fun InventoryScreen(model:StockViewModel,onScan:()->Unit) {
+@Composable fun InventoryScreen(model:StockViewModel,onScan:()->Unit,requestedFocus:StockFocus=StockFocus.ALL) {
     val u=model.ui
     var query by remember(u.warehouse?.id){mutableStateOf("")}
-    var lowOnly by remember{mutableStateOf(false)}
+    var activeFocus by remember(u.warehouse?.id){mutableStateOf(requestedFocus)}
+    LaunchedEffect(requestedFocus){activeFocus=requestedFocus}
     var add by remember{mutableStateOf(false)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
     LaunchedEffect(u.scannedItemId,u.items) {
         u.scannedItemId?.let { id ->
             u.items.firstOrNull { it.id==id }?.let { match ->
-                lowOnly=false
+                activeFocus=StockFocus.ALL
                 query=""
                 selected=match
                 model.acknowledgeScannedItem()
@@ -264,9 +284,16 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             }
         }
     }
-    val filtered=remember(u.items,query,lowOnly) {u.items.filter {
-        (!lowOnly||it.lowStock) && (query.isBlank()||listOf(it.name,it.sku,it.category).any{v->v.contains(query,true)})
-    }}
+    val filtered=remember(u.items,query,activeFocus) { u.items.filter { item ->
+        val matches=when(activeFocus){
+            StockFocus.ALL -> true
+            StockFocus.CRITICAL -> item.lowStock
+            StockFocus.EMPTY -> item.quantity==0.0
+            StockFocus.PRICED -> item.unitCost!=null
+            StockFocus.UNLOCATED -> item.placementId==null
+        }
+        matches && (query.isBlank()||listOf(item.name,item.sku,item.category).any{v->v.contains(query,true)})
+    } }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
@@ -279,7 +306,15 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
                 leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
-            FilterChip(selected=lowOnly,onClick={lowOnly=!lowOnly},label={Text("Solo scorte critiche")},leadingIcon={Icon(Icons.Outlined.WarningAmber,null,modifier=Modifier.size(17.dp))})
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    StockFocus.ALL to "Tutti",StockFocus.CRITICAL to "Critici",
+                    StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
+                    StockFocus.UNLOCATED to "Senza ubicazione"
+                ).forEach { (option,label) ->
+                    FilterChip(selected=activeFocus==option,onClick={activeFocus=option},label={Text(label)})
+                }
+            }
         }
         LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             items(filtered,key={it.id}) { entry ->
@@ -423,19 +458,44 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     },confirmButton={TextButton(onClick={pickingLocation=false}){Text("Chiudi")}})
 }
 
-@Composable fun MovementsScreen(model:StockViewModel) {
-    var loansOnly by remember{mutableStateOf(false)}
+@Composable fun MovementsScreen(
+    model:StockViewModel,
+    requestedFocus:ActivityFocus=ActivityFocus.ALL,
+    requestedDays:Int=0
+) {
     val u=model.ui
+    var focus by remember(u.warehouse?.id){mutableStateOf(requestedFocus)}
+    var days by remember(u.warehouse?.id){mutableIntStateOf(requestedDays)}
+    LaunchedEffect(requestedFocus,requestedDays) { focus=requestedFocus;days=requestedDays }
+    val visible=remember(u.movements,focus,days) {
+        val since=if(days>0)System.currentTimeMillis()-days*86_400_000L else 0L
+        u.movements.filter {
+            it.createdAt>=since && when(focus) {
+                ActivityFocus.INBOUND -> it.delta>0.0
+                ActivityFocus.OUTBOUND -> it.delta<0.0
+                else -> true
+            }
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             SectionTitle("Attività","Movimenti registrati e utensili in uso",Modifier.weight(1f))
         }
-        Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected=!loansOnly,onClick={loansOnly=false},label={Text("Movimenti")})
-            FilterChip(selected=loansOnly,onClick={loansOnly=true},label={Text("Prestiti (${u.loans.size})")})
+        Row(Modifier.padding(horizontal=18.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            listOf(ActivityFocus.ALL to "Tutti",ActivityFocus.INBOUND to "Entrate",
+                   ActivityFocus.OUTBOUND to "Uscite",ActivityFocus.LOANS to "Prestiti (${u.loans.size})").forEach{(option,label)->
+                FilterChip(selected=focus==option,onClick={focus=option},label={Text(label)})
+            }
+        }
+        if(focus!=ActivityFocus.LOANS) {
+            Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                listOf(0 to "Sempre",7 to "7 gg",30 to "30 gg",90 to "90 gg").forEach{(d,label)->
+                    FilterChip(selected=days==d,onClick={days=d},label={Text(label)})
+                }
+            }
         }
         LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            if(loansOnly) {
+            if(focus==ActivityFocus.LOANS) {
                 if(u.loans.isEmpty()) item{Panel(Modifier.fillMaxWidth()){Text("Nessun utensile attualmente assegnato.",color=TextSecondary)}}
                 items(u.loans,key={it.id}) { loan ->
                     Panel(Modifier.fillMaxWidth()) {
@@ -446,8 +506,9 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             } else {
-                if(u.movements.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun movimento registrato.",color=TextSecondary)}}
-                items(u.movements,key={it.id}) {MovementRow(it)}
+                item { Text("${visible.size} operazioni",color=TextSecondary,fontSize=12.sp) }
+                if(visible.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun movimento per questi filtri.",color=TextSecondary)}}
+                items(visible,key={it.id}) {MovementRow(it)}
             }
         }
     }
