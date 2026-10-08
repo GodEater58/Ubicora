@@ -686,6 +686,13 @@ private fun EditItemDetailsDialog(
         }}
     }
     if(showLegal) LegalInfoDialog(onDismiss={showLegal=false})
+    model.ui.csvPreviewCount?.let { count ->
+        AlertDialog(onDismissRequest=model::cancelCsvImport,
+            title={Text("Conferma importazione CSV")},
+            text={Text("Aggiungere " + count + " articoli a questo magazzino? Non saranno modificati quelli esistenti. La quantità iniziale genera un movimento. Le fotografie non sono comprese.")},
+            confirmButton={TextButton(onClick=model::confirmCsvImport,enabled=!model.ui.busy){Text("Importa")}},
+            dismissButton={TextButton(onClick=model::cancelCsvImport){Text("Annulla")}})
+    }
     if(newWarehouse) AlertDialog(onDismissRequest={newWarehouse=false},title={Text("Nuovo magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
