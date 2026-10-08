@@ -439,6 +439,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var newWarehouse by remember{mutableStateOf(false)}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
+    var showLegal by remember{mutableStateOf(false)}
     var backupDialog by remember{mutableStateOf(false)}
     var restoreDialog by remember{mutableStateOf(false)}
     var secret by remember{mutableStateOf("")}
@@ -489,10 +490,18 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Text("Il CSV è solo un elenco in chiaro: NON permette di ripristinare l'app. Usa il backup cifrato per salvare tutti i dati.",fontSize=11.sp,color=TextSecondary)
         }}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("Officina Stock 4.1.3 · Native Alpha",fontWeight=FontWeight.SemiBold)
+            Text("PRIVACY E LICENZE",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text("Informazioni sul trattamento locale dei dati, sull'uso di Google ARCore e sulle librerie incluse.",fontSize=12.sp,color=TextSecondary)
+            OutlinedButton(onClick={showLegal=true},modifier=Modifier.fillMaxWidth()) {
+                Text("Apri privacy e licenze di terze parti")
+            }
+        }}
+        item {Panel(Modifier.fillMaxWidth()) {
+            Text("Officina Stock 4.1.4 · Compliance Alpha",fontWeight=FontWeight.SemiBold)
             Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }
+    if(showLegal) LegalInfoDialog(onDismiss={showLegal=false})
     if(newWarehouse) AlertDialog(onDismissRequest={newWarehouse=false},title={Text("Nuovo magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},

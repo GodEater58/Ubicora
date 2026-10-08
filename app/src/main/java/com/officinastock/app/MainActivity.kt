@@ -70,11 +70,17 @@ class MainActivity: ComponentActivity() {
                         Toast.makeText(context,if(error==null)"Ripristino completato" else "Ripristino non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
                     } else restorePassword=""
                 }
-                StockApp(model,onAr = {
+                var showArDisclosure by remember {mutableStateOf(false)}
+                val disclosurePrefs=remember(context) {context.getSharedPreferences("officina_legal_disclosures",android.content.Context.MODE_PRIVATE)}
+                val launchAr: () -> Unit = {
                     arLauncher.launch(Intent(context,ARScanActivity::class.java).apply {
                         putExtra("site",model.ui.warehouse?.name)
                         putExtra("profileId",model.ui.profile?.id?.toString())
                     })
+                }
+                StockApp(model,onAr = {
+                    if(disclosurePrefs.getBoolean("arcore_notice_ack_v1",false)) launchAr()
+                    else showArDisclosure=true
                 },onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")},
                 onBackup={password ->
                     backupPassword=password
@@ -90,6 +96,14 @@ class MainActivity: ComponentActivity() {
                         .setBeepEnabled(false)
                         .setOrientationLocked(false))
                 })
+                if(showArDisclosure) ArPrivacyNoticeDialog(
+                    onProceed={
+                        disclosurePrefs.edit().putBoolean("arcore_notice_ack_v1",true).apply()
+                        showArDisclosure=false
+                        launchAr()
+                    },
+                    onDismiss={showArDisclosure=false}
+                )
             }
         }
     }

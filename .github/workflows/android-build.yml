@@ -30,8 +30,19 @@ jobs:
           sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
       - name: Verify SQLite contract
         run: python3 tests/sqlite_contract_test.py && python3 tests/photo_storage_contract_test.py && python3 tests/manager_contract_test.py && python3 tests/plan_editor_contract_test.py && python3 tests/scanner_contract_test.py && python3 tests/backup_demo_contract_test.py && python3 tests/demo_full_contract_test.py
+      - name: Verify compliance integration
+        run: python3 tests/compliance_contract_test.py
       - name: Build and test
         run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean testDebugUnitTest assembleDebug
+      - name: Record resolved runtime dependencies
+        run: |
+          mkdir -p app/build/reports/compliance
+          ./gradlew --no-daemon :app:dependencies --configuration debugRuntimeClasspath > app/build/reports/compliance/debugRuntimeClasspath.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: officina-stock-compliance-runtime-inventory
+          path: app/build/reports/compliance/debugRuntimeClasspath.txt
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: officina-stock-4-native-debug-apk

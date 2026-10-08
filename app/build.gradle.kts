@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 413
-        versionName = "4.1.3-qr-demo-completa"
+        versionCode = 414
+        versionName = "4.1.4-compliance-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
