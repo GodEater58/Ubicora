@@ -80,7 +80,7 @@ class DatabaseAuditTest {
                     insert.clearBindings()
                     insert.bindLong(1,id)
                     insert.bindDouble(2,if(n%2==0)1.0 else -1.0)
-                    insert.bindString(3,"event-$"+"n")
+                    insert.bindString(3,"event-${n}")
                     insert.bindLong(4,base+n)
                     insert.executeInsert()
                 }
