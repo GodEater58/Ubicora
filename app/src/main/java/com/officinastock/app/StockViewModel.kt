@@ -256,6 +256,50 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
         return withContext(Dispatchers.IO) { db.movementsPage(warehouseId,since,direction,page*100,101) }
     }
+    fun prepareCsvImport(uri: Uri) {
+        if(ui.busy || ui.sessionLocked || ui.profile==null || ui.warehouse==null) return
+        pendingCsvImport=null
+        val warehouseId=ui.warehouse!!.id
+        val generation=backgroundGeneration
+        ui=ui.copy(busy=true,csvPreviewCount=null,message=null)
+        viewModelScope.launch {
+            try {
+                val rows=withContext(Dispatchers.IO) {
+                    val resolver=getApplication<Application>().contentResolver
+                    val input=resolver.openInputStream(uri) ?: error("Impossibile leggere il CSV")
+                    val bytes=java.io.ByteArrayOutputStream()
+                    input.use { stream ->
+                        val chunk=ByteArray(16384)
+                        while(true) {
+                            val count=stream.read(chunk)
+                            if(count<0) break
+                            require(bytes.size()+count<=CsvImport.MAX_BYTES) { "CSV troppo grande" }
+                            bytes.write(chunk,0,count)
+                        }
+                    }
+                    val parsed=CsvImport.parse(bytes.toString(Charsets.UTF_8.name()))
+                    db.validateCsvImport(warehouseId,parsed)
+                    parsed
+                }
+                if(generation==backgroundGeneration && !ui.sessionLocked && ui.warehouse?.id==warehouseId) {
+                    pendingCsvImport=warehouseId to rows
+                    ui=ui.copy(csvPreviewCount=rows.size)
+                }
+            } catch(e:Exception) {
+                pendingCsvImport=null
+                ui=ui.copy(message=e.message ?: "CSV non valido",csvPreviewCount=null)
+            } finally {ui=ui.copy(busy=false)}
+        }
+    }
+    fun cancelCsvImport() {
+        if(!ui.busy) { pendingCsvImport=null;ui=ui.copy(csvPreviewCount=null) }
+    }
+    fun confirmCsvImport() = execute {
+        val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
+        require(warehouseId==requireWarehouse() && !ui.sessionLocked) { "Magazzino cambiato" }
+        db.importCsv(warehouseId,rows)
+        pendingCsvImport=null
+    }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
     fun refresh()=execute{}
     private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
