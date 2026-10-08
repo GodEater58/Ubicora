@@ -480,14 +480,27 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var focus by remember(u.warehouse?.id){mutableStateOf(requestedFocus)}
     var days by remember(u.warehouse?.id){mutableIntStateOf(requestedDays)}
     LaunchedEffect(requestedFocus,requestedDays) { focus=requestedFocus;days=requestedDays }
-    val visible=remember(u.movements,focus,days) {
-        val since=if(days>0)System.currentTimeMillis()-days*86_400_000L else 0L
-        u.movements.filter {
-            it.createdAt>=since && when(focus) {
-                ActivityFocus.INBOUND -> it.delta>0.0
-                ActivityFocus.OUTBOUND -> it.delta<0.0
-                else -> true
-            }
+    val warehouseId=u.warehouse?.id
+    val newestMovementId=u.movements.firstOrNull()?.id ?: 0L
+    // Non caricare tutto lo storico in RAM: i filtri sono eseguiti dal database, prima della paginazione.
+    var page by remember(warehouseId,focus,days,newestMovementId) { mutableIntStateOf(0) }
+    var history by remember(warehouseId,focus,days,newestMovementId) { mutableStateOf<List<Movement>>(emptyList()) }
+    var moreAvailable by remember(warehouseId,focus,days,newestMovementId) { mutableStateOf(false) }
+    var loading by remember(warehouseId,focus,days,newestMovementId) { mutableStateOf(true) }
+    var historyError by remember(warehouseId,focus,days,newestMovementId) { mutableStateOf<String?>(null) }
+    var retryToken by remember(warehouseId,focus,days,newestMovementId) { mutableIntStateOf(0) }
+    LaunchedEffect(warehouseId,focus,days,newestMovementId,page,retryToken) {
+        if(warehouseId==null || focus==ActivityFocus.LOANS) return@LaunchedEffect
+        loading=true
+        historyError=null
+        try {
+            val entries=model.historyPage(warehouseId,focus,days,page)
+            history=if(page==0)entries.take(100) else history+entries.take(100)
+            moreAvailable=entries.size>100
+        } catch(e:Exception) {
+            historyError=e.message ?: "Impossibile caricare la cronologia"
+        } finally {
+            loading=false
         }
     }
     Column(Modifier.fillMaxSize()) {
@@ -519,15 +532,23 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             } else {
-                item {
-                    Text("${visible.size} operazioni",color=TextSecondary,fontSize=12.sp)
-                    if(u.movements.size>=250) Text(
-                        "Mostrate al massimo le ultime 250 registrazioni. I grafici manageriali analizzano tutto il periodo.",
-                        color=Amber,fontSize=11.sp
-                    )
+                item { Text("${history.size} operazioni caricate",color=TextSecondary,fontSize=12.sp) }
+                if(history.isEmpty() && !loading && historyError==null) item {
+                    Panel(Modifier.fillMaxWidth()){Text("Nessun movimento per questi filtri.",color=TextSecondary)}
                 }
-                if(visible.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun movimento per questi filtri.",color=TextSecondary)}}
-                items(visible,key={it.id}) {MovementRow(it)}
+                items(history,key={it.id}) {MovementRow(it)}
+                if(loading) item { CircularProgressIndicator(Modifier.padding(12.dp)) }
+                if(historyError!=null) item {
+                    Panel(Modifier.fillMaxWidth()) {
+                        Text(historyError.orEmpty(),color=Danger)
+                        TextButton(onClick={retryToken++}){Text("Riprova caricamento")}
+                    }
+                }
+                if(moreAvailable && !loading && historyError==null) item {
+                    OutlinedButton(onClick={page++},modifier=Modifier.fillMaxWidth()) {
+                        Text("Mostra altre operazioni")
+                    }
+                }
             }
         }
     }
