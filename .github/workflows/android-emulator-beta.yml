@@ -1,0 +1,57 @@
+name: Ubicora Beta Emulator Validation
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+concurrency:
+  group: beta-emulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  android-emulator:
+    name: Android ${{ matrix.api-level }} interaction and integrity tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [35, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: Run real Android instrumentation (isolated emulator, no user data)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: chmod +x ./gradlew && ./gradlew --no-daemon :app:connectedDebugAndroidTest --stacktrace
+      - name: Archive Android UI test reports and logcat
+        if: always()
+        run: |
+          mkdir -p app/build/reports/beta-device
+          adb logcat -d -t 5000 > app/build/reports/beta-device/logcat.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ubicora-beta-emulator-api-${{ matrix.api-level }}
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+            app/build/reports/beta-device/
+          if-no-files-found: warn
