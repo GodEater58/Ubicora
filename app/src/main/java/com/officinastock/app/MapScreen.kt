@@ -73,6 +73,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var detailsId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     val placement=state.placements.firstOrNull{it.id==selectedId}
     val walls=state.walls
+    val livePlacements by rememberUpdatedState(state.placements)
+    val liveWalls by rememberUpdatedState(state.walls)
     val manualWalls=walls.filter{it.source=="manual"}
     val roomWidth=warehouse.mapWidth
     val roomHeight=warehouse.mapHeight
@@ -125,7 +127,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         val cameraNow=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
                         val initial=PointMetres(down.position.x,down.position.y)
                         val startWorld=cameraNow.bounded(cameraNow.toWorld(initial))
-                        val hit=state.placements.lastOrNull { PlanGeometry.contains(startWorld,it) }
+                        val hit=livePlacements.lastOrNull { PlanGeometry.contains(startWorld,it) }
                         val target=if(mode==EditorTool.FURNITURE) hit else null
                         val initialFurniture=target?.let{PointMetres(it.x,it.y)}
                         val originalPanX=panX
@@ -161,10 +163,10 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         }
                         if(!cancelled){
                             if(mode==EditorTool.WALL){
-                                val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,walls)
+                                val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
                                 val point=cameraNow.bounded(cameraNow.toWorld(last))
                                 val clean=if(snapGrid) PlanGeometry.snap(point) else point
-                                val finish=PlanGeometry.snapToWallEndpoint(if(orthogonal) PlanGeometry.orthogonal(from,clean) else clean,walls)
+                                val finish=PlanGeometry.snapToWallEndpoint(if(orthogonal) PlanGeometry.orthogonal(from,clean) else clean,liveWalls)
                                 if(dragged){
                                     if(PlanGeometry.validWall(from,finish))model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
                                     wallAnchor=finish
