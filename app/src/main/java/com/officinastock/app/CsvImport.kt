@@ -68,9 +68,9 @@ object CsvImport {
         return records.drop(1).mapIndexed { index, v ->
             require(v.size==header.size) { "Riga ${index+2}: colonne CSV non valide" }
             val sku=v[0].trim().uppercase(java.util.Locale.ROOT)
-            val prefix=ArticleCodes.categoryPrefixes[v[2]]
+            val prefix=sku.substringBefore('-')
             val serial=sku.substringAfter('-', "").toLongOrNull()
-            require(prefix!=null && sku.startsWith(prefix + "-") && serial!=null && serial in 1..999999999L &&
+            require(ArticleCodes.categoryPrefixes.containsKey(v[2]) && prefix in ArticleCodes.categoryPrefixes.values && serial!=null && serial in 1..999999999L &&
                 Regex("^[A-Z]{3}-[0-9]{6,9}$").matches(sku)) { "Riga ${index+2}: codice o categoria non validi" }
             require(seen.add(sku)) { "Codice duplicato nel CSV" }
             val qty=v[3].replace(',','.').toDoubleOrNull()
