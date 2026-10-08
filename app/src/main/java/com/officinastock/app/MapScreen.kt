@@ -123,6 +123,12 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 val w=with(density){maxWidth.toPx()}
                 val h=with(density){maxHeight.toPx()}
                 val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
+                val labelPx=with(density){14.sp.toPx()}
+                LaunchedEffect(zoom,w,h,roomWidth,roomHeight) {
+                    val adjusted=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
+                        .clampedPan(panX,panY)
+                    panX=adjusted.x;panY=adjusted.y
+                }
                 // One gesture owner. Unlike overlapping tap/drag handlers, this cannot steal its own wall strokes.
                 Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
                     awaitEachGesture {
@@ -195,6 +201,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         }
                     }
                 }) {
+                    clipRect {
                     drawRect(Brush.verticalGradient(listOf(Color(0xFF0D2335),FloorBackground)),size=size)
                     val step=.5f
                     if(showGrid){
@@ -267,6 +274,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         cv.nativeCanvas.rotate(-90f,topLeft.x-15f,topLeft.y+sizeFloor.height/2f)
                         cv.nativeCanvas.drawText(numberM(roomHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,paint)
                         cv.nativeCanvas.restore()
+                    }
                     }
                 }
                 Row(Modifier.align(Alignment.TopStart).padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
