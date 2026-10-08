@@ -24,8 +24,11 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
     }
     private fun db()=stockDb.readableDatabase
     private fun photosDir()=File(context.filesDir,"article_photos").also{it.mkdirs()}
-    private fun addRow(zip: ZipOutputStream, row: JSONObject) {
-        zip.write(row.toString().toByteArray(Charsets.UTF_8));zip.write('\n'.code)
+    private fun addRow(zip: ZipOutputStream, row: JSONObject, remaining:Long):Long {
+        val bytes=row.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size.toLong()+1<=remaining) { "Tabella troppo grande per il formato backup (32 MiB). Esportazione annullata." }
+        zip.write(bytes);zip.write('\n'.code)
+        return bytes.size.toLong()+1
     }
     fun export(uri: Uri, password: String) {
         val files=mutableSetOf<String>()
@@ -39,7 +42,10 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                         .put("tables",tables.size).toString().toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                     val db=db()
+                    var total=1024L
                     for(table in tables) {
+                        var entryBytes=0L
+                        var rowCount=0
                         zip.putNextEntry(ZipEntry("db/$table.ndjson"))
                         db.rawQuery("SELECT * FROM $table",null).use {cursor ->
                             while(cursor.moveToNext()) {
@@ -59,14 +65,19 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                                         files.add(name)
                                     }
                                 }
-                                addRow(zip,json)
+                                require(++rowCount<=MAX_ROWS) { "Troppe righe per il formato backup" }
+                                entryBytes+=addRow(zip,json,MAX_ENTRY-entryBytes)
                             }
                         }
                         zip.closeEntry()
+                        total+=entryBytes
                     }
                     for(photo in files.sorted()) {
                         val f=File(photosDir(),photo)
                         if(!f.isFile) throw IOException("Foto mancante: $photo. Backup annullato.")
+                        require(f.length()<=MAX_ENTRY) { "Foto troppo grande per il formato backup" }
+                        total+=f.length()
+                        require(total<=MAX_TOTAL) { "Backup troppo grande" }
                         zip.putNextEntry(ZipEntry("photos/$photo"))
                         f.inputStream().buffered().use {it.copyTo(zip)}
                         zip.closeEntry()
@@ -203,9 +214,10 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 db.rawQuery("PRAGMA foreign_key_check",null).use{ c ->
                     require(!c.moveToFirst()) { "Relazioni non valide nel backup" }
                 }
+                stockDb.validateRestoredData()
                 db.setTransactionSuccessful()
-                restored=true
             } finally {db.endTransaction()}
+            restored=true
             // Foto originali eliminate soltanto DOPO la riuscita del commit SQLite.
             oldFiles.forEach{PhotoFiles.delete(context,it)}
         } finally {

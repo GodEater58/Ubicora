@@ -5,6 +5,9 @@ import android.graphics.Typeface
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -151,9 +154,26 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         var last=initial
                         var dragged=false
                         var cancelled=false
+                        var transforming=false
                         val minDrag=viewConfiguration.touchSlop
                         while(true){
                             val e=awaitPointerEvent()
+                            if(e.changes.count{it.pressed}>1) {
+                                transforming=true
+                                draftEnd=null
+                                val pivot=e.calculateCentroid(useCurrent=false)
+                                val shift=e.calculatePan()
+                                val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                                val next=current.transformed(e.calculateZoom(),PointMetres(pivot.x,pivot.y),PointMetres(shift.x,shift.y))
+                                zoom=next.zoom;panX=next.panX;panY=next.panY
+                                e.changes.forEach{it.consume()}
+                                continue
+                            }
+                            if(transforming) {
+                                e.changes.forEach{it.consume()}
+                                if(e.changes.none{it.pressed})break
+                                continue
+                            }
                             val change=e.changes.firstOrNull{it.id==down.id}
                             if(change==null){cancelled=true;break}
                             last=PointMetres(change.position.x,change.position.y)
@@ -177,7 +197,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             }
                             if(!change.pressed){break}
                         }
-                        if(!cancelled){
+                        if(transforming && target!=null && initialFurniture!=null) model.previewMove(target.id,initialFurniture.x,initialFurniture.y)
+                        if(!cancelled && !transforming){
                             if(mode==EditorTool.WALL){
                                 val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
                                 val point=cameraNow.bounded(cameraNow.toWorld(last))
@@ -261,8 +282,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         val count=items.size
                         if(count>0){
                             val bubble=Offset(
-                                (center.x+fw/2).coerceIn(badgePx,size.width-badgePx),
-                                (center.y-fh/2).coerceIn(badgePx,size.height-badgePx)
+                                camera.insetCoordinate(center.x+fw/2,size.width,badgePx),
+                                camera.insetCoordinate(center.y-fh/2,size.height,badgePx)
                             )
                             drawCircle(if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
                             drawIntoCanvas { cv ->
@@ -295,8 +316,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             val centerX=center.x.coerceIn(bubbleW/2f+6f,size.width-bubbleW/2f-6f)
                             val below=center.y+fh/2f+labelGapPx+labelHeightPx/2f
                             val above=center.y-fh/2f-labelGapPx-labelHeightPx/2f
-                            val centerY=(if(below+labelHeightPx/2f>size.height-6f)above else below)
-                                .coerceIn(labelHeightPx/2f+6f,size.height-labelHeightPx/2f-6f)
+                            val centerY=camera.insetCoordinate(if(below+labelHeightPx/2f>size.height-6f)above else below,size.height,labelHeightPx/2f+6f)
                             val origin=Offset(centerX-bubbleW/2f,centerY-labelHeightPx/2f)
                             drawRoundRect(
                                 Color(0xF20B2332),topLeft=origin,
@@ -446,6 +466,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
 }
 
 @Composable private fun PlacementDetailDialog(p:Placement,items:List<StockItem>,model:StockViewModel,onDismiss:()->Unit){
+    var articleQuery by remember(p.id){mutableStateOf("")}
     var askDelete by remember {mutableStateOf(false)}
     var w by remember(p.id,p.width){mutableStateOf("${p.width}")}
     var d by remember(p.id,p.depth){mutableStateOf("${p.depth}")}
@@ -453,8 +474,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     val wVal=w.replace(',','.').toFloatOrNull()
     val dVal=d.replace(',','.').toFloatOrNull()
     val valid=wVal!=null&&wVal in .2f..15f&&dVal!=null&&dVal in .2f..15f
-    val inside=items.filter{it.placementId==p.id}
-    val free=items.filter{it.placementId==null}
+    val inside=items.filter{it.placementId==p.id && (it.name.contains(articleQuery,true)||it.sku.contains(articleQuery,true))}
+    val free=items.filter{it.placementId==null && (it.name.contains(articleQuery,true)||it.sku.contains(articleQuery,true))}
     AlertDialog(onDismissRequest=onDismiss,title={Text(p.label)},text={
         Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Surface(color=Surface2,shape=RoundedCornerShape(12.dp)) {
@@ -473,8 +494,10 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
             Slider(value=angle,onValueChange={angle=it},valueRange=0f..270f,steps=2)
             Button(onClick={model.resizePlacement(p.id,wVal!!,dVal!!,angle)},enabled=valid,modifier=Modifier.fillMaxWidth()) {Text("Aggiorna dimensioni e rotazione")}
             Text("ARTICOLI COLLEGATI · ${inside.size}",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
+            Input(articleQuery,{articleQuery=it},"Cerca articolo o codice")
+            if(inside.size>100 || free.size>100) Text("Mostrati i primi 100 risultati per elenco. Affina la ricerca.",fontSize=12.sp)
             if(inside.isEmpty())Text("Ancora nessun articolo in questa ubicazione",color=TextSecondary,fontSize=12.sp)
-            inside.forEach{item ->
+            inside.take(100).forEach{item ->
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text(item.name,fontSize=12.sp,maxLines=1)
@@ -485,7 +508,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
             }
             if(free.isNotEmpty()){
                 Text("ASSEGNA ARTICOLI",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
-                free.take(30).forEach{item->
+                free.take(100).forEach{item->
                     TextButton(onClick={model.assignItem(item.id,p.id)},modifier=Modifier.fillMaxWidth()){
                         Text("+ ${item.name}",maxLines=1,modifier=Modifier.weight(1f))
                     }

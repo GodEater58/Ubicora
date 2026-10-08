@@ -37,7 +37,15 @@ jobs:
       - name: Verify Ubicora branding and compatibility
         run: python3 tests/brand_identity_contract_test.py
       - name: Build and test
-        run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean testDebugUnitTest assembleDebug
+        run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean lint testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease assembleDebugAndroidTest
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-verification-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
       - name: Record resolved runtime dependencies
         run: |
           mkdir -p app/build/reports/compliance

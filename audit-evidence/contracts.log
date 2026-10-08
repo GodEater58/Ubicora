@@ -1,0 +1,37 @@
+PASS: backup AES-GCM authenticated, all 9 tables, demo removal retains user data
+Brand identity + backward compatibility OK
+Compliance: attribution assets, AR first-use disclosure, privacy UI, draft and CI checks: PASS
+PASS: 42 demo items, 9 categories, 90-day flows, loans, costs, photos, QR rotation and safe demo refresh
+PASS: warehouse filter, no loans in consumption, no invented cost
+OK: SQLite v3/v4 additive schema + photo replacement/deletion preserve item
+OK: camera/gallery retry and FileProvider contract
+PASS versioned migration
+PASS metric room size
+PASS metric furniture schema
+PASS safe legacy wall conversion
+PASS safe legacy furniture conversion
+PASS furniture rotation persisted
+PASS metric coordinates in render
+PASS unified pointer ownership
+PASS no competing taps
+PASS wall tool
+PASS furniture tool
+PASS grid snapping
+PASS right-angle snapping
+PASS metric measurement labels
+PASS independent physical geometry
+PASS model preserves furniture orientation
+Scanner QR: payload warehouse, scanner, UI e lookup presenti
+SQLite: 9 tabelle, 5 indici e 5 controlli integrità OK
+PASS Home interactive metrics
+PASS Home item drilldown
+PASS Inventory filters
+PASS Manager card navigation
+PASS Manager idle drilldown
+PASS Manager threshold matches inventory
+PASS Map viewport hard clip
+PASS Map labels use density-aware sp
+PASS Map labels draw legible chips
+PASS Map panning bounded
+PASS History limit disclosed
+PASS Package id preserved

@@ -2,7 +2,7 @@
 from pathlib import Path
 import sqlite3, re
 
-src=(Path(__file__).resolve().parents[1]/"app/src/main/java/com/officinastock/app/StockDb.kt").read_text()
+src=(Path(__file__).resolve().parents[1]/"app/src/main/java/com/officinastock/app/StockDb.kt").read_text(encoding='utf-8')
 multis=re.findall(r'db\.execSQL\("""(.*?)"""\)',src,re.S)
 single=re.findall(r'db\.execSQL\("(CREATE INDEX[^"\\]+)"\)',src.split("override fun onCreate")[1].split("override fun onConfigure")[0])
 con=sqlite3.connect(":memory:")

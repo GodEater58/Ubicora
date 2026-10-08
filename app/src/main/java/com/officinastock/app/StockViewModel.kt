@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 /** Dati persistiti in SQLite, stato effimero in Compose, operazioni fuori dal thread grafico. */
 data class StockUiState(
@@ -27,12 +28,20 @@ data class StockUiState(
     val createdItemId: Long? = null,
     val scannedItemId: Long? = null,
     val busy: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val initialized: Boolean = false,
+    val sessionLocked: Boolean = false
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
-    var ui by mutableStateOf(StockUiState(profiles=db.profiles()))
+    var ui by mutableStateOf(StockUiState())
         private set
+    init { refresh() }
+    private var backgroundGeneration=0L
+    private var archiveAuthorization:Set<Long>?=null
+    var pendingBackupPassword=""
+    var pendingRestorePassword=""
+    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -59,10 +68,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     private fun execute(action: () -> Unit) {
         if(ui.busy) return
+        val generation=backgroundGeneration
         ui=ui.copy(busy=true, message=null)
         viewModelScope.launch {
-            val failure=withContext(Dispatchers.IO) { runCatching { action() }.exceptionOrNull()?.message }
-            reloadAfterSelection(failure)
+            try {
+                val failure=withContext(Dispatchers.IO) {
+                    try { action(); null } catch(e:CancellationException) { throw e }
+                    catch(e:Exception) { e.message ?: "Operazione non riuscita" }
+                }
+                reloadAfterSelection(failure,generation)
+            } catch(e:CancellationException) { throw e }
+            catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
+            finally { ui=ui.copy(busy=false) }
         }
     }
     private suspend fun reload(error: String? = null) {
@@ -87,7 +104,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error)
         }
-        ui=snapshot
+        ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
         pendingNewItem = null
     }
     fun dismissMessage(){ui=ui.copy(message=null)}
@@ -103,7 +120,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
     }
-    fun signOut() { if(!ui.busy) ui=StockUiState(profiles=ui.profiles) }
+    fun signOut() { if(!ui.busy) {archiveAuthorization=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
     fun leaveWarehouse() { if(!ui.busy) ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList()) }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
@@ -180,8 +197,29 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
     }
     /** Il backup completo include anche gli altri profili e magazzini del telefono. */
+    suspend fun authorizeArchive(pins:Map<Long,String>) {
+        require(!ui.busy && ui.profile!=null && !ui.sessionLocked) { "Accedi prima a un profilo" }
+        archiveAuthorization=null
+        val generation=backgroundGeneration
+        val ids=ui.profiles.map{it.id}.toSet()
+        ui=ui.copy(busy=true)
+        try {
+            withContext(Dispatchers.IO) {
+                for(id in ids) require(db.authenticate(id,pins[id].orEmpty())) { "PIN errato per uno dei profili" }
+            }
+            require(generation==backgroundGeneration && !ui.sessionLocked) { "Sessione bloccata" }
+            archiveAuthorization=ids
+        } finally {ui=ui.copy(busy=false)}
+    }
+    private fun requireArchiveAuthorization() {
+        require(ui.profile!=null && !ui.sessionLocked && archiveAuthorization==ui.profiles.map{it.id}.toSet()) {
+            "Per l'archivio completo verifica il PIN di tutti i profili"
+        }
+        archiveAuthorization=null
+    }
     suspend fun exportBackup(uri:Uri,password:String) {
         require(!ui.busy) {"Attendi il completamento dell'operazione in corso"}
+        requireArchiveAuthorization()
         ui=ui.copy(busy=true)
         try {withContext(Dispatchers.IO){BackupArchive(getApplication(),db).export(uri,password)}}
         finally {ui=ui.copy(busy=false)}
@@ -189,12 +227,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Ripristina l'intero archivio e ritorna alla scelta del profilo. */
     suspend fun restoreBackup(uri:Uri,password:String) {
         require(!ui.busy) {"Attendi il completamento dell'operazione in corso"}
+        requireArchiveAuthorization()
         ui=ui.copy(busy=true)
         try {
             withContext(Dispatchers.IO){BackupArchive(getApplication(),db).restore(uri,password)}
             val profiles=withContext(Dispatchers.IO){db.profiles()}
             pendingNewItem=null;pendingProfileId=null;pendingWarehouseId=null
-            ui=StockUiState(profiles=profiles,message="Backup ripristinato. Seleziona il profilo e inserisci il relativo PIN.")
+            ui=StockUiState(profiles=profiles,initialized=true,message="Backup ripristinato. Seleziona il profilo e inserisci il relativo PIN.")
         } finally {if(ui.busy)ui=ui.copy(busy=false)}
     }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
@@ -202,12 +241,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
 
     // Consente di aggiornare simultaneamente profilo e magazzino, evitando ricariche stale.
-    private suspend fun reloadAfterSelection(error:String?) {
+    private suspend fun reloadAfterSelection(error:String?,generation:Long) {
         val selectedProfile=pendingProfileId
         val selectedWarehouse=pendingWarehouseId
         if(selectedProfile!=null) {
             val p=withContext(Dispatchers.IO){db.profiles().firstOrNull{it.id==selectedProfile}}
-            ui=ui.copy(profile=p,warehouse=null)
+            ui=ui.copy(profile=p,warehouse=null,sessionLocked=generation!=backgroundGeneration)
         }
         if(selectedWarehouse!=null) {
             val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}

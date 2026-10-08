@@ -3,17 +3,17 @@ import sqlite3
 from pathlib import Path
 
 root=Path(__file__).resolve().parents[1]
-source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text()
-photo=(root/'app/src/main/java/com/officinastock/app/PhotoFiles.kt').read_text()
-ui=(root/'app/src/main/java/com/officinastock/app/ArticlePhotoField.kt').read_text()
-manifest=(root/'app/src/main/AndroidManifest.xml').read_text()
+source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(encoding='utf-8')
+photo=(root/'app/src/main/java/com/officinastock/app/PhotoFiles.kt').read_text(encoding='utf-8')
+ui=(root/'app/src/main/java/com/officinastock/app/ArticlePhotoField.kt').read_text(encoding='utf-8')
+manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 assert 'null, 6)' in source, 'Versione DB non aggiornata'
 assert 'ALTER TABLE items ADD COLUMN photo_file TEXT DEFAULT NULL' in source
 assert 'photo_file TEXT DEFAULT NULL' in source
 assert 'fun updatePhoto(itemId:' in source
-assert 'PhotoFiles.removeCapturedTemp' in (root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text()
+assert 'PhotoFiles.removeCapturedTemp' in (root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf-8')
 assert 'androidx.core.content.FileProvider' in manifest
-assert '<cache-path name="camera_capture" path="article_camera/" />' in (root/'app/src/main/res/xml/photo_paths.xml').read_text()
+assert '<cache-path name="camera_capture" path="article_camera/" />' in (root/'app/src/main/res/xml/photo_paths.xml').read_text(encoding='utf-8')
 assert 'onApply?.invoke(pending)' in ui
 assert 'if(ok && uri!=null) stage(uri)' in ui
 assert 'if(uri!=null) stage(uri.toString())' in ui

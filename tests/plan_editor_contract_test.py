@@ -1,10 +1,10 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 p=r/'app/src/main/java/com/officinastock/app'
-db=(p/'StockDb.kt').read_text()
-ui=(p/'MapScreen.kt').read_text()
-model=(p/'Models.kt').read_text()
-geom=(p/'PlanGeometry.kt').read_text()
+db=(p/'StockDb.kt').read_text(encoding='utf-8')
+ui=(p/'MapScreen.kt').read_text(encoding='utf-8')
+model=(p/'Models.kt').read_text(encoding='utf-8')
+geom=(p/'PlanGeometry.kt').read_text(encoding='utf-8')
 checks={
     'versioned migration': 'null, 6)' in db and 'oldVersion < 5' in db,
     'metric room size': 'map_width REAL NOT NULL DEFAULT 12' in db,

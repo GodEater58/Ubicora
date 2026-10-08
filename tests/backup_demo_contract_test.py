@@ -2,17 +2,17 @@
 from pathlib import Path
 import sqlite3,re
 root=Path(__file__).resolve().parents[1]
-source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text()
-backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text()
-ui=(root/'app/src/main/java/com/officinastock/app/Screens.kt').read_text()
-main=(root/'app/src/main/java/com/officinastock/app/MainActivity.kt').read_text()
+source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(encoding='utf-8')
+backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf-8')
+ui=(root/'app/src/main/java/com/officinastock/app/Screens.kt').read_text(encoding='utf-8')
+main=(root/'app/src/main/java/com/officinastock/app/MainActivity.kt').read_text(encoding='utf-8')
 assert 'null, 6)' in source and 'oldVersion < 6' in source
 assert 'CREATE TABLE IF NOT EXISTS demo_assets' in source
 assert 'demoTag(db,warehouseId,"items",id)' in source
 assert 'demoTag(db,warehouseId,"walls",id)' in source
 assert 'demoTag(db,warehouseId,"placements",id)' in source
 assert 'WHERE warehouse_id=? AND entity_type=?' in source
-cipher=(root/'app/src/main/java/com/officinastock/app/BackupCipher.kt').read_text()
+cipher=(root/'app/src/main/java/com/officinastock/app/BackupCipher.kt').read_text(encoding='utf-8')
 assert 'AES/GCM/NoPadding' in cipher and 'PBKDF2WithHmacSHA256' in cipher
 assert 'frame(0)' in cipher and 'db.beginTransaction()' in backup and 'BackupCipher.decrypt' in backup
 for table in ['profiles','warehouses','items','placements','walls','movements','loans','sku_sequences','demo_assets']:
