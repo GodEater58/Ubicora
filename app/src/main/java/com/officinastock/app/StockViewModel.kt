@@ -236,6 +236,20 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             ui=StockUiState(profiles=profiles,initialized=true,message="Backup ripristinato. Seleziona il profilo e inserisci il relativo PIN.")
         } finally {if(ui.busy)ui=ui.copy(busy=false)}
     }
+    /** Legge 100 movimenti alla volta (più un record per sapere se esiste la pagina successiva). */
+    suspend fun historyPage(warehouseId: Long, focus: ActivityFocus, days: Int, page: Int): List<Movement> {
+        require(ui.profile!=null && !ui.sessionLocked && ui.warehouse?.id==warehouseId) { "Seleziona un magazzino e accedi" }
+        require(days in listOf(0,7,30,90) && page in 0..(Int.MAX_VALUE/100) && focus!=ActivityFocus.LOANS) {
+            "Filtri cronologia non validi"
+        }
+        val since=if(days==0) 0L else System.currentTimeMillis()-days*86_400_000L
+        val direction=when(focus) {
+            ActivityFocus.INBOUND -> 1
+            ActivityFocus.OUTBOUND -> -1
+            else -> 0
+        }
+        return withContext(Dispatchers.IO) { db.movementsPage(warehouseId,since,direction,page*100,101) }
+    }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
     fun refresh()=execute{}
     private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
