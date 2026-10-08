@@ -37,6 +37,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
     fun acknowledgeScannedItem() { ui = ui.copy(scannedItemId = null) }
+    /** Navigation from dashboards: same detail handoff used by the QR scanner. */
+    fun openItemDetails(itemId: Long) {
+        if(ui.items.any { it.id==itemId }) ui=ui.copy(scannedItemId=itemId,message=null)
+    }
     /** Lookup locale. Nessuna movimentazione viene mai eseguita automaticamente da una scansione. */
     fun handleScannedCode(raw: String) {
         val warehouse=ui.warehouse ?: return
