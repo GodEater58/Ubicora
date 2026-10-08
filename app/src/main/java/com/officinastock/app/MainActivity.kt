@@ -84,6 +84,7 @@ class MainActivity: ComponentActivity() {
                     restoreLauncher.launch(arrayOf("*/*"))
                 },onScan = {
                     qrLauncher.launch(ScanOptions()
+                        .setCaptureActivity(StockQrCaptureActivity::class.java)
                         .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                         .setPrompt("Inquadra il codice QR dell'articolo")
                         .setBeepEnabled(false)

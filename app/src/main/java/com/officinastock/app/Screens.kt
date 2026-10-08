@@ -438,6 +438,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 @Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
     var newWarehouse by remember{mutableStateOf(false)}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
+    var confirmDemoRefresh by remember{mutableStateOf(false)}
     var backupDialog by remember{mutableStateOf(false)}
     var restoreDialog by remember{mutableStateOf(false)}
     var secret by remember{mutableStateOf("")}
@@ -468,12 +469,17 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             item {Panel(Modifier.fillMaxWidth()) {
                 Text("DATI DIMOSTRATIVI",color=Amber,fontSize=11.sp,letterSpacing=1.sp)
                 Text("${model.ui.demoCount} elementi di esempio in questo magazzino. La rimozione preserva gli elementi creati da te.",fontSize=12.sp,color=TextSecondary)
+                OutlinedButton(onClick={confirmDemoRefresh=true},modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.Refresh,contentDescription=null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Rigenera demo completa (4.1.3)")
+                }
                 OutlinedButton(onClick={confirmDemoRemoval=true},modifier=Modifier.fillMaxWidth()) {Text("Rimuovi soltanto la demo",color=Danger)}
             }}
-        } else if(model.ui.items.isEmpty() && model.ui.placements.isEmpty() && model.ui.walls.isEmpty()) {
+        } else {
             item {Panel(Modifier.fillMaxWidth()) {
                 Text("DEMO GUIDATA",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
-                Text("Carica otto articoli fittizi, tre strutture e la planimetria per esplorare l'interfaccia.",fontSize=12.sp,color=TextSecondary)
+                Text("Carica 42 articoli fittizi con costi, fornitori, foto illustrative, scorte critiche, prelievi degli ultimi 90 giorni, prestiti, ubicazioni e planimetria. Puoi farlo anche in un magazzino con dati reali: la demo rimane separata.",fontSize=12.sp,color=TextSecondary)
                 PrimaryAction("Carica dati dimostrativi",model::seedDemo,modifier=Modifier.fillMaxWidth())
             }}
         }
@@ -483,7 +489,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Text("Il CSV è solo un elenco in chiaro: NON permette di ripristinare l'app. Usa il backup cifrato per salvare tutti i dati.",fontSize=11.sp,color=TextSecondary)
         }}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("Officina Stock 4.1.2 · Native Alpha",fontWeight=FontWeight.SemiBold)
+            Text("Officina Stock 4.1.3 · Native Alpha",fontWeight=FontWeight.SemiBold)
             Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }
@@ -491,6 +497,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
+    if(confirmDemoRefresh) AlertDialog(onDismissRequest={confirmDemoRefresh=false},title={Text("Rigenerare la demo completa?")},text={
+        Text("Sostituisce tutti gli elementi marcati DEMO, comprese eventuali prove fatte su quegli articoli. Non elimina gli articoli creati personalmente. È consigliato esportare un backup prima.")
+    },confirmButton={TextButton(onClick={model.refreshDemo();confirmDemoRefresh=false}){Text("Rigenera demo")}},
+        dismissButton={TextButton(onClick={confirmDemoRefresh=false}){Text("Annulla")}})
     if(confirmDemoRemoval) AlertDialog(onDismissRequest={confirmDemoRemoval=false},title={Text("Eliminare la demo?")},text={
         Text("Rimuove soltanto articoli, strutture e pareti marcati come dimostrativi in questo magazzino. Gli articoli personali non verranno cancellati.")
     },confirmButton={TextButton(onClick={model.removeDemo();confirmDemoRemoval=false}){Text("Rimuovi demo",color=Danger)}},

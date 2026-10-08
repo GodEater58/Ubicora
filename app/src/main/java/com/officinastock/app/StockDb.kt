@@ -14,6 +14,7 @@ import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
 class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 6) {
+    private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
         db.execSQL("""CREATE TABLE profiles (
@@ -426,54 +427,132 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             return segments.size
         } finally { db.endTransaction() }
     }
-    /** Dati sintetici opzionali per provare la UX. Non parte mai automaticamente. */
+    /** Scenario completo e reversibile. I dati utente non vengono modificati. */
     fun seedDemo(warehouseId: Long) {
-        require(items(warehouseId).isEmpty() && placements(warehouseId).isEmpty() && walls(warehouseId).isEmpty()) {
-            "Il magazzino deve essere vuoto per caricare la demo"
+        require(demoAssetCount(warehouseId) == 0) {
+            "Esistono già dati demo: usa Rigenera demo completa per aggiornarli"
         }
         val db=writableDatabase
+        val now=System.currentTimeMillis()
+        val day=86_400_000L
+        val illustrated=mutableListOf<Triple<Long,String,String>>()
         db.beginTransaction()
         try {
-            val shelves=listOf(Triple("Scaffale","A · Ricambi",3.36f to 2.48f),
-                Triple("Armadio","B · Utensili",8.64f to 2.4f),
-                Triple("Cassetto","C · Elettrico",6.12f to 5.84f))
-            val ids=shelves.map { (kind,label,pos) ->
-                db.insertOrThrow("placements",null,ContentValues().apply {
-                    put("warehouse_id",warehouseId);put("kind",kind);put("label",label)
-                    put("x",pos.first);put("y",pos.second);put("locked",1)
-                })
-            }
-            ids.forEach {demoTag(db,warehouseId,"placements",it)}
-            val data=listOf(
-                listOf("VIT-M8-035","Vite TCEI M8 x 35","Meccanica","240","40","pz","0"),
-                listOf("CUS-6204","Cuscinetto 6204 2RS","Ricambi","12","8","pz","0"),
-                listOf("SEN-IND-18","Sensore induttivo M18","Elettrico","3","6","pz","2"),
-                listOf("CHI-DIN-13","Chiave combinata 13 mm","Utensili","6","2","pz","1"),
-                listOf("RAC-14","Raccordo pneumatico 1/4","Pneumatica","5","10","pz","0"),
-                listOf("FUS-10A","Fusibile rapido 10 A","Elettrico","44","15","pz","2"),
-                listOf("GUA-NBR","Guarnizione NBR 30 mm","Ricambi","18","8","pz","0"),
-                listOf("BRO-6","Punta HSS Ø6","Utensili","9","4","pz","1")
+            // Distribuzione coerente con una pianta metrica standard 12×8 m.
+            val (w,h)=mapBounds(warehouseId)
+            val racks=listOf(
+                DemoRack("Scaffale", "A · Ricambi meccanici",.22f,.24f,2.5f,.8f,0f),
+                DemoRack("Armadio", "B · Utensili",.73f,.24f,1.5f,.85f,0f),
+                DemoRack("Scaffale", "C · Automazione",.49f,.24f,2.15f,.8f,0f),
+                DemoRack("Scaffale", "D · Pneumatica",.23f,.60f,2.1f,.8f,0f),
+                DemoRack("Scaffale", "E · Oleodinamica",.48f,.60f,2.1f,.8f,0f),
+                DemoRack("Cassetto", "F · Consumabili",.75f,.60f,1.25f,.85f,0f),
+                DemoRack("Armadio", "G · Sicurezza DPI",.89f,.24f,.8f,.95f,0f),
+                DemoRack("Banco", "H · Banco assemblaggio",.5f,.82f,2.1f,.9f,0f),
+                DemoRack("Area", "I · Materiale accessorio",.88f,.82f,1.4f,1.2f,0f)
             )
-            for(row in data) {
+            val placementIds=racks.map { r ->
+                val id=db.insertOrThrow("placements",null,ContentValues().apply {
+                    put("warehouse_id",warehouseId);put("kind",r.kind);put("label",r.label)
+                    put("x",(w*r.x).coerceIn(0f,w));put("y",(h*r.y).coerceIn(0f,h));put("locked",1)
+                    put("width_m",r.width.coerceAtMost(w*.3f));put("depth_m",r.depth.coerceAtMost(h*.3f))
+                    put("rotation_deg",r.angle)
+                })
+                demoTag(db,warehouseId,"placements",id)
+                id
+            }
+            // Contorno + pareti divisorie, lasciando libero l'ingresso sul lato inferiore.
+            val walls=listOf(
+                floatArrayOf(.06f,.10f,.94f,.10f),floatArrayOf(.94f,.10f,.94f,.91f),
+                floatArrayOf(.06f,.91f,.37f,.91f),floatArrayOf(.63f,.91f,.94f,.91f),
+                floatArrayOf(.06f,.10f,.06f,.91f),
+                floatArrayOf(.38f,.42f,.38f,.50f),floatArrayOf(.38f,.50f,.66f,.50f),
+                floatArrayOf(.66f,.50f,.66f,.43f)
+            )
+            for(p in walls) {
+                val id=db.insertOrThrow("walls",null,ContentValues().apply {
+                    put("warehouse_id",warehouseId)
+                    put("x1",w*p[0]);put("y1",h*p[1]);put("x2",w*p[2]);put("y2",h*p[3]);put("source","manual")
+                })
+                demoTag(db,warehouseId,"walls",id)
+            }
+            val usedDays=listOf(73L,45L,21L,9L,3L)
+            val serviceReasons=listOf("Revisione linea 16","Manutenzione preventiva", "Intervento compressori", "Ricambio su guasto", "Rifornimento reparto")
+            DemoCatalog.items.forEachIndexed { i, demo ->
+                val opening=demo.stock+demo.used90+demo.onLoan-demo.received30
+                require(opening>=0) { "Saldo demo negativo: ${demo.name}" }
                 val id=db.insertOrThrow("items",null,ContentValues().apply {
-                    put("warehouse_id",warehouseId);put("sku",nextSku(db,row[2]));put("name",row[1]);put("category",row[2]);
-                    put("quantity",row[3].toDouble());put("minimum",row[4].toDouble());put("unit",row[5]);
-                    put("placement_id",ids[row[6].toInt()]);put("note","Dati dimostrativi")
+                    put("warehouse_id",warehouseId);put("sku",nextSku(db,demo.category));put("name",demo.name)
+                    put("category",demo.category);put("quantity",demo.stock);put("minimum",demo.minimum)
+                    put("unit",demo.unit);put("note","[DEMO] ${demo.note}")
+                    if(demo.placement!=null) put("placement_id",placementIds[demo.placement])
+                    if(demo.cost!=null) put("unit_cost",demo.cost)
+                    put("supplier",demo.supplier)
+                    if(demo.leadDays!=null) put("lead_days",demo.leadDays)
                 })
                 demoTag(db,warehouseId,"items",id)
-                recordMovement(db,id,row[3].toDouble(),"Carico iniziale · demo")
+                fun event(delta:Double, label:String,daysAgo:Long) {
+                    if(delta==0.0) return
+                    db.insertOrThrow("movements",null,ContentValues().apply {
+                        put("item_id",id);put("delta",delta);put("note",label)
+                        put("created_at",now-daysAgo*day-i*1000L)
+                    })
+                }
+                event(opening,"Carico iniziale · demo",115L+(i%5))
+                if(demo.used90>0) {
+                    var allocated=0.0
+                    usedDays.forEachIndexed { idx,ago ->
+                        val value=if(idx==usedDays.lastIndex) demo.used90-allocated else
+                            kotlin.math.floor(demo.used90*listOf(.17,.18,.25,.19,.21)[idx]*100.0)/100.0
+                        allocated+=value
+                        event(-value,"Prelievo ${serviceReasons[idx]} · demo",ago)
+                    }
+                }
+                event(demo.received30,"Carico da ${demo.supplier} · demo",29)
+                if(demo.onLoan>0.0) {
+                    val borrower=if(i%2==0)"Tecnico Mario (demo)" else "Manutentore Luca (demo)"
+                    event(-demo.onLoan,"Assegnato a $borrower",12)
+                    db.insertOrThrow("loans",null,ContentValues().apply {
+                        put("item_id",id);put("borrower",borrower);put("quantity",demo.onLoan)
+                        put("created_at",now-12*day)
+                    })
+                }
+                if(demo.illustration) illustrated.add(Triple(id,demo.name,demo.category))
             }
-            listOf(floatArrayOf(1.08f,.72f,10.92f,.72f),floatArrayOf(10.92f,.72f,10.92f,7.28f),
-                floatArrayOf(10.92f,7.28f,1.08f,7.28f),floatArrayOf(1.08f,7.28f,1.08f,.72f)).forEach { p ->
-                val wallId=db.insertOrThrow("walls",null,ContentValues().apply {
-                    put("warehouse_id",warehouseId);put("x1",p[0]);put("y1",p[1]);
-                    put("x2",p[2]);put("y2",p[3]);put("source","manual")
-                })
-                demoTag(db,warehouseId,"walls",wallId)
+            // Prestiti già restituiti, utili per provare lo storico e le statistiche.
+            for ((index,operator) in listOf(19 to "Tecnico Mario (demo)",20 to "Manutentore Luca (demo)")) {
+                val target=DemoCatalog.items[index].name
+                db.rawQuery("SELECT id FROM items WHERE warehouse_id=? AND name=? AND note LIKE '[DEMO] %'",
+                    arrayOf(warehouseId.toString(),target)).use {c ->
+                    if(c.moveToFirst()) {
+                        val id=c.getLong(0)
+                        db.insertOrThrow("loans",null,ContentValues().apply {
+                            put("item_id",id);put("borrower",operator);put("quantity",1.0)
+                            put("created_at",now-33*day);put("returned_at",now-26*day)
+                        })
+                        fun history(delta:Double,why:String,timestamp:Long) {
+                            db.insertOrThrow("movements",null,ContentValues().apply {
+                                put("item_id",id);put("delta",delta);put("note",why)
+                                put("created_at",timestamp)
+                            })
+                        }
+                        history(-1.0,"Assegnato a $operator",now-33*day)
+                        history(1.0,"Restituito da $operator",now-26*day)
+                    }
+                }
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+        // Non bloccare o annullare il dataset se il telefono non riesce a creare una miniatura.
+        illustrated.forEach { (id,name,category) ->
+            val generated=runCatching {DemoArtwork.create(appContext,name,category)}.getOrNull()
+            if(generated!=null) runCatching {updatePhoto(id,generated)}.onFailure {
+                PhotoFiles.delete(appContext,generated)
+            }
+        }
     }
+    private data class DemoRack(val kind:String,val label:String,val x:Float,val y:Float,
+        val width:Float,val depth:Float,val angle:Float)
     fun demoAssetCount(warehouseId: Long): Int = readableDatabase.rawQuery(
         "SELECT COUNT(*) FROM demo_assets WHERE warehouse_id=?",arrayOf(warehouseId.toString())
     ).use {it.moveToFirst();it.getInt(0)}

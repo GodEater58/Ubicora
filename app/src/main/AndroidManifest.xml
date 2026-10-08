@@ -12,6 +12,9 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/photo_paths" />
         </provider>
         <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <!-- SCREEN_ORIENTATION_USER: segue la rotazione solo se abilitata dall'utente in Android. -->
+        <activity android:name=".StockQrCaptureActivity" android:exported="false"
+            android:screenOrientation="user" />
         <activity android:name=".ARScanActivity" android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".MainActivity" android:exported="true"

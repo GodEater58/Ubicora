@@ -166,6 +166,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun deleteWall(id:Long)=execute{db.deleteWall(id)}
     fun importAr(json:String)=execute{db.importArScan(requireWarehouse(),json)}
     fun seedDemo() = execute { db.seedDemo(requireWarehouse()) }
+    fun refreshDemo() = execute {
+        val names=db.removeDemo(requireWarehouse())
+        names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
+        db.seedDemo(requireWarehouse())
+    }
     fun removeDemo() = execute {
         val names=db.removeDemo(requireWarehouse())
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
