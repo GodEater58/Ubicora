@@ -280,6 +280,34 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         require(writableDatabase.update("items",values,"id=?",arrayOf(itemId.toString())) == 1) { "Articolo non trovato" }
     }
+    /**
+     * Modifica i metadati senza riscrivere SKU, giacenze o storico.
+     * La giacenza va cambiata soltanto tramite un movimento tracciabile.
+     */
+    fun updateItemDetails(
+        warehouseId: Long, itemId: Long, name: String, category: String,
+        minimum: Double, unit: String, note: String, cost: Double?,
+        supplier: String, leadDays: Int?
+    ) {
+        require(name.trim().length in 1..180) { "Nome articolo: massimo 180 caratteri" }
+        require(unit.trim().length in 1..24) { "Unità di misura: da 1 a 24 caratteri" }
+        require(note.length <= 3000) { "Descrizione troppo lunga" }
+        require(supplier.length <= 160) { "Fornitore troppo lungo" }
+        ArticleCodes.prefix(category)
+        require(StockRules.validQuantity(minimum)) { "Soglia minima non valida" }
+        validatePurchase(cost,leadDays)
+        val original=requireNotNull(item(itemId)) { "Articolo inesistente" }
+        require(original.warehouseId==warehouseId) { "Articolo appartenente a un altro magazzino" }
+        val values=ContentValues().apply {
+            put("name",name.trim());put("category",category);put("minimum",minimum)
+            put("unit",unit.trim());put("note",note.trim())
+            if(cost==null)putNull("unit_cost") else put("unit_cost",cost)
+            put("supplier",supplier.trim())
+            if(leadDays==null)putNull("lead_days") else put("lead_days",leadDays)
+        }
+        require(writableDatabase.update("items",values,"id=? AND warehouse_id=?",
+            arrayOf(itemId.toString(),warehouseId.toString()))==1) { "Articolo non aggiornato" }
+    }
     /** Aggregazione server-side SQLite: non carichiamo migliaia di singoli movimenti nel Compose tree. */
     fun dailyActivity(warehouseId: Long, since: Long): List<DailyActivity> = readableDatabase.rawQuery(
         """SELECT date(m.created_at/1000,'unixepoch','localtime') AS day,
