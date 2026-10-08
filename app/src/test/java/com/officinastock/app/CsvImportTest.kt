@@ -20,6 +20,7 @@ class CsvImportTest {
         assertEquals(2.5,parsed[0].cost!!,0.0)
         val special=header+"\n"+row(name="Vite, M8") + "\n"
         assertEquals("Vite, M8",CsvImport.parse(special).single().name)
+        assertEquals("ELE-000321",CsvImport.parse(header+"\n"+row(sku="ELE-000321")).single().sku)
     }
     @Test fun rejectsDuplicateRowsIncorrectHeaderAndMalformedQuotes() {
         rejects("wrong;header\n"+row())
