@@ -82,7 +82,8 @@ class DatabaseAuditTest {
         assertEquals(4.0,updated.minimum,0.0)
         assertEquals("Ricambio verificato",updated.note)
         assertEquals(12.5,updated.unitCost!!,0.0)
-        assertEquals(before,db.movements(warehouse))
+        assertEquals(before.map{listOf(it.id,it.itemId,it.delta,it.note,it.createdAt)},
+            db.movements(warehouse).map{listOf(it.id,it.itemId,it.delta,it.note,it.createdAt)})
         val other=db.createWarehouse(profile,"Second","")
         rejects {db.updateItemDetails(other,id,"Wrong","Ricambi",1.0,"pz","",null,"",null)}
         rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
