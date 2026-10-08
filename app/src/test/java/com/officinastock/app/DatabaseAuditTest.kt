@@ -68,6 +68,46 @@ class DatabaseAuditTest {
         assertEquals(10001,db.csv(warehouse).lineSequence().count{it.isNotEmpty()})
         println("AUDIT 10000 database items + search + CSV milliseconds="+(System.nanoTime()-start)/1000000)
     }
+    @Test fun editingItemPreservesIdentityQuantityMovementsAndWarehouseIsolation(){
+        val id=item(12.0)
+        val before=db.movements(warehouse)
+        val sku=db.item(id)!!.sku
+        db.updateItemDetails(warehouse,id,"Cuscinetto","Meccanica",4.0,"pz",
+            "Ricambio verificato",12.5,"Fornitore Test",3)
+        val updated=db.item(id)!!
+        assertEquals(sku,updated.sku)
+        assertEquals("Meccanica",updated.category)
+        assertEquals("Cuscinetto",updated.name)
+        assertEquals(12.0,updated.quantity,0.0)
+        assertEquals(4.0,updated.minimum,0.0)
+        assertEquals("Ricambio verificato",updated.note)
+        assertEquals(12.5,updated.unitCost!!,0.0)
+        assertEquals(before.map{listOf(it.id,it.itemId,it.delta,it.note,it.createdAt)},
+            db.movements(warehouse).map{listOf(it.id,it.itemId,it.delta,it.note,it.createdAt)})
+        val other=db.createWarehouse(profile,"Second","")
+        rejects {db.updateItemDetails(other,id,"Wrong","Ricambi",1.0,"pz","",null,"",null)}
+        rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
+        assertEquals("Cuscinetto",db.item(id)!!.name)
+    }
+    @Test fun csvImportRollsBackDuplicateAndPreservesOriginal(){
+        val original=item()
+        val row=CsvImportRow("RIC-001201","Other","Ricambi",2.0,1.0,"pz","","",null,"",null)
+        assertEquals(1,db.importCsv(warehouse,listOf(row)))
+        assertEquals(10.0,db.item(original)!!.quantity,0.0)
+        val before=db.items(warehouse).size
+        rejects { db.importCsv(warehouse,listOf(row)) }
+        assertEquals(before,db.items(warehouse).size)
+        assertEquals("RIC-001202",db.item(db.addItem(warehouse,"Third","Ricambi",0.0,0.0,"pz",""))!!.sku)
+    }
+    @Test fun countedStockCorrectionCreatesTraceableMovement(){
+        val id=item(10.0)
+        db.reconcileQuantity(id,7.0,"Conta fisica")
+        assertEquals(7.0,db.item(id)!!.quantity,0.0)
+        assertEquals(-3.0,db.movements(warehouse).first().delta,0.0)
+        rejects{db.reconcileQuantity(id,7.0,"Ripetuto")}
+        rejects{db.reconcileQuantity(id,-2.0,"Conta fisica")}
+        assertEquals(7.0,db.item(id)!!.quantity,0.0)
+    }
     @Test fun fullMovementHistoryCanBePagedAndFilteredWithoutTruncation(){
         val id=item()
         val base=System.currentTimeMillis()+10_000L

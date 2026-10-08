@@ -5,15 +5,15 @@ plugins {
 }
 android {
     namespace = "com.officinastock.app"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         // ID distinto: installazione indipendente dalla vecchia app. Per trasferire i dati usare backup cifrato.
         // namespace Kotlin storico invariato: NON determina l'identita del pacchetto Android.
         applicationId = "com.ubicora.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 419
-        versionName = "4.1.9-history"
+        targetSdk = 36
+        versionCode = 420
+        versionName = "4.2.0-beta-prep"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -23,7 +23,32 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildTypes { release { isMinifyEnabled = false } }
+    // No ephemeral release keys: updates require exactly the same signing certificate.
+    // CI builds an unsigned release until all four secure variables are supplied.
+    val releaseStore = System.getenv("UBICORA_RELEASE_STORE_FILE")
+    val releaseStorePassword = System.getenv("UBICORA_RELEASE_STORE_PASSWORD")
+    val releaseAlias = System.getenv("UBICORA_RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("UBICORA_RELEASE_KEY_PASSWORD")
+    val signingValues = listOf(releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword)
+    require(signingValues.all { it.isNullOrEmpty() } || signingValues.all { !it.isNullOrEmpty() }) {
+        "Release signing incomplete: supply all four UBICORA_RELEASE_* environment variables"
+    }
+    if(signingValues.all { !it.isNullOrEmpty() }) {
+        signingConfigs.create("ubicoraStable") {
+            storeFile = file(requireNotNull(releaseStore))
+            storePassword = releaseStorePassword
+            keyAlias = releaseAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if(signingConfigs.findByName("ubicoraStable") != null) {
+                signingConfig = signingConfigs.getByName("ubicoraStable")
+            }
+        }
+    }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 dependencies {

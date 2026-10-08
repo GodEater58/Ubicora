@@ -1,4 +1,4 @@
-# Ubicora — Android nativo 4.1.9 (build di test)
+# Ubicora — Android nativo 4.2.0 (preparazione beta)
 
 App locale per inventario di più magazzini e profili, con codici automatici per categoria, etichette QR, scanner QR, fotografie, movimenti, prestiti, planimetria metrica, statistiche manageriali e backup completo cifrato. L'app non richiede un account cloud per il funzionamento dell'inventario. La scansione AR utilizza Google Play Services per AR su dispositivi compatibili.
 
@@ -6,7 +6,7 @@ App locale per inventario di più magazzini e profili, con codici automatici per
 
 ## Build
 
-- Android Gradle Plugin 8.9.2, Kotlin 2.1.20, Java 17, target/compile SDK 35, min SDK 26.
+- Android Gradle Plugin 8.9.2, Kotlin 2.1.20, Java 17, target/compile SDK 36, min SDK 26.
 - `./gradlew testDebugUnitTest assembleDebug`
 - Artefatto: `app/build/outputs/apk/debug/app-debug.apk`.
 - CI: `.github/workflows/android-build.yml`, APK e distinta dipendenze runtime negli artifacts delle Actions.
@@ -20,3 +20,7 @@ App locale per inventario di più magazzini e profili, con codici automatici per
 - **Rilascio commerciale:** `docs/COMMERCIAL_RELEASE_CHECKLIST.md` elenca i passaggi obbligatori.
 
 Nessuna licenza sul codice proprietario del prodotto viene concessa implicitamente con il file `LICENSES/Apache-2.0.txt`: la licenza Apache riguarda esclusivamente i componenti di terze parti applicabili. La titolarità dei sorgenti del progetto va formalmente confermata.
+
+## Beta
+
+Vedi [criteri di rilascio e firma](docs/BETA_RELEASE_GATE.md). Fino ai test su telefono la versione rimane sperimentale.

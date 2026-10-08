@@ -30,7 +30,8 @@ data class StockUiState(
     val busy: Boolean = false,
     val message: String? = null,
     val initialized: Boolean = false,
-    val sessionLocked: Boolean = false
+    val sessionLocked: Boolean = false,
+    val csvPreviewCount: Int? = null
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -39,9 +40,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     init { refresh() }
     private var backgroundGeneration=0L
     private var archiveAuthorization:Set<Long>?=null
+    private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null) }
+    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -120,8 +122,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
     }
-    fun signOut() { if(!ui.busy) {archiveAuthorization=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
-    fun leaveWarehouse() { if(!ui.busy) ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList()) }
+    fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
+    fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         ui=ui.copy(warehouse=w)
@@ -161,10 +163,15 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         db.updatePhoto(itemId,null)
         PhotoFiles.delete(getApplication<Application>(),current.photoFile)
     }
+    fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
+                          unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
+        db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
+    }
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
         db.updatePurchase(itemId,cost,supplier,leadDays)
     }
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
+    fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute { db.reconcileQuantity(itemId,counted,reason) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
     fun addPlacement(kind:String,label:String) = execute {
@@ -249,6 +256,50 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             else -> 0
         }
         return withContext(Dispatchers.IO) { db.movementsPage(warehouseId,since,direction,page*100,101) }
+    }
+    fun prepareCsvImport(uri: Uri) {
+        if(ui.busy || ui.sessionLocked || ui.profile==null || ui.warehouse==null) return
+        pendingCsvImport=null
+        val warehouseId=ui.warehouse!!.id
+        val generation=backgroundGeneration
+        ui=ui.copy(busy=true,csvPreviewCount=null,message=null)
+        viewModelScope.launch {
+            try {
+                val rows=withContext(Dispatchers.IO) {
+                    val resolver=getApplication<Application>().contentResolver
+                    val input=resolver.openInputStream(uri) ?: error("Impossibile leggere il CSV")
+                    val bytes=java.io.ByteArrayOutputStream()
+                    input.use { stream ->
+                        val chunk=ByteArray(16384)
+                        while(true) {
+                            val count=stream.read(chunk)
+                            if(count<0) break
+                            require(bytes.size()+count<=CsvImport.MAX_BYTES) { "CSV troppo grande" }
+                            bytes.write(chunk,0,count)
+                        }
+                    }
+                    val parsed=CsvImport.parse(bytes.toString(Charsets.UTF_8.name()))
+                    db.validateCsvImport(warehouseId,parsed)
+                    parsed
+                }
+                if(generation==backgroundGeneration && !ui.sessionLocked && ui.warehouse?.id==warehouseId) {
+                    pendingCsvImport=warehouseId to rows
+                    ui=ui.copy(csvPreviewCount=rows.size)
+                }
+            } catch(e:Exception) {
+                pendingCsvImport=null
+                ui=ui.copy(message=e.message ?: "CSV non valido",csvPreviewCount=null)
+            } finally {ui=ui.copy(busy=false)}
+        }
+    }
+    fun cancelCsvImport() {
+        if(!ui.busy) { pendingCsvImport=null;ui=ui.copy(csvPreviewCount=null) }
+    }
+    fun confirmCsvImport() = execute {
+        val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
+        require(warehouseId==requireWarehouse() && !ui.sessionLocked) { "Magazzino cambiato" }
+        db.importCsv(warehouseId,rows)
+        pendingCsvImport=null
     }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
     fun refresh()=execute{}

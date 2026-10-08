@@ -280,6 +280,34 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         require(writableDatabase.update("items",values,"id=?",arrayOf(itemId.toString())) == 1) { "Articolo non trovato" }
     }
+    /**
+     * Modifica i metadati senza riscrivere SKU, giacenze o storico.
+     * La giacenza va cambiata soltanto tramite un movimento tracciabile.
+     */
+    fun updateItemDetails(
+        warehouseId: Long, itemId: Long, name: String, category: String,
+        minimum: Double, unit: String, note: String, cost: Double?,
+        supplier: String, leadDays: Int?
+    ) {
+        require(name.trim().length in 1..180) { "Nome articolo: massimo 180 caratteri" }
+        require(unit.trim().length in 1..24) { "Unità di misura: da 1 a 24 caratteri" }
+        require(note.length <= 3000) { "Descrizione troppo lunga" }
+        require(supplier.length <= 160) { "Fornitore troppo lungo" }
+        ArticleCodes.prefix(category)
+        require(StockRules.validQuantity(minimum)) { "Soglia minima non valida" }
+        validatePurchase(cost,leadDays)
+        val original=requireNotNull(item(itemId)) { "Articolo inesistente" }
+        require(original.warehouseId==warehouseId) { "Articolo appartenente a un altro magazzino" }
+        val values=ContentValues().apply {
+            put("name",name.trim());put("category",category);put("minimum",minimum)
+            put("unit",unit.trim());put("note",note.trim())
+            if(cost==null)putNull("unit_cost") else put("unit_cost",cost)
+            put("supplier",supplier.trim())
+            if(leadDays==null)putNull("lead_days") else put("lead_days",leadDays)
+        }
+        require(writableDatabase.update("items",values,"id=? AND warehouse_id=?",
+            arrayOf(itemId.toString(),warehouseId.toString()))==1) { "Articolo non aggiornato" }
+    }
     /** Aggregazione server-side SQLite: non carichiamo migliaia di singoli movimenti nel Compose tree. */
     fun dailyActivity(warehouseId: Long, since: Long): List<DailyActivity> = readableDatabase.rawQuery(
         """SELECT date(m.created_at/1000,'unixepoch','localtime') AS day,
@@ -324,6 +352,23 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     fun movement(itemId: Long, delta: Double, note: String) {
         require(delta.isFinite() && delta != 0.0) { "Inserisci una quantità diversa da zero" }
         writableDatabase.apply { beginTransaction();try { adjust(this,itemId,delta,note.ifBlank { if(delta>0) "Carico" else "Prelievo" });setTransactionSuccessful() } finally { endTransaction() } }
+    }
+    /** Rettifica inventario transazionale, con un movimento di audit obbligatorio. */
+    fun reconcileQuantity(itemId: Long, counted: Double, reason: String) {
+        require(StockRules.validQuantity(counted)) { "Conteggio non valido" }
+        require(reason.trim().length in 3..250) { "Indica un motivo di almeno 3 caratteri" }
+        val sql=writableDatabase
+        sql.beginTransaction()
+        try {
+            val old=sql.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { c ->
+                require(c.moveToFirst()) { "Articolo non trovato" }
+                c.getDouble(0)
+            }
+            val delta=counted-old
+            require(delta.isFinite() && delta!=0.0) { "Nessuna differenza da rettificare" }
+            adjust(sql,itemId,delta,"Rettifica inventario: " + reason.trim())
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
     }
     fun movements(warehouseId: Long): List<Movement> = readableDatabase.rawQuery(
         """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at FROM movements m
@@ -615,6 +660,54 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             db.setTransactionSuccessful()
         } finally {db.endTransaction()}
         return photos
+    }
+
+    /** Verifica duplicati e ubicazioni senza modificare un singolo record. */
+    fun validateCsvImport(warehouseId: Long, rows: List<CsvImportRow>) {
+        require(rows.isNotEmpty() && rows.size<=CsvImport.MAX_ITEMS) { "Numero articoli CSV non valido" }
+        val existing=items(warehouseId).mapTo(HashSet()) { it.sku }
+        val locations=placements(warehouseId).groupBy { it.label }
+        val seen=HashSet<String>()
+        for(row in rows) {
+            require(seen.add(row.sku)) { "Codice duplicato nel CSV" }
+            require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
+            if(row.location.isNotBlank()) {
+                require(locations[row.location]?.size==1) {
+                    "Ubicazione non trovata o ambigua: ${row.location}"
+                }
+            }
+        }
+    }
+
+    /** Import only NEW items, atomically. Never overwrite existing items or photos. */
+    fun importCsv(warehouseId: Long, rows: List<CsvImportRow>): Int {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            validateCsvImport(warehouseId,rows)
+            val locations=placements(warehouseId).associateBy { it.label }
+            for(row in rows) {
+                val values=ContentValues().apply {
+                    put("warehouse_id",warehouseId);put("sku",row.sku)
+                    put("name",row.name);put("category",row.category)
+                    put("quantity",row.quantity);put("minimum",row.minimum)
+                    put("unit",row.unit);put("note",row.note)
+                    if(row.location.isNotBlank())put("placement_id",locations[row.location]!!.id)
+                    if(row.cost!=null)put("unit_cost",row.cost)
+                    put("supplier",row.supplier)
+                    if(row.leadDays!=null)put("lead_days",row.leadDays)
+                }
+                val id=db.insertOrThrow("items",null,values)
+                if(row.quantity>0)recordMovement(db,id,row.quantity,"Carico iniziale da CSV")
+                val prefix=row.sku.substringBefore('-')
+                val serial=row.sku.substringAfter('-').toLong()
+                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
+                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
+                    arrayOf(serial+1,prefix))
+            }
+            db.setTransactionSuccessful()
+            return rows.size
+        } finally {db.endTransaction()}
     }
 
     /** CSV safely escaped for Excel, including formula injection prevention. */

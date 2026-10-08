@@ -20,6 +20,9 @@ checks={
     'Map labels draw legible chips': 'drawText(label,centerX,' in map_screen and 'Color(0xF20B2332)' in map_screen,
     'Map panning bounded': '.clampedPan(' in map_screen,
     'History paginated with filtered SQLite queries': 'model.historyPage(warehouseId,focus,days,page)' in screens and 'Mostra altre operazioni' in screens and 'fun movementsPage(' in (p/'StockDb.kt').read_text(encoding='utf-8'),
+    'Item edit action and safe database path': 'EditItemDetailsDialog(' in screens and 'model.updateItemDetails(' in screens and 'fun updateItemDetails(' in (p/'StockDb.kt').read_text(encoding='utf-8'),
+    'Stable optional release signing': 'UBICORA_RELEASE_STORE_FILE' in gradle and 'signingConfigs.create("ubicoraStable")' in gradle,
+    'Android 16 target': 'targetSdk = 36' in gradle,
     'Package id preserved': 'applicationId = "com.ubicora.app"' in gradle
 }
 for k,v in checks.items(): print(('PASS' if v else 'FAIL')+' '+k)
