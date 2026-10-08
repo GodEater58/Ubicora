@@ -98,6 +98,15 @@ class DatabaseAuditTest {
         assertEquals(before,db.items(warehouse).size)
         assertEquals("RIC-001202",db.item(db.addItem(warehouse,"Third","Ricambi",0.0,0.0,"pz",""))!!.sku)
     }
+    @Test fun countedStockCorrectionCreatesTraceableMovement(){
+        val id=item(10.0)
+        db.reconcileQuantity(id,7.0,"Conta fisica")
+        assertEquals(7.0,db.item(id)!!.quantity,0.0)
+        assertEquals(-3.0,db.movements(warehouse).first().delta,0.0)
+        rejects{db.reconcileQuantity(id,7.0,"Ripetuto")}
+        rejects{db.reconcileQuantity(id,-2.0,"Conta fisica")}
+        assertEquals(7.0,db.item(id)!!.quantity,0.0)
+    }
     @Test fun fullMovementHistoryCanBePagedAndFilteredWithoutTruncation(){
         val id=item()
         val base=System.currentTimeMillis()+10_000L
