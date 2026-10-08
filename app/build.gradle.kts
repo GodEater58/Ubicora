@@ -7,12 +7,13 @@ android {
     namespace = "com.officinastock.app"
     compileSdk = 35
     defaultConfig {
-        // Nuova identità: installazione indipendente dalla 3.x, nessuna migrazione.
-        applicationId = "com.officinastock.app"
+        // ID distinto: installazione indipendente dalla vecchia app. Per trasferire i dati usare backup cifrato.
+        // namespace Kotlin storico invariato: NON determina l'identita del pacchetto Android.
+        applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 415
-        versionName = "4.1.5-ubicora-rebrand"
+        versionCode = 416
+        versionName = "4.1.6-ubicora-identity"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
