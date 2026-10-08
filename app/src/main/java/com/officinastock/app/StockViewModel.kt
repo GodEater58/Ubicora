@@ -24,6 +24,7 @@ data class StockUiState(
     val loans: List<Loan> = emptyList(),
     val manager: ManagerSnapshot = ManagerSnapshot(),
     val createdItemId: Long? = null,
+    val scannedItemId: Long? = null,
     val busy: Boolean = false,
     val message: String? = null
 )
@@ -34,6 +35,23 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
+    fun acknowledgeScannedItem() { ui = ui.copy(scannedItemId = null) }
+    /** Lookup locale. Nessuna movimentazione viene mai eseguita automaticamente da una scansione. */
+    fun handleScannedCode(raw: String) {
+        val warehouse=ui.warehouse ?: return
+        val target=ArticleCodes.parseScan(raw)
+        if(target == null) {
+            ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Officina Stock.")
+            return
+        }
+        if(target.warehouseId != null && target.warehouseId != warehouse.id) {
+            ui=ui.copy(scannedItemId=null,message="Questo QR appartiene al magazzino ${target.warehouseId}. Cambia magazzino e riprova.")
+            return
+        }
+        val item=ui.items.firstOrNull { it.sku.equals(target.sku,ignoreCase=true) }
+        ui=if(item!=null) ui.copy(scannedItemId=item.id,message=null)
+        else ui.copy(scannedItemId=null,message="Articolo ${target.sku} non trovato in ${warehouse.name}.")
+    }
     private fun execute(action: () -> Unit) {
         if(ui.busy) return
         ui=ui.copy(busy=true, message=null)

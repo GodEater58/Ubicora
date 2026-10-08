@@ -20,6 +20,9 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.SyncAlt
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +40,9 @@ class MainActivity: ComponentActivity() {
                         result.data?.getStringExtra("map_json")?.let{model.importAr(it)}
                     }
                 }
+                val qrLauncher=rememberLauncherForActivityResult(ScanContract()) { result ->
+                    result.contents?.let { model.handleScannedCode(it) }
+                }
                 val csvLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
                     if(uri!=null) lifecycleScope.launch {
                         val failure=withContext(Dispatchers.IO) {runCatching {
@@ -52,30 +58,50 @@ class MainActivity: ComponentActivity() {
                         putExtra("site",model.ui.warehouse?.name)
                         putExtra("profileId",model.ui.profile?.id?.toString())
                     })
-                },onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")})
+                },onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")},
+                onScan = {
+                    qrLauncher.launch(ScanOptions()
+                        .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                        .setPrompt("Inquadra il codice QR dell'articolo")
+                        .setBeepEnabled(false)
+                        .setOrientationLocked(false))
+                })
             }
         }
     }
 }
 
-@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit) {
+@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onScan:()->Unit) {
     val data=model.ui
     Surface(color=Ink,modifier=Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         when {
             data.profiles.isEmpty() -> NewProfileScreen(model,first=true)
             data.profile==null -> ProfileChooserScreen(model)
             data.warehouse==null -> WarehouseChooserScreen(model)
-            else -> StockShell(model,onAr,onCsv)
+            else -> StockShell(model,onAr,onCsv,onScan)
         }
     }
 }
 
 enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni") }
 
-@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit) {
+@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onScan:()->Unit) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     val data=model.ui
-    Scaffold(containerColor=Ink, bottomBar={
+    LaunchedEffect(data.scannedItemId) {
+        if(data.scannedItemId!=null) tab=Tab.STOCK
+    }
+    Scaffold(containerColor=Ink, floatingActionButton={
+        if(tab==Tab.HOME || tab==Tab.STOCK) {
+            ExtendedFloatingActionButton(
+                onClick=onScan,
+                icon={ Icon(Icons.Outlined.QrCodeScanner,contentDescription=null) },
+                text={ Text("Scansiona QR") },
+                containerColor=Mint,
+                contentColor=Ink
+            )
+        }
+    }, bottomBar={
         NavigationBar(containerColor=PanelBg) {
             Tab.entries.forEach { item ->
                 val icon=when(item){
@@ -102,7 +128,7 @@ enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("M
             }
             when(tab) {
                 Tab.HOME -> DashboardScreen(model, goStock={tab=Tab.STOCK},goMap={tab=Tab.MAP},goMoves={tab=Tab.MOVES})
-                Tab.STOCK -> InventoryScreen(model)
+                Tab.STOCK -> InventoryScreen(model,onScan)
                 Tab.MAP -> NativeMapScreen(model,onAr)
                 Tab.MOVES -> MovementsScreen(model)
                 Tab.SETTINGS -> SettingsScreen(model,onCsv)

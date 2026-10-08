@@ -14,6 +14,15 @@ class StockRulesTest {
     @Test fun payloadIdentifiesWarehouse() {
         assertEquals("OFFICINA-STOCK:1:W27:RIC-000001",ArticleCodes.payload(27,"RIC-000001"))
     }
+    @Test fun scannerParsesGeneratedQrAndLegacyCode() {
+        assertEquals(ArticleCodes.ScanTarget(27L,"RIC-000001"),
+            ArticleCodes.parseScan(ArticleCodes.payload(27,"RIC-000001")))
+        assertEquals(ArticleCodes.ScanTarget(null,"UTE-000002"),ArticleCodes.parseScan(" ute-000002 "))
+        assertNull(ArticleCodes.parseScan("OFFICINA-STOCK:1:W27:"))
+        assertNull(ArticleCodes.parseScan("OFFICINA-STOCK:2:W27:RIC-000001"))
+        assertNull(ArticleCodes.parseScan("https://example.org"))
+        assertNull(ArticleCodes.parseScan("OFFICINA-STOCK:1:W0:RIC-000001"))
+    }
     @Test fun skuNormalized() = assertEquals("M8-1",StockRules.sku(" m8-1 "))
     @Test fun negativeStockBlocked() {
         assertThrows(IllegalArgumentException::class.java) { StockRules.applyDelta(2.0,-3.0) }

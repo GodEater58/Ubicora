@@ -48,4 +48,19 @@ object ArticleCodes {
     }
     fun payload(warehouseId: Long, sku: String): String =
         "OFFICINA-STOCK:1:W$warehouseId:$sku"
+
+    data class ScanTarget(val warehouseId: Long?, val sku: String)
+    /** Accetta i QR generati dall'app e, per compatibilità, i vecchi QR con solo codice. */
+    fun parseScan(raw: String): ScanTarget? {
+        val input=raw.trim().uppercase(java.util.Locale.ROOT)
+        if(input.length !in 1..128) return null
+        val prefixed=Regex("^OFFICINA-STOCK:1:W([0-9]+):([A-Z0-9][A-Z0-9._/-]{0,63})$").matchEntire(input)
+        if(prefixed != null) {
+            val warehouseId=prefixed.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+            return ScanTarget(warehouseId,prefixed.groupValues[2])
+        }
+        if(input.startsWith("OFFICINA-STOCK:")) return null
+        if(!Regex("^[A-Z0-9][A-Z0-9._/-]{0,63}$").matches(input)) return null
+        return ScanTarget(null,input)
+    }
 }

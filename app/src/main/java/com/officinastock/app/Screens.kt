@@ -221,13 +221,23 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
-@Composable fun InventoryScreen(model:StockViewModel) {
+@Composable fun InventoryScreen(model:StockViewModel,onScan:()->Unit) {
     val u=model.ui
     var query by remember(u.warehouse?.id){mutableStateOf("")}
     var lowOnly by remember{mutableStateOf(false)}
     var add by remember{mutableStateOf(false)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
+    LaunchedEffect(u.scannedItemId,u.items) {
+        u.scannedItemId?.let { id ->
+            u.items.firstOrNull { it.id==id }?.let { match ->
+                lowOnly=false
+                query=""
+                selected=match
+                model.acknowledgeScannedItem()
+            }
+        }
+    }
     LaunchedEffect(u.createdItemId,u.items) {
         u.createdItemId?.let { id ->
             u.items.firstOrNull { it.id == id }?.let { saved ->
@@ -242,6 +252,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
+            FilledTonalIconButton(onClick=onScan) {
+                Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR articolo")
+            }
+            Spacer(Modifier.width(6.dp))
             FilledIconButton(onClick={add=true}) {Icon(Icons.Outlined.Add,null)}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {

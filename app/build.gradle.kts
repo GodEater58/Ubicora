@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 410
-        versionName = "4.1.0-native-plan-editor"
+        versionCode = 411
+        versionName = "4.1.1-native-qr-scanner"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -37,6 +37,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
