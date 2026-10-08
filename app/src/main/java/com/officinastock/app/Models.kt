@@ -1,7 +1,7 @@
 package com.officinastock.app
 
 data class Profile(val id: Long, val name: String)
-data class Warehouse(val id: Long, val profileId: Long, val name: String, val location: String)
+data class Warehouse(val id: Long, val profileId: Long, val name: String, val location: String, val mapWidth: Float = 12f, val mapHeight: Float = 8f)
 data class StockItem(
     val id: Long, val warehouseId: Long, val sku: String, val name: String, val category: String,
     val quantity: Double, val minimum: Double, val unit: String, val placementId: Long?, val note: String,
@@ -9,7 +9,7 @@ data class StockItem(
     val unitCost: Double? = null, val supplier: String = "", val leadDays: Int? = null
 ) { val lowStock get() = quantity <= minimum }
 data class Placement(val id: Long, val warehouseId: Long, val kind: String, val label: String,
-    val x: Float, val y: Float, val locked: Boolean)
+    val x: Float, val y: Float, val locked: Boolean, val width: Float = 1.6f, val depth: Float = 0.75f, val rotation: Float = 0f)
 data class Wall(val id: Long, val warehouseId: Long, val x1: Float, val y1: Float, val x2: Float, val y2: Float, val source: String)
 data class Movement(val id: Long, val itemId: Long, val sku: String, val itemName: String,
     val delta: Double, val note: String, val createdAt: Long)

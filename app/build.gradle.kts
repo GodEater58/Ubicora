@@ -11,8 +11,8 @@ android {
         applicationId = "com.officinastock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 403
-        versionName = "4.0.3-native-manager"
+        versionCode = 410
+        versionName = "4.1.0-native-plan-editor"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 4) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
         db.execSQL("""CREATE TABLE profiles (
@@ -22,11 +22,13 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             created_at INTEGER NOT NULL)""")
         db.execSQL("""CREATE TABLE warehouses (
             id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-            name TEXT NOT NULL, location TEXT NOT NULL DEFAULT '')""")
+            name TEXT NOT NULL, location TEXT NOT NULL DEFAULT '',
+            map_width REAL NOT NULL DEFAULT 12, map_height REAL NOT NULL DEFAULT 8)""")
         db.execSQL("""CREATE TABLE placements (
             id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
             kind TEXT NOT NULL, label TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL,
-            locked INTEGER NOT NULL DEFAULT 0)""")
+            locked INTEGER NOT NULL DEFAULT 0,
+            width_m REAL NOT NULL DEFAULT 1.6, depth_m REAL NOT NULL DEFAULT 0.75, rotation_deg REAL NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE items (
             id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
             sku TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL,
@@ -81,6 +83,16 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             db.execSQL("ALTER TABLE items ADD COLUMN lead_days INTEGER DEFAULT NULL CHECK(lead_days >= 0 AND lead_days <= 3650)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_movements_date ON movements(created_at)")
         }
+        if (oldVersion < 5 && newVersion >= 5) {
+            db.execSQL("ALTER TABLE warehouses ADD COLUMN map_width REAL NOT NULL DEFAULT 12")
+            db.execSQL("ALTER TABLE warehouses ADD COLUMN map_height REAL NOT NULL DEFAULT 8")
+            db.execSQL("ALTER TABLE placements ADD COLUMN width_m REAL NOT NULL DEFAULT 1.6")
+            db.execSQL("ALTER TABLE placements ADD COLUMN depth_m REAL NOT NULL DEFAULT 0.75")
+            db.execSQL("ALTER TABLE placements ADD COLUMN rotation_deg REAL NOT NULL DEFAULT 0")
+            // Geometry v4 was relative percent, so convert once to physical metres.
+            db.execSQL("UPDATE placements SET x = x * 0.12, y = y * 0.08")
+            db.execSQL("UPDATE walls SET x1=x1*0.12,x2=x2*0.12,y1=y1*0.08,y2=y2*0.08")
+        }
     }
     private fun createSkuSequences(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS sku_sequences (
@@ -134,8 +146,16 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         })
     }
     fun warehouses(profileId: Long): List<Warehouse> = readableDatabase.rawQuery(
-        "SELECT id,profile_id,name,location FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
-    ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3))) } }
+        "SELECT id,profile_id,name,location,map_width,map_height FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
+    ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }
+    fun updateMapSize(warehouseId: Long, width: Float, height: Float) {
+        require(width.isFinite() && width in 2f..150f && height.isFinite() && height in 2f..150f) { "Dimensioni ammesse: 2–150 metri" }
+        writableDatabase.update("warehouses",ContentValues().apply {put("map_width",width);put("map_height",height)},"id=?",arrayOf(warehouseId.toString()))
+    }
+    private fun mapBounds(warehouseId: Long): Pair<Float,Float> = readableDatabase.rawQuery(
+        "SELECT map_width,map_height FROM warehouses WHERE id=?",arrayOf(warehouseId.toString())
+    ).use { c -> require(c.moveToFirst()) { "Magazzino non trovato" }; c.getFloat(0) to c.getFloat(1) }
+
     fun items(warehouseId: Long, filter: String = ""): List<StockItem> {
         val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days
             FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ?)
@@ -268,19 +288,32 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         } finally { endTransaction() } }
     }
     fun placements(warehouseId: Long): List<Placement> = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,kind,label,x,y,locked FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
-    ).use { c -> buildList { while(c.moveToNext()) add(Placement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5),c.getInt(6)!=0)) } }
+        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
+    ).use { c -> buildList { while(c.moveToNext()) add(Placement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5),c.getInt(6)!=0,c.getFloat(7),c.getFloat(8),c.getFloat(9))) } }
     fun addPlacement(warehouseId: Long, kind: String, label: String, x: Float, y: Float): Long {
         require(label.trim().isNotEmpty()) { "Inserisci un nome" }
+        val (mapWidth,mapHeight)=mapBounds(warehouseId)
+        val (furnitureWidth,furnitureDepth)=PlanGeometry.defaultSize(kind)
         return writableDatabase.insertOrThrow("placements",null,ContentValues().apply {
             put("warehouse_id",warehouseId);put("kind",kind);put("label",label.trim())
-            put("x",StockRules.mapPosition(x));put("y",StockRules.mapPosition(y));put("locked",0)
+            put("x",x.coerceIn(0f,mapWidth));put("y",y.coerceIn(0f,mapHeight));put("locked",0)
+            put("width_m",furnitureWidth);put("depth_m",furnitureDepth);put("rotation_deg",0)
         })
     }
     fun movePlacement(id: Long, x: Float, y: Float): Boolean {
+        val warehouseId=readableDatabase.rawQuery("SELECT warehouse_id FROM placements WHERE id=?",arrayOf(id.toString())).use {
+            if(!it.moveToFirst()) return false;it.getLong(0)
+        }
+        val (mapWidth,mapHeight)=mapBounds(warehouseId)
         return writableDatabase.update("placements",ContentValues().apply {
-            put("x",StockRules.mapPosition(x));put("y",StockRules.mapPosition(y))
+            put("x",x.coerceIn(0f,mapWidth));put("y",y.coerceIn(0f,mapHeight))
         },"id=? AND locked=0",arrayOf(id.toString())) == 1
+    }
+    fun updatePlacementGeometry(id: Long, width: Float, depth: Float, rotation: Float) {
+        require(width.isFinite() && depth.isFinite() && rotation.isFinite() && width in 0.2f..15f && depth in 0.2f..15f) { "Dimensioni della struttura non valide" }
+        writableDatabase.update("placements",ContentValues().apply {
+            put("width_m",width);put("depth_m",depth);put("rotation_deg",((rotation%360f)+360f)%360f)
+        },"id=?",arrayOf(id.toString()))
     }
     fun lockPlacement(id: Long, locked: Boolean) { writableDatabase.update("placements",ContentValues().apply {
         put("locked",if(locked) 1 else 0)
@@ -301,9 +334,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     ).use { c -> buildList { while(c.moveToNext()) add(Wall(c.getLong(0),c.getLong(1),c.getFloat(2),c.getFloat(3),c.getFloat(4),c.getFloat(5),c.getString(6))) } }
     fun addWall(warehouseId: Long, raw: FloatArray): Long {
         val p=StockRules.normalizeWall(raw)
+        val (mapWidth,mapHeight)=mapBounds(warehouseId)
         return writableDatabase.insertOrThrow("walls",null,ContentValues().apply {
-            put("warehouse_id",warehouseId);put("x1",StockRules.mapPosition(p[0]));put("y1",StockRules.mapPosition(p[1]))
-            put("x2",StockRules.mapPosition(p[2]));put("y2",StockRules.mapPosition(p[3]));put("source","manual")
+            put("warehouse_id",warehouseId);put("x1",p[0].coerceIn(0f,mapWidth));put("y1",p[1].coerceIn(0f,mapHeight))
+            put("x2",p[2].coerceIn(0f,mapWidth));put("y2",p[3].coerceIn(0f,mapHeight));put("source","manual")
         })
     }
     fun deleteWall(id: Long) { writableDatabase.delete("walls","id=?",arrayOf(id.toString())) }
@@ -322,8 +356,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         val xs=segments.flatMap{listOf(it[0],it[2])};val ys=segments.flatMap{listOf(it[1],it[3])}
         val minX=xs.minOrNull()!!;val maxX=xs.maxOrNull()!!;val minY=ys.minOrNull()!!;val maxY=ys.maxOrNull()!!
-        val scale=86f/maxOf(1f,maxX-minX,maxY-minY)
-        val dx=(100f-(maxX-minX)*scale)/2;val dy=(100f-(maxY-minY)*scale)/2
+        val (mapWidth,mapHeight)=mapBounds(warehouseId)
+        val scale=minOf((mapWidth*.86f)/maxOf(1f,maxX-minX),(mapHeight*.86f)/maxOf(1f,maxY-minY))
+        val dx=(mapWidth-(maxX-minX)*scale)/2;val dy=(mapHeight-(maxY-minY)*scale)/2
         val db=writableDatabase
         db.beginTransaction()
         try {
@@ -345,9 +380,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         val db=writableDatabase
         db.beginTransaction()
         try {
-            val shelves=listOf(Triple("Scaffale","A · Ricambi",28f to 31f),
-                Triple("Armadio","B · Utensili",72f to 30f),
-                Triple("Cassetto","C · Elettrico",51f to 73f))
+            val shelves=listOf(Triple("Scaffale","A · Ricambi",3.36f to 2.48f),
+                Triple("Armadio","B · Utensili",8.64f to 2.4f),
+                Triple("Cassetto","C · Elettrico",6.12f to 5.84f))
             val ids=shelves.map { (kind,label,pos) ->
                 db.insertOrThrow("placements",null,ContentValues().apply {
                     put("warehouse_id",warehouseId);put("kind",kind);put("label",label)
@@ -372,8 +407,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 })
                 recordMovement(db,id,row[3].toDouble(),"Carico iniziale · demo")
             }
-            listOf(floatArrayOf(9f,9f,91f,9f),floatArrayOf(91f,9f,91f,91f),
-                floatArrayOf(91f,91f,9f,91f),floatArrayOf(9f,91f,9f,9f)).forEach { p ->
+            listOf(floatArrayOf(1.08f,.72f,10.92f,.72f),floatArrayOf(10.92f,.72f,10.92f,7.28f),
+                floatArrayOf(10.92f,7.28f,1.08f,7.28f),floatArrayOf(1.08f,7.28f,1.08f,.72f)).forEach { p ->
                 db.insertOrThrow("walls",null,ContentValues().apply {
                     put("warehouse_id",warehouseId);put("x1",p[0]);put("y1",p[1]);
                     put("x2",p[2]);put("y2",p[3]);put("source","manual")

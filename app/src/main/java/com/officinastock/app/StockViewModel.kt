@@ -126,12 +126,17 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
-    fun addPlacement(kind:String,label:String,x:Float=50f,y:Float=50f) = execute {
-        db.addPlacement(requireWarehouse(),kind,label,x,y)
+    fun addPlacement(kind:String,label:String) = execute {
+        val wh=requireNotNull(ui.warehouse){"Seleziona un magazzino"}
+        db.addPlacement(wh.id,kind,label,wh.mapWidth/2f,wh.mapHeight/2f)
+    }
+    fun resizeMap(width:Float,height:Float)=execute { db.updateMapSize(requireWarehouse(),width,height) }
+    fun resizePlacement(id:Long,width:Float,depth:Float,rotation:Float)=execute {
+        db.updatePlacementGeometry(id,width,depth,rotation)
     }
     // Durante il drag aggiorniamo l'UI immediatamente; il commit avviene solo al rilascio.
     fun previewMove(id:Long,x:Float,y:Float) {
-        ui=ui.copy(placements=ui.placements.map{if(it.id==id && !it.locked)it.copy(x=StockRules.mapPosition(x),y=StockRules.mapPosition(y)) else it})
+        ui=ui.copy(placements=ui.placements.map{if(it.id==id && !it.locked)it.copy(x=x.coerceIn(0f,ui.warehouse?.mapWidth ?: 12f),y=y.coerceIn(0f,ui.warehouse?.mapHeight ?: 8f)) else it})
     }
     fun commitMove(id:Long,x:Float,y:Float) = execute { db.movePlacement(id,x,y) }
     fun lockPlacement(id:Long,locked:Boolean)=execute{db.lockPlacement(id,locked)}
