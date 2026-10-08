@@ -645,6 +645,54 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         return photos
     }
 
+    /** Verifica duplicati e ubicazioni senza modificare un singolo record. */
+    fun validateCsvImport(warehouseId: Long, rows: List<CsvImportRow>) {
+        require(rows.isNotEmpty() && rows.size<=CsvImport.MAX_ITEMS) { "Numero articoli CSV non valido" }
+        val existing=items(warehouseId).mapTo(HashSet()) { it.sku }
+        val locations=placements(warehouseId).groupBy { it.label }
+        val seen=HashSet<String>()
+        for(row in rows) {
+            require(seen.add(row.sku)) { "Codice duplicato nel CSV" }
+            require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
+            if(row.location.isNotBlank()) {
+                require(locations[row.location]?.size==1) {
+                    "Ubicazione non trovata o ambigua: ${row.location}"
+                }
+            }
+        }
+    }
+
+    /** Import only NEW items, atomically. Never overwrite existing items or photos. */
+    fun importCsv(warehouseId: Long, rows: List<CsvImportRow>): Int {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            validateCsvImport(warehouseId,rows)
+            val locations=placements(warehouseId).associateBy { it.label }
+            for(row in rows) {
+                val values=ContentValues().apply {
+                    put("warehouse_id",warehouseId);put("sku",row.sku)
+                    put("name",row.name);put("category",row.category)
+                    put("quantity",row.quantity);put("minimum",row.minimum)
+                    put("unit",row.unit);put("note",row.note)
+                    if(row.location.isNotBlank())put("placement_id",locations[row.location]!!.id)
+                    if(row.cost!=null)put("unit_cost",row.cost)
+                    put("supplier",row.supplier)
+                    if(row.leadDays!=null)put("lead_days",row.leadDays)
+                }
+                val id=db.insertOrThrow("items",null,values)
+                if(row.quantity>0)recordMovement(db,id,row.quantity,"Carico iniziale da CSV")
+                val prefix=ArticleCodes.prefix(row.category)
+                val serial=row.sku.substringAfter('-').toLong()
+                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
+                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
+                    arrayOf(serial+1,prefix))
+            }
+            db.setTransactionSuccessful()
+            return rows.size
+        } finally {db.endTransaction()}
+    }
+
     /** CSV safely escaped for Excel, including formula injection prevention. */
     fun csv(warehouseId: Long): String {
         fun field(s: String): String {
