@@ -21,6 +21,11 @@ data class PlanViewport(
     fun toWorld(p:PointMetres):PointMetres = PointMetres((p.x-originX)/scale,(p.y-originY)/scale)
     fun inside(p:PointMetres) = p.x in 0f..roomWidth && p.y in 0f..roomHeight
     fun bounded(p:PointMetres) = PointMetres(p.x.coerceIn(0f,roomWidth),p.y.coerceIn(0f,roomHeight))
+    /** Keep part of the plan visible while allowing navigation at high zoom. */
+    fun panLimitX(): Float = ((roomWidth*scale-widthPx)/2f).coerceAtLeast(0f) + widthPx*.16f
+    fun panLimitY(): Float = ((roomHeight*scale-heightPx)/2f).coerceAtLeast(0f) + heightPx*.16f
+    fun clampedPan(x:Float,y:Float) = PointMetres(x.coerceIn(-panLimitX(),panLimitX()),y.coerceIn(-panLimitY(),panLimitY()))
+
 }
 object PlanGeometry {
     fun snap(value:Float,spacing:Float=.25f):Float = round(value/spacing)*spacing
