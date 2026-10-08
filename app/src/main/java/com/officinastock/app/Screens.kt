@@ -412,6 +412,55 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
 
+/** Gestione anagrafica: la quantità si modifica solo tramite Carico/Prelievo tracciato. */
+@Composable
+private fun EditItemDetailsDialog(
+    item: StockItem,
+    onClose: () -> Unit,
+    onSave: (String,String,Double,String,String,Double?,String,Int?) -> Unit
+) {
+    var name by remember(item.id) { mutableStateOf(item.name) }
+    var category by remember(item.id) { mutableStateOf(item.category) }
+    var minimum by remember(item.id) { mutableStateOf(item.minimum.toString()) }
+    var unit by remember(item.id) { mutableStateOf(item.unit) }
+    var note by remember(item.id) { mutableStateOf(item.note) }
+    var cost by remember(item.id) { mutableStateOf(item.unitCost?.toString().orEmpty()) }
+    var supplier by remember(item.id) { mutableStateOf(item.supplier) }
+    var lead by remember(item.id) { mutableStateOf(item.leadDays?.toString().orEmpty()) }
+    val parsedMinimum=minimum.replace(',','.').toDoubleOrNull()
+    val parsedCost=cost.takeIf { it.isNotBlank() }?.replace(',','.')?.toDoubleOrNull()
+    val parsedDays=lead.takeIf { it.isNotBlank() }?.toIntOrNull()
+    val valid=name.trim().length in 1..180 && unit.trim().length in 1..24 &&
+        note.length<=3000 && supplier.length<=160 &&
+        parsedMinimum?.let(StockRules::validQuantity)==true &&
+        (cost.isBlank() || parsedCost?.let { it.isFinite() && it>=0.0 && it<=100000000.0 }==true) &&
+        (lead.isBlank() || parsedDays?.let { it in 0..3650 }==true)
+    AlertDialog(onDismissRequest=onClose,title={Text("Modifica articolo")},text={
+        Column(Modifier.heightIn(max=490.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("Codice ${item.sku}: non cambia. Giacenza e movimenti restano invariati.",
+                color=TextSecondary,fontSize=12.sp)
+            Input(name,{name=it},"Nome articolo")
+            Text("Categoria",color=TextSecondary,fontSize=12.sp)
+            ArticleCodes.categoryPrefixes.keys.chunked(3).forEach { group ->
+                Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                    group.forEach { cat -> FilterChip(selected=category==cat,onClick={category=cat},
+                        label={Text(cat,fontSize=10.sp)}) }
+                }
+            }
+            Input(minimum,{minimum=it},"Scorta minima",number=true)
+            Input(unit,{unit=it},"Unità di misura")
+            Input(note,{note=it},"Descrizione")
+            Input(cost,{cost=it},"Costo unitario EUR",number=true)
+            Input(supplier,{supplier=it},"Fornitore")
+            Input(lead,{lead=it},"Giorni di consegna",number=true)
+        }
+    },confirmButton={TextButton(
+        onClick={onSave(name,category,parsedMinimum!!,unit,note,parsedCost,supplier,parsedDays)},
+        enabled=valid){Text("Salva modifiche")}},
+        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+}
+
 @Composable fun ItemDialog(item:StockItem,placements:List<Placement>,model:StockViewModel,onDismiss:()->Unit) {
     var action by remember(item.id) {mutableStateOf("carico")}
     var quantity by remember(item.id){mutableStateOf("1")}
@@ -420,6 +469,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var pickingLocation by remember { mutableStateOf(false) }
     var showQrLabel by remember(item.id) { mutableStateOf(false) }
     var editPurchase by remember(item.id) { mutableStateOf(false) }
+    var editDetails by remember(item.id) { mutableStateOf(false) }
     AlertDialog(onDismissRequest=onDismiss,title={Text(item.name)},text={
         Column(Modifier.heightIn(max=510.dp).verticalScroll(rememberScrollState()),
             verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -427,6 +477,11 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},
                 onRemoveSaved={model.removeItemPhoto(item.id)},busy=model.ui.busy)
             Text("Codice ${item.sku} · ${item.category}",color=TextSecondary)
+            OutlinedButton(onClick={editDetails=true},modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Edit,contentDescription=null,modifier=Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Modifica scheda articolo")
+            }
             OutlinedButton(onClick={showQrLabel=true},modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.QrCode2,contentDescription=null)
                 Spacer(Modifier.width(8.dp))
@@ -459,6 +514,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     },enabled=quantity.replace(',','.').toDoubleOrNull()?.let{it>0&&it.isFinite()}==true&&(action!="prestito"||borrower.isNotBlank())){Text("Conferma")}},
         dismissButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
     if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
+    if(editDetails) EditItemDetailsDialog(item,onClose={editDetails=false}) { name,category,min,unit,note,cost,supplier,days ->
+        model.updateItemDetails(item.id,name,category,min,unit,note,cost,supplier,days)
+        editDetails=false
+    }
     if(editPurchase) PurchasePlanningDialog(item,onClose={editPurchase=false}) { cost,supplier,lead ->
         model.updatePurchase(item.id,cost,supplier,lead)
         editPurchase=false
