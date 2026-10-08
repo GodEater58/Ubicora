@@ -682,7 +682,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 }
                 val id=db.insertOrThrow("items",null,values)
                 if(row.quantity>0)recordMovement(db,id,row.quantity,"Carico iniziale da CSV")
-                val prefix=ArticleCodes.prefix(row.category)
+                val prefix=row.sku.substringBefore('-')
                 val serial=row.sku.substringAfter('-').toLong()
                 db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
                 db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
