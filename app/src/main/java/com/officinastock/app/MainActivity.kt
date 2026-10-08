@@ -122,10 +122,17 @@ class MainActivity: ComponentActivity() {
 }
 
 enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni") }
+enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED }
+enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
 @Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     var tab by remember { mutableStateOf(Tab.HOME) }
+    var stockFocus by remember { mutableStateOf(StockFocus.ALL) }
+    var activityFocus by remember { mutableStateOf(ActivityFocus.ALL) }
+    var activityDays by remember { mutableIntStateOf(0) }
     val data=model.ui
+    fun openStock(focus:StockFocus) { stockFocus=focus; tab=Tab.STOCK }
+    fun openActivity(focus:ActivityFocus,days:Int=0) { activityFocus=focus; activityDays=days; tab=Tab.MOVES }
     LaunchedEffect(data.scannedItemId) {
         if(data.scannedItemId!=null) tab=Tab.STOCK
     }
@@ -165,10 +172,16 @@ enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("M
                 }
             }
             when(tab) {
-                Tab.HOME -> DashboardScreen(model, goStock={tab=Tab.STOCK},goMap={tab=Tab.MAP},goMoves={tab=Tab.MOVES})
-                Tab.STOCK -> InventoryScreen(model,onScan)
+                Tab.HOME -> DashboardScreen(model,
+                    goStock={openStock(StockFocus.ALL)},
+                    goMap={tab=Tab.MAP},
+                    goMoves={openActivity(ActivityFocus.ALL)},
+                    onStockFocus={openStock(it)},
+                    onActivityFocus={focus,days->openActivity(focus,days)},
+                    onItemFocus={itemId->model.openItemDetails(itemId);tab=Tab.STOCK})
+                Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
                 Tab.MAP -> NativeMapScreen(model,onAr)
-                Tab.MOVES -> MovementsScreen(model)
+                Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
                 Tab.SETTINGS -> SettingsScreen(model,onCsv,onBackup,onRestore)
             }
         }
