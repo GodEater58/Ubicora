@@ -171,6 +171,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         db.updatePurchase(itemId,cost,supplier,leadDays)
     }
     fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
+    fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute { db.reconcileQuantity(itemId,counted,reason) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
     fun addPlacement(kind:String,label:String) = execute {
