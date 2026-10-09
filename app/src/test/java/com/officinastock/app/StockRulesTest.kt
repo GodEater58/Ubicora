@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StockRulesTest {
+    @Test fun decimalConsumptionEndsAtZeroWithoutHidingRealShortages() {
+        assertEquals(0.2,StockRules.applyDelta(0.3,-0.1),0.0)
+        assertEquals(0.0,StockRules.applyDelta(StockRules.applyDelta(0.3,-0.1),-0.2),0.0)
+        // Legacy rows may already contain a binary floating-point residual.
+        assertEquals(0.0,StockRules.applyDelta(0.3-0.1,-0.2),0.0)
+        assertThrows(IllegalArgumentException::class.java){StockRules.applyDelta(0.1,-0.10001)}
+    }
     @Test fun categorySkuCodes() {
         assertEquals("RIC-000001",ArticleCodes.format(ArticleCodes.prefix("Ricambi"),1))
         assertEquals("ELE-000012",ArticleCodes.format(ArticleCodes.prefix("Elettrico"),12))
@@ -41,3 +48,4 @@ class StockRulesTest {
         }
     }
 }
+

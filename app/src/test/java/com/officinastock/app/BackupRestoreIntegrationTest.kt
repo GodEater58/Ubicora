@@ -16,6 +16,22 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class BackupRestoreIntegrationTest {
+    @Test fun failedBackupLeavesExistingDestinationUntouched() {
+        val target=File(context.cacheDir,"previous-backup.osbackup")
+        val previous="existing encrypted backup".toByteArray()
+        target.writeBytes(previous)
+        try {
+            val backup=BackupArchive(context,db)
+            assertTrue(runCatching{backup.export(Uri.fromFile(target),"short")}.isFailure)
+            assertArrayEquals(previous,target.readBytes())
+            val profile=db.createProfile("Backup test","1234")
+            val warehouse=db.createWarehouse(profile,"Deposito","")
+            db.addItem(warehouse,"Foto mancante","Ricambi",1.0,0.0,"pz","",
+                photoFile="item_00000000-0000-0000-0000-000000000000.jpg")
+            assertTrue(runCatching{backup.export(Uri.fromFile(target),"valid-password-1234")}.isFailure)
+            assertArrayEquals(previous,target.readBytes())
+        } finally {target.delete()}
+    }
     private val context get() = RuntimeEnvironment.getApplication()
     private lateinit var db: StockDb
     private lateinit var backup: BackupArchive
@@ -98,3 +114,4 @@ class BackupRestoreIntegrationTest {
         db.validateRestoredData()
     }
 }
+

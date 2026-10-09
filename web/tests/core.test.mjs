@@ -42,3 +42,52 @@ test('10,000 CSV items import in one validated transaction',()=>{
 test('Map rejects structures outside the physical warehouse',()=>{
  const s=stock();assert.throws(()=>apply(s,{type:'placement',warehouseId:s.warehouses[0].id,name:'Scaffale',x:11,y:1,width:2,depth:1}));
 });
+
+
+test('Restore rejects numeric strings before inventory can concatenate them',()=>{
+ const s=demo();s.items[0].quantity='26';assert.throws(()=>validate(s),/numero/);
+ const r=demo();r.reservations[0].quantity='6';assert.throws(()=>validate(r),/numero/);
+});
+test('Restore checks order prices and placement geometry',()=>{
+ let s=demo();s=apply(s,{type:'order',id:s.items[0].id,quantity:2,price:4});
+ s.orders[0].price=-3;assert.throws(()=>validate(s));
+ const p=demo();p.placements[0].x=150;assert.throws(()=>validate(p),/pianta/);
+});
+test('Delivery days must stay integral and bounded through editing and restore',()=>{
+ const s=demo(),i=s.items[0];
+ for(const leadDays of [1.5,3651,-1])assert.throws(()=>apply(s,{type:'edit',id:i.id,name:i.name,minimum:i.minimum,leadDays}));
+ const bad=demo();bad.items[0].leadDays=1.5;assert.throws(()=>validate(bad));
+ const good=apply(s,{type:'edit',id:i.id,name:i.name,minimum:i.minimum,leadDays:3650});assert.equal(good.items[0].leadDays,3650);
+});
+test('Unknown movement kind is rejected without changing stock',()=>{
+ const s=demo();assert.throws(()=>apply(s,{type:'move',id:s.items[0].id,kind:'typo',quantity:1,note:'Prova'}));assert.equal(s.items[0].quantity,26);
+});
+
+import {exportAndroidCsv} from '../core.mjs';
+test('Android export rejects unsupported codes/categories while generic export remains available',()=>{
+ const s=demo();s.items[0].sku='BOLT-1';s.items[0].category='Bulloneria';const wid=s.warehouses[0].id;
+ assert.throws(()=>exportAndroidCsv(s,wid),/Android/);assert.match(exportCsv(s,wid),/BOLT-1/);
+ const compatible=demo();compatible.items=compatible.items.slice(0,1);compatible.items[0].sku='RIC-000001';compatible.items[0].category='Ricambi';
+ assert.match(exportAndroidCsv(compatible,compatible.warehouses[0].id),/RIC-000001/);
+ compatible.items[0].quantity=1e8+1;assert.throws(()=>exportAndroidCsv(compatible,compatible.warehouses[0].id));
+});
+
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+function appContext(){
+ const nodes=new Map();const get=s=>{if(!nodes.has(s))nodes.set(s,{textContent:'',innerHTML:'',value:'',classList:{toggle(){}},addEventListener(){}});return nodes.get(s);};
+ const context=vm.createContext({crypto:webcrypto,structuredClone,TextEncoder,URL,Blob,console,setTimeout:()=>0,clearTimeout(){},confirm:()=>true,document:{querySelector:get,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){},scrollTo(){}},location:{protocol:'file:'}});
+ const core=fs.readFileSync(new URL('../core.mjs',import.meta.url),'utf8').replaceAll('export ','');
+ const app=fs.readFileSync(new URL('../app.mjs',import.meta.url),'utf8').split('\n').slice(1).join('\n').split('await start();')[0];
+ vm.runInContext(core+'\n'+app+'\nrender=()=>renderHeader();',context);return context;
+}
+test('Demo remains visibly transient after edits and never writes the local archive',async()=>{
+ const c=appContext();const result=await vm.runInContext(`(async()=>{let writes=0;storagePut=async()=>{writes++};await showDemo();await commit({type:'budget',value:50});render();return {writes,badge:$('#modeBadge').textContent,notice:$('#connectionNotice').textContent,dirty:demoDirty,budget:state.budget};})()`,c);
+ assert.equal(result.writes,0);assert.equal(result.budget,50);assert.equal(result.dirty,true);assert.match(result.badge,/DEMO/);assert.match(result.notice,/solo in memoria/);
+ assert.equal(vm.runInContext('confirm=()=>false;leaveDemo()',c),false);
+});
+test('A failed server reload retains the unconfirmed conflict copy',async()=>{
+ const c=appContext();const result=await vm.runInContext(`(async()=>{shared=true;tenant={id:'tenant'};pending={conflict:true,data:empty()};download=()=>{};api=async()=>{throw Error('offline')};await refresh();return pending!==null;})()`,c);
+ assert.equal(result,true);
+});

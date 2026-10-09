@@ -746,7 +746,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
             if(row.location.isNotBlank()) {
                 require(locations[row.location]?.size==1) {
-                    "Ubicazione non trovata o ambigua: ${row.location}"
+                    "Ubicazione non trovata o ambigua: ${row.location}. Prima dell’importazione crea nella Planimetria una struttura con questo nome esatto, oppure rinomina le strutture duplicate."
                 }
             }
         }
@@ -882,3 +882,4 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         } }
     }
 }
+

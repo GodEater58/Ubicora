@@ -142,11 +142,13 @@ class StockTraceDb(private val stock:StockDb) {
             require(discard || expiresAt==null || expiresAt>=startOfToday){
                 "Lotto scaduto: registra uno scarto, non un consumo."
             }
-            require(amount<=row.second){"Quantità lotto insufficiente"}
+            require(amount<=row.second+StockRules.QUANTITY_EPSILON){"Quantità lotto insufficiente"}
+            val applied=amount.coerceAtMost(row.second)
+            require(applied>0){"Lotto esaurito"}
             require(db.update("stock_lots",ContentValues().apply{
-                put("quantity",row.second-amount)
+                put("quantity",StockRules.applyDelta(row.second,-applied))
             },"id=? AND warehouse_id=?",arrayOf(lotId.toString(),wid.toString()))==1){"Lotto non aggiornato"}
-            adjustStock(db,row.first,-amount,
+            adjustStock(db,row.first,-applied,
                 (if(discard)"Scarto lotto " else "Consumo lotto ")+row.third+" · "+actor.trim())
         }
     }
@@ -167,4 +169,5 @@ class StockTraceDb(private val stock:StockDb) {
         }
     }
 }
+
 

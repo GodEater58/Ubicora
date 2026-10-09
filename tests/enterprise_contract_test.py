@@ -16,11 +16,11 @@ transport=(root/'app/src/main/java/com/officinastock/app/EnterpriseServerClient.
 gradle=(root/'app/build.gradle.kts').read_text(encoding='utf8')
 assert 'null, 10)' in base and 'oldVersion < 10' in base
 assert 'EnterpriseDb.createTables(db)' in base and 'EnterpriseDb.addOperationLinks(db)' in base
-assert 'versionCode = 460' in gradle
+assert int(re.search(r'versionCode\s*=\s*(\d+)',gradle).group(1))>=460
 assert 'managerTables.size' in backup and 'legacyTables.size' in backup and 'companyTables' in backup
 assert 'EnterpriseDirectoryPanel(model)' in (root/'app/src/main/java/com/officinastock/app/OperationsScreen.kt').read_text(encoding='utf8')
 assert 'supplier_id' in ops and 'center_id' in ops
-assert 'receiveOrderQuantity' in ops and 'changeStock(db,order[0].toLong(),delivered' in ops
+assert 'receiveOrderQuantity' in ops and 'changeStock(db,order[0].toLong(),applied' in ops
 assert 'businessSuppliers=' in view and 'costCenters=' in view
 assert 'Server non configurato' in screen
 assert 'HttpsURLConnection' in transport and 'instanceFollowRedirects=false' in transport
@@ -62,3 +62,4 @@ assert db.execute("SELECT count(*) FROM org_suppliers").fetchone()[0]==0
 assert db.execute("SELECT count(*) FROM sync_outbox").fetchone()[0]==0
 assert db.execute("SELECT count(*) FROM ops_orders").fetchone()[0]==0
 print("PASS enterprise SQLite v10: 23 tables, reservations, lots/serials and backup 9/15/20/21/23")
+

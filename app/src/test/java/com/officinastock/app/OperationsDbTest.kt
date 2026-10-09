@@ -12,6 +12,18 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class OperationsDbTest {
+    @Test fun decimalPartialDeliveryAcceptsExactBalanceAndRejectsRealExcess() {
+        val id=ops.createOrder(source,item,0.3,"Fornitore","Manager")
+        ops.advanceOrder(source,id,"APPROVE","Manager")
+        ops.advanceOrder(source,id,"PLACE","Manager")
+        ops.receiveOrderQuantity(source,id,0.1,"Manager")
+        rejects{ops.receiveOrderQuantity(source,id,0.21,"Manager")}
+        ops.receiveOrderQuantity(source,id,0.2,"Manager")
+        assertEquals("RECEIVED",ops.orders(source).single().status)
+        assertEquals(0.3,ops.orders(source).single().received,0.0)
+        assertEquals(20.3,db.item(item)!!.quantity,0.0)
+        rejects{ops.receiveOrderQuantity(source,id,0.1,"Manager")}
+    }
     private val context get() = RuntimeEnvironment.getApplication()
     private lateinit var db:StockDb
     private lateinit var ops:OperationsDb
@@ -176,3 +188,4 @@ class OperationsDbTest {
         } finally {file.delete()}
     }
 }
+

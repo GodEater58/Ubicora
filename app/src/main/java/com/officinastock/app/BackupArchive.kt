@@ -40,8 +40,18 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         return bytes.size.toLong()+1
     }
     fun export(uri: Uri, password: String) {
+        require(password.length>=8) {"Password backup: almeno 8 caratteri"}
+        // Complete and validate the encrypted archive before touching an existing destination.
+        val staged=File.createTempFile("ubicora_export_", ".osbackup", context.cacheDir)
+        try {
+            staged.outputStream().use {writeEncrypted(it,password)}
+            val dest=context.contentResolver.openOutputStream(uri,"wt")
+                ?: throw IOException("Impossibile aprire il file scelto")
+            dest.use {output->staged.inputStream().buffered().use {it.copyTo(output)}}
+        } finally {staged.delete()}
+    }
+    private fun writeEncrypted(dest: OutputStream, password: String) {
         val files=mutableSetOf<String>()
-        val dest=context.contentResolver.openOutputStream(uri,"wt") ?: throw IOException("Impossibile aprire il file scelto")
         BackupCipher.encrypt(dest,password).use { sealed ->
                 ZipOutputStream(BufferedOutputStream(sealed)).use {zip ->
                     zip.putNextEntry(ZipEntry("manifest.json"))
@@ -252,3 +262,4 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         }
     }
 }
+
