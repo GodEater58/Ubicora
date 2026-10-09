@@ -158,7 +158,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 }
 
 @Composable fun DashboardScreen(
-    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,
+    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,goManager:()->Unit,
     onStockFocus:(StockFocus)->Unit,
     onActivityFocus:(ActivityFocus,Int)->Unit,
     onItemFocus:(Long)->Unit
@@ -214,7 +214,26 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 SmallMetric("IN UTILIZZO",u.loans.size.toString(),"Prestiti aperti",TextPrimary,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.LOANS,0)})
             }
         }
-        item { ManagerAnalyticsPanel(u.items,u.manager,
+        if(u.businessMode) item {
+            Panel(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AssignmentTurnedIn,contentDescription=null,tint=Mint)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Centro operativo",fontWeight=FontWeight.Bold,fontSize=17.sp)
+                        Text("Acquisti · conteggi · trasferimenti · manutenzioni",fontSize=12.sp,color=TextSecondary)
+                    }
+                }
+                val pending=u.orders.count{it.status in listOf("DRAFT","APPROVED","ORDERED")}+
+                    u.stockCounts.count{it.status=="PENDING"}+
+                    u.stockTransfers.count{it.status in listOf("REQUESTED","IN_TRANSIT")}+
+                    u.maintenanceWork.count{it.status=="OPEN"}
+                Text(if(pending==0)"Nessuna azione aperta" else "$pending attività da seguire",
+                    color=if(pending>0)Amber else Mint,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                PrimaryAction("Apri gestione aziendale",goManager,modifier=Modifier.fillMaxWidth())
+            }
+        }
+        if(u.businessMode) item { ManagerAnalyticsPanel(u.items,u.manager,
             onStockFocus=onStockFocus,onActivityFocus=onActivityFocus,onItemFocus=onItemFocus) }
         item { SectionTitle("Accesso rapido","Azioni frequenti, senza menu inutili") }
         item {
@@ -622,6 +641,8 @@ private fun EditItemDetailsDialog(
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
     var showLegal by remember{mutableStateOf(false)}
+    var editBudget by remember{mutableStateOf(false)}
+    var budgetText by remember{mutableStateOf("")}
     var backupDialog by remember{mutableStateOf(false)}
     var restoreDialog by remember{mutableStateOf(false)}
     var secret by remember{mutableStateOf("")}
@@ -634,6 +655,24 @@ private fun EditItemDetailsDialog(
             Text("PROFILO CORRENTE",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text(model.ui.profile?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
             OutlinedButton(onClick=model::signOut,modifier=Modifier.fillMaxWidth()){Text("Cambia profilo / Logout")}
+        }}
+        item {Panel(Modifier.fillMaxWidth()) {
+            Text("MODALITÀ D'USO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(if(model.ui.businessMode)"Aziendale" else "Personale",fontWeight=FontWeight.Bold,fontSize=17.sp)
+                    Text(if(model.ui.businessMode) "Acquisti, approvazioni, inventari e manutenzioni" else
+                        "Inventario e planimetria, senza moduli amministrativi",color=TextSecondary,fontSize=11.sp)
+                }
+                Switch(checked=model.ui.businessMode,onCheckedChange=model::changeManagerMode,
+                    enabled=!model.ui.busy)
+            }
+            if(model.ui.businessMode) {
+                OutlinedButton(onClick={budgetText=model.ui.monthlyBudget?.toString().orEmpty();editBudget=true},
+                    modifier=Modifier.fillMaxWidth()) {
+                    Text("Budget acquisti mensile: "+(model.ui.monthlyBudget?.let{amount(it)+" €"} ?: "non impostato"))
+                }
+            }
         }}
         item {Panel(Modifier.fillMaxWidth()) {
             Text("MAGAZZINI",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
@@ -686,6 +725,17 @@ private fun EditItemDetailsDialog(
             Text("Inventario offline, mappa metrica, scanner QR, statistiche manageriali e backup cifrato.",color=TextSecondary,fontSize=12.sp)
         }}
     }
+    if(editBudget) AlertDialog(onDismissRequest={editBudget=false},title={Text("Budget acquisti mensile")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Input(budgetText,{budgetText=it},"Importo disponibile (€)",number=true)
+            Text("Lascia vuoto per nessun budget. Il controllo segnala impegni noti, non blocca acquisti approvati.",
+                color=TextSecondary,fontSize=11.sp)
+        }
+    },confirmButton={TextButton(onClick={
+        model.changeMonthlyBudget(budgetText.trim().replace(',','.').takeIf{it.isNotEmpty()}?.toDoubleOrNull())
+        editBudget=false
+    },enabled=budgetText.isBlank()||(budgetText.trim().replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0}==true)){Text("Salva")}},
+    dismissButton={TextButton(onClick={editBudget=false}){Text("Annulla")}})
     if(showLegal) LegalInfoDialog(onDismiss={showLegal=false})
     model.ui.csvPreviewCount?.let { count ->
         AlertDialog(onDismissRequest=model::cancelCsvImport,

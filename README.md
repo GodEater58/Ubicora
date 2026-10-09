@@ -1,4 +1,4 @@
-# Ubicora — Android nativo 4.2.0 (preparazione beta)
+# Ubicora — Android nativo 4.3.0 (Manager Alpha)
 
 App locale per inventario di più magazzini e profili, con codici automatici per categoria, etichette QR, scanner QR, fotografie, movimenti, prestiti, planimetria metrica, statistiche manageriali e backup completo cifrato. L'app non richiede un account cloud per il funzionamento dell'inventario. La scansione AR utilizza Google Play Services per AR su dispositivi compatibili.
 
@@ -24,6 +24,12 @@ Nessuna licenza sul codice proprietario del prodotto viene concessa implicitamen
 ## Beta
 
 Vedi [criteri di rilascio e firma](docs/BETA_RELEASE_GATE.md). Fino ai test su telefono la versione rimane sperimentale.
+
+## Moduli manageriali 4.3.0 Alpha
+
+In **Impostazioni → Modalità d'uso** è possibile attivare `Aziendale` per il singolo profilo. La home apre un nuovo **Centro operativo**: gestione delle richieste d'acquisto, conferma degli arrivi, inventari ciclici con approvazione, trasferimenti spedizione/ricevimento tra magazzini dello stesso profilo, interventi di manutenzione e consumo ricambi, budget mensile, stato fornitori, log locale e esportazione CSV/PDF. Il database è migrato in modo additivo da schema 6 a schema 7; il backup cifrato conserva i nuovi dati e può leggere gli archivi legacy.
+
+Queste funzioni non offrono ruoli autenticati fra dipendenti diversi né una sincronizzazione multi-dispositivo. La versione 4.3 è in Alpha e necessita ancora di test su telefono e APK firmato stabilmente per aggiornamenti senza disinstallazione. Dettagli e limiti nella [guida manager](docs/MANAGER_4_3_GUIDA.md).
 
 ## Aggiornare Ubicora senza disinstallarla
 

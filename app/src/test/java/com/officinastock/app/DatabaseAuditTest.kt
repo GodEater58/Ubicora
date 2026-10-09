@@ -162,12 +162,12 @@ class DatabaseAuditTest {
         assertNull(db.item(id)!!.placementId)
         assertEquals(10.0,db.item(id)!!.quantity,0.0)
     }
-    @Test fun versionFiveUpgradePreservesStockAndAuth(){
+    @Test fun versionFiveToSevenUpgradePreservesStockAndAuth(){
         val id=item()
         db.writableDatabase.execSQL("DROP TABLE demo_assets")
         db.writableDatabase.version=5
         db.close();db=StockDb(RuntimeEnvironment.getApplication())
-        assertEquals(6,db.readableDatabase.version)
+        assertEquals(7,db.readableDatabase.version)
         assertEquals(10.0,db.item(id)!!.quantity,0.0)
         assertTrue(db.authenticate(profile,"1234"))
         assertEquals(0,db.demoAssetCount(warehouse))

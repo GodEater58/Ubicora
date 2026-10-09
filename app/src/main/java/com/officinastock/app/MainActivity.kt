@@ -76,6 +76,27 @@ class MainActivity: ComponentActivity() {
                         Toast.makeText(context,if(failure==null)"CSV esportato" else "Esportazione non riuscita: $failure",Toast.LENGTH_LONG).show()
                     }
                 }
+                val operationsCsvLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+                    if(uri!=null) lifecycleScope.launch {
+                        val failure=withContext(Dispatchers.IO) {runCatching {
+                            val csv=OperationsCsv.export(model.ui)
+                            val out=context.contentResolver.openOutputStream(uri)
+                                ?: error("Impossibile aprire il report")
+                            out.use {it.write(csv.toByteArray(Charsets.UTF_8))}
+                        }.exceptionOrNull()?.message}
+                        Toast.makeText(context,if(failure==null)"Report gestionale esportato" else "Report non riuscito: $failure",Toast.LENGTH_LONG).show()
+                    }
+                }
+                val operationsPdfLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+                    if(uri!=null) lifecycleScope.launch {
+                        val failure=withContext(Dispatchers.IO) {runCatching {
+                            val out=context.contentResolver.openOutputStream(uri)
+                                ?: error("Impossibile aprire il report PDF")
+                            out.use {OperationsPdf.write(model.ui,it)}
+                        }.exceptionOrNull()?.message}
+                        Toast.makeText(context,if(failure==null)"Report PDF esportato" else "Report PDF non riuscito: $failure",Toast.LENGTH_LONG).show()
+                    }
+                }
                 val csvImportLauncher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     if(uri!=null) model.prepareCsvImport(uri)
                 }
@@ -104,7 +125,7 @@ class MainActivity: ComponentActivity() {
                 StockApp(model,onAr = {
                     if(disclosurePrefs.getBoolean("arcore_notice_ack_v1",false)) launchAr()
                     else showArDisclosure=true
-                },onCsvImport={csvImportLauncher.launch(arrayOf("text/*","application/octet-stream"))},onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")},
+                },onCsvImport={csvImportLauncher.launch(arrayOf("text/*","application/octet-stream"))},onCsv = {csvLauncher.launch("officina_stock_${model.ui.warehouse?.id ?: 0}.csv")},onManagerCsv={operationsCsvLauncher.launch("Ubicora_manager_${model.ui.warehouse?.id ?: 0}.csv")},onManagerPdf={operationsPdfLauncher.launch("Ubicora_manager_${model.ui.warehouse?.id ?: 0}.pdf")},
                 onBackup={password ->
                     model.pendingBackupPassword=password
                     backupLauncher.launch("officina_stock_backup_${System.currentTimeMillis()}.osbackup")
@@ -132,7 +153,7 @@ class MainActivity: ComponentActivity() {
     }
 }
 
-@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
+@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     val data=model.ui
     Surface(color=Ink,modifier=Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         when {
@@ -143,7 +164,7 @@ class MainActivity: ComponentActivity() {
             data.profiles.isEmpty() -> NewProfileScreen(model,first=true)
             data.profile==null || data.sessionLocked -> ProfileChooserScreen(model)
             data.warehouse==null -> WarehouseChooserScreen(model)
-            else -> StockShell(model,onAr,onCsv,onCsvImport,onBackup,onRestore,onScan)
+            else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
     }
     if(data.busy && data.initialized) androidx.compose.ui.window.Dialog(
@@ -154,11 +175,11 @@ class MainActivity: ComponentActivity() {
     } } }
 }
 
-enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni") }
+enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione") }
 enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90 }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
-@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
+@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var stockFocus by rememberSaveable { mutableStateOf(StockFocus.ALL) }
     var activityFocus by rememberSaveable { mutableStateOf(ActivityFocus.ALL) }
@@ -181,13 +202,14 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
         }
     }, bottomBar={
         NavigationBar(containerColor=PanelBg) {
-            Tab.entries.forEach { item ->
+            Tab.entries.filter{it!=Tab.MANAGER}.forEach { item ->
                 val icon=when(item){
                     Tab.HOME -> Icons.Outlined.Dashboard
                     Tab.STOCK -> Icons.Outlined.Inventory2
                     Tab.MAP -> Icons.Outlined.Map
                     Tab.MOVES -> Icons.Outlined.SyncAlt
                     Tab.SETTINGS -> Icons.Outlined.Settings
+                    Tab.MANAGER -> Icons.Outlined.Dashboard
                 }
                 NavigationBarItem(selected=tab==item,onClick={tab=item},
                     icon={Icon(icon,contentDescription=item.label)},
@@ -209,6 +231,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     goStock={openStock(StockFocus.ALL)},
                     goMap={tab=Tab.MAP},
                     goMoves={openActivity(ActivityFocus.ALL)},
+                    goManager={tab=Tab.MANAGER},
                     onStockFocus={openStock(it)},
                     onActivityFocus={focus,days->openActivity(focus,days)},
                     onItemFocus={itemId->model.openItemDetails(itemId);tab=Tab.STOCK})
@@ -216,6 +239,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                 Tab.MAP -> NativeMapScreen(model,onAr)
                 Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
                 Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
+                Tab.MANAGER -> OperationsScreen(model,onBack={tab=Tab.HOME},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
             }
         }
     }
