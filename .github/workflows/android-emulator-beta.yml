@@ -10,7 +10,7 @@ jobs:
   android-emulator:
     name: Android ${{ matrix.api-level }} interaction and integrity tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
@@ -23,6 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
       - name: Enable KVM hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -40,7 +41,15 @@ jobs:
           heap-size: 256M
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: chmod +x ./gradlew && ./gradlew --no-daemon :app:connectedDebugAndroidTest --stacktrace
+          script: |
+            chmod +x ./gradlew
+            set +e
+            ./gradlew --no-daemon --max-workers=2 :app:connectedDebugAndroidTest --stacktrace
+            result=$?
+            mkdir -p app/build/reports/beta-device
+            adb logcat -d -t 8000 > app/build/reports/beta-device/logcat.txt 2>/dev/null || true
+            echo "Emulator instrumentation exit code: $result"
+            exit "$result"
       - name: Archive Android UI test reports and logcat
         if: always()
         run: |
