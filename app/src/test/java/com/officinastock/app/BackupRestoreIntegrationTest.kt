@@ -16,6 +16,30 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class BackupRestoreIntegrationTest {
+    @Test fun numericTextInAnEncryptedArchiveCannotReplaceValidStock() {
+        val pid=db.createProfile("Archivio","1234")
+        val wid=db.createWarehouse(pid,"Deposito","")
+        val item=db.addItem(wid,"Ricambio","Ricambi",5.0,0.0,"pz","")
+        db.writableDatabase.execSQL("UPDATE items SET quantity='bad' WHERE id=?",arrayOf(item))
+        backup.export(Uri.fromFile(file),"test-password-1234")
+        db.writableDatabase.execSQL("UPDATE items SET quantity=6 WHERE id=?",arrayOf(item))
+        assertTrue(runCatching{backup.restore(Uri.fromFile(file),"test-password-1234")}.isFailure)
+        assertEquals(6.0,db.item(item)!!.quantity,0.0)
+    }
+    @Test fun invalidReceiptArchiveRollsBackTheEntireRestore() {
+        val pid=db.createProfile("Archivio","1234")
+        val wid=db.createWarehouse(pid,"Deposito","")
+        val item=db.addItem(wid,"Ricambio","Ricambi",5.0,0.0,"pz","")
+        val order=OperationsDb(db).createOrder(wid,item,2.0,"Fornitore","Manager")
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=3 WHERE id=?",arrayOf(order))
+        backup.export(Uri.fromFile(file),"test-password-1234")
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=0 WHERE id=?",arrayOf(order))
+        db.movement(item,1.0,"Dati successivi")
+        assertTrue(runCatching{backup.restore(Uri.fromFile(file),"test-password-1234")}.isFailure)
+        assertEquals(6.0,db.item(item)!!.quantity,0.0)
+        assertEquals(0.0,OperationsDb(db).orders(wid).single().received,0.0)
+        assertEquals(2,db.movements(wid).size)
+    }
     @Test fun failedBackupLeavesExistingDestinationUntouched() {
         val target=File(context.cacheDir,"previous-backup.osbackup")
         val previous="existing encrypted backup".toByteArray()

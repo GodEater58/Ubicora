@@ -76,3 +76,24 @@ def test_shared_workspace_cas_receipts_roles_and_tenant_isolation():
                     cur.execute("SELECT tenant_id FROM web_workspaces WHERE tenant_id=%s",(OTHER,))
                     assert cur.fetchone() is None
     finally:override.clear()
+
+
+@pytest.mark.parametrize('case',['placement','completion','timestamp','budget','partsCost','sku'])
+def test_workspace_rejects_documents_the_browser_cannot_reopen(case):
+    d=document();wid=d['warehouses'][0]['id'];item=d['items'][0]['id']
+    if case=='placement':d['placements']=[dict(id=str(uuid.uuid4()),warehouseId=wid,name='Fuori pianta',x=11,y=0,width=2,depth=1)]
+    elif case=='completion':d['works']=[dict(id=str(uuid.uuid4()),warehouseId=wid,machine='Impianto',description='Test',status='DONE',at=1)]
+    elif case=='timestamp':d['movements']=[dict(id=str(uuid.uuid4()),itemId=item,delta=1,note='Test',at=8640000000000001)]
+    elif case=='budget':d['budget']=1e12+1
+    elif case=='partsCost':d['works']=[dict(id=str(uuid.uuid4()),warehouseId=wid,machine='Impianto',description='Test',status='OPEN',at=1,partsCost=1e12+1)]
+    elif case=='sku':d['items'].append({**d['items'][0],'id':str(uuid.uuid4()),'sku':' '+d['items'][0]['sku']+' '})
+    with pytest.raises(ValidationError):Document.model_validate(d)
+
+def test_workspace_preserves_android_csv_text_lengths():
+    d=document();d['items'][0]['name']='A'*180;d['items'][0]['note']='N'*3000
+    assert len(Document.model_validate(d).items[0].note)==3000
+
+@pytest.mark.parametrize('field',['sku','name','unit'])
+def test_workspace_rejects_blank_required_text(field):
+    d=document();d['items'][0][field]='   '
+    with pytest.raises(ValidationError):Document.model_validate(d)

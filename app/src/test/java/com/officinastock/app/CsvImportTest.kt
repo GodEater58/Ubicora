@@ -23,6 +23,7 @@ class CsvImportTest {
         assertEquals("ELE-000321",CsvImport.parse(header+"\n"+row(sku="ELE-000321")).single().sku)
     }
     @Test fun rejectsDuplicateRowsIncorrectHeaderAndMalformedQuotes() {
+        rejects(header+"\n"+row().replace("\"Vite\"","\"Vite\"spazzatura"))
         rejects("wrong;header\n"+row())
         rejects(header+"\n"+row()+"\n"+row()+"\n")
         rejects(header+"\n"+row().replace("RIC-000321","ABC-000321"))
@@ -30,3 +31,4 @@ class CsvImportTest {
         rejects(header+"\n"+row().replace("3.5","-9"))
     }
 }
+

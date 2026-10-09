@@ -22,12 +22,14 @@ object CsvImport {
         val field=StringBuilder()
         var inQuotes=false
         var fieldStarted=false
+        var quoteClosed=false
         var i=0
         fun finishField() {
             require(field.length<=4000) { "Campo CSV troppo lungo" }
             fields.add(field.toString())
             field.clear()
             fieldStarted=false
+            quoteClosed=false
         }
         fun finishRow() {
             finishField()
@@ -40,9 +42,11 @@ object CsvImport {
             if(inQuotes) {
                 if(ch=='"') {
                     if(i+1<text.length && text[i+1]=='"') {field.append('"');i++}
-                    else inQuotes=false
+                    else {inQuotes=false;quoteClosed=true}
                 } else field.append(ch)
-            } else when(ch) {
+            } else {
+                require(!quoteClosed || ch in charArrayOf(';','\r','\n')) { "Caratteri dopo la chiusura del campo CSV" }
+                when(ch) {
                 '"' -> {
                     require(!fieldStarted) { "Virgolette CSV non valide" }
                     inQuotes=true
@@ -54,6 +58,7 @@ object CsvImport {
                     if(ch=='\r' && i+1<text.length && text[i+1]=='\n')i++
                 }
                 else -> {field.append(ch);fieldStarted=true}
+            }
             }
             require(field.length<=4000) { "Campo CSV troppo lungo" }
             i++
@@ -90,3 +95,4 @@ object CsvImport {
         }
     }
 }
+

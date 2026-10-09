@@ -1,4 +1,4 @@
-# Ubicora Web 1.0.1 — PC e browser mobile
+# Ubicora Web 1.0.2 — PC e browser mobile
 
 ## Uso immediato, senza installazione
 
@@ -53,3 +53,12 @@ Il server salva l'intero documento in una transazione PostgreSQL, con RLS per or
 
 ### Correzioni 1.0.1
 La demo è sempre identificata e avverte prima di abbandonare modifiche non salvate. Il ripristino rifiuta numeri testuali e planimetrie fuori dai confini. Il CSV generico è distinto dal CSV per Android: quest’ultimo verifica i codici e le categorie accettati dall’APK.
+
+### Correzioni 1.0.2
+
+- Ricezioni: il carico fisico non supera il residuo registrato nell'ordine.
+- Prenotazioni decimali: accettato il saldo disponibile entro la tolleranza numerica.
+- Riepiloghi: nomi macchina come `constructor` e `__proto__` mantengono totali corretti.
+- Salvataggi: protetti cambi di archivio, disconnessione e risposte automatiche ritardate.
+- CSV: rifiutati caratteri dopo un campo tra virgolette; preservati nomi Android fino a 180 caratteri e note fino a 3000.
+- Archivio condiviso: allineati limiti, date, geometria, testi e completamento delle manutenzioni.

@@ -96,7 +96,7 @@ private fun statusLabel(status:String)=when(status) {
                                 color=Sky,fontSize=11.sp)
                         }
                     }
-                    Text("Analisi limitata alle ultime 250 richieste. La puntualità richiederà date di consegna effettive.",
+                    Text("Analisi limitata alle ultime ${ui.operationsLimit} richieste caricate. La puntualità richiederà date di consegna effettive.",
                         color=TextSecondary,fontSize=11.sp)
                 }}
                 item{Panel(Modifier.fillMaxWidth()) {
@@ -290,6 +290,9 @@ private fun statusLabel(status:String)=when(status) {
     var amountInput by remember(kind){mutableStateOf("")}
     var reason by remember(kind){mutableStateOf("")}
     var supplier by remember(kind){mutableStateOf("")}
+    var centerSearch by remember(kind){mutableStateOf("")}
+    var supplierSearch by remember(kind){mutableStateOf("")}
+    var assetSearch by remember(kind){mutableStateOf("")}
     var selectedCenter by remember(kind){mutableStateOf<Long?>(null)}
     var selectedSupplier by remember(kind){mutableStateOf<Long?>(null)}
     var person by remember(kind){mutableStateOf(ui.profile?.name.orEmpty())}
@@ -322,7 +325,8 @@ private fun statusLabel(status:String)=when(status) {
                 Input(machine,{machine=it;selectedAsset=null},"Macchina / impianto")
                 if(ui.businessAssets.isNotEmpty()){
                     Text("Collega a un impianto registrato (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
-                    ui.businessAssets.take(35).forEach{ asset ->
+                    Input(assetSearch,{assetSearch=it},"Cerca impianto / codice")
+                    ui.businessAssets.filter{it.name.contains(assetSearch,true)||it.code.contains(assetSearch,true)}.take(35).forEach{ asset ->
                         FilterChip(selected=selectedAsset==asset.id,onClick={
                             selectedAsset=if(selectedAsset==asset.id)null else asset.id
                             if(selectedAsset!=null)machine=asset.name
@@ -359,7 +363,8 @@ private fun statusLabel(status:String)=when(status) {
             if(kind=="purchase") {
                 if(ui.costCenters.isNotEmpty()) {
                     Text("Centro di costo (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
-                    ui.costCenters.take(30).forEach {c->
+                    Input(centerSearch,{centerSearch=it},"Cerca centro di costo / codice")
+                    ui.costCenters.filter{it.name.contains(centerSearch,true)||it.code.contains(centerSearch,true)}.take(30).forEach {c->
                         FilterChip(selected=selectedCenter==c.id,
                             onClick={selectedCenter=if(selectedCenter==c.id)null else c.id},
                             label={Text(c.code+" · "+c.name,fontSize=11.sp)})
@@ -367,7 +372,8 @@ private fun statusLabel(status:String)=when(status) {
                 }
                 if(ui.businessSuppliers.isNotEmpty()) {
                     Text("Fornitore da anagrafica (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
-                    ui.businessSuppliers.take(30).forEach{f->
+                    Input(supplierSearch,{supplierSearch=it},"Cerca fornitore in anagrafica")
+                    ui.businessSuppliers.filter{it.name.contains(supplierSearch,true)}.take(30).forEach{f->
                         FilterChip(selected=selectedSupplier==f.id,onClick={
                             selectedSupplier=if(selectedSupplier==f.id)null else f.id
                             if(selectedSupplier!=null)supplier=f.name
@@ -400,4 +406,5 @@ private fun statusLabel(status:String)=when(status) {
     },enabled=valid&&!ui.busy){Text("Salva")}},
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
+
 

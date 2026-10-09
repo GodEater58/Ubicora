@@ -41,6 +41,19 @@ class OperationsDbTest {
     private fun rejects(task:()->Unit){
         try {task();fail("Operazione non valida accettata")}catch(expected:IllegalArgumentException){}
     }
+    @Test fun fractionalInventoryCorrectionsStoreTheCountedValueExactly() {
+        val fractional=db.addItem(source,"Liquido","Consumabili",0.3,0.0,"l","")
+        db.reconcileQuantity(fractional,0.1,"Conteggio diretto")
+        assertEquals(0.1,db.item(fractional)!!.quantity,0.0)
+        db.movement(fractional,0.2,"Carico")
+        val count=ops.requestCount(source,fractional,0.1,"Conteggio ciclico","Manager")
+        ops.finishCount(source,count,true,"Manager")
+        assertEquals(0.1,db.item(fractional)!!.quantity,0.0)
+        assertEquals(-0.2,db.movements(source).first().delta,0.0)
+        val large=db.addItem(source,"Grande saldo","Ricambi",1e16,0.0,"pz","")
+        db.reconcileQuantity(large,0.1,"Conteggio preciso")
+        assertEquals(0.1,db.item(large)!!.quantity,0.0)
+    }
     @Test fun ordersApprovePlaceReceiveOnlyOnceAndPreserveAudit(){
         val id=ops.createOrder(source,item,6.0,"Fornitore","Manager")
         assertEquals("DRAFT",ops.orders(source).single().status)

@@ -31,6 +31,21 @@ class EnterpriseDbTest {
     }
     @After fun finish(){db.close()}
 
+    @Test fun directoriesBeyondFiveHundredRemainSelectableAndOutboxCountIsComplete() {
+        repeat(501){n->
+            enterprise.createCenter(profile,"C%04d".format(n),"Centro $n",null)
+            enterprise.createSupplier(profile,"Fornitore %04d".format(n),"","",null)
+        }
+        assertEquals(501,enterprise.centers(profile).size)
+        assertEquals(501,enterprise.suppliers(profile).size)
+        val supplier=enterprise.suppliers(profile).last()
+        val order=ops.createOrder(warehouse,item,1.0,"","Manager",null,supplier.id)
+        assertEquals(supplier.name,ops.orders(warehouse).first{it.id==order}.supplier)
+        assertEquals(100,enterprise.pendingEvents(profile).size)
+        assertEquals(1002,enterprise.pendingEventCount(profile))
+        enterprise.markAcknowledged(profile,enterprise.pendingEvents(profile).map{it.id})
+        assertEquals(902,enterprise.pendingEventCount(profile))
+    }
     @Test fun directoriesAreTenantScopedAndOutboxIsDurable() {
         val other=db.createProfile("Casa","5678")
         val secondWarehouse=db.createWarehouse(other,"Casa","")
@@ -130,3 +145,4 @@ class EnterpriseDbTest {
         assertTrue(profile1>0)
     }
 }
+

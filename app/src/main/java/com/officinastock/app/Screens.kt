@@ -425,7 +425,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }
     },confirmButton={TextButton(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note,photoUri,
         unitCost.takeIf{it.isNotBlank()}?.replace(',','.')?.toDouble(),supplier,leadDays.takeIf{it.isNotBlank()}?.toInt())},
-        enabled=name.isNotBlank()&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
+        enabled=name.trim().length in 1..180&&unit.trim().length<=24&&note.length<=3000&&supplier.length<=160&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
             &&(unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true)
             &&(leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)){Text("Salva")}},
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})

@@ -23,6 +23,15 @@ class DatabaseAuditTest {
     @After fun close(){db.close()}
     private fun item(q:Double=10.0)=db.addItem(warehouse,"Vite","Ricambi",q,1.0,"pz","")
     private fun rejects(block:()->Unit){try{block();fail("Invalid operation accepted")}catch(expected:IllegalArgumentException){}}
+    @Test fun creationCannotStoreTextThatEditingAndCsvCannotAccept() {
+        rejects{db.addItem(warehouse,"A".repeat(181),"Ricambi",1.0,0.0,"pz","")}
+        rejects{db.addItem(warehouse,"Valido","Ricambi",1.0,0.0,"u".repeat(25),"")}
+        rejects{db.addItem(warehouse,"Valido","Ricambi",1.0,0.0,"pz","N".repeat(3001))}
+        assertTrue(db.items(warehouse).isEmpty())
+        val id=db.addItem(warehouse,"A".repeat(180),"Ricambi",1.0,0.0,"","N".repeat(3000))
+        assertEquals("pz",db.item(id)!!.unit)
+        assertEquals(3000,CsvImport.parse(db.csv(warehouse)).single().note.length)
+    }
     @Test fun overdrawRollsBackAndLoanReturnsExactlyOnce(){
         val id=item();val before=db.movements(warehouse).size
         rejects{db.movement(id,-11.0,"")}
@@ -42,6 +51,17 @@ class DatabaseAuditTest {
         db.writableDatabase.execSQL("UPDATE sku_sequences SET next_value=1")
         db.validateRestoredData()
         assertNotEquals(db.item(id)!!.sku,db.item(item())!!.sku)
+    }
+    @Test fun restoreRejectsGeometryOutsideRoomAndImpossibleReceipts() {
+        val id=item();val placement=db.addPlacement(warehouse,"Scaffale","A1",2f,2f)
+        db.writableDatabase.execSQL("UPDATE placements SET x=150 WHERE id=?",arrayOf(placement))
+        rejects{db.validateRestoredData()}
+        db.writableDatabase.execSQL("UPDATE placements SET x=2 WHERE id=?",arrayOf(placement))
+        val order=OperationsDb(db).createOrder(warehouse,id,2.0,"Fornitore","Manager")
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=3 WHERE id=?",arrayOf(order))
+        rejects{db.validateRestoredData()}
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=1,status='RECEIVED' WHERE id=?",arrayOf(order))
+        rejects{db.validateRestoredData()}
     }
     @Test fun shrinkingMapDoesNotHideExistingObjects(){
         val id=db.addPlacement(warehouse,"Scaffale","A1",10f,6f)
@@ -229,3 +249,4 @@ class DatabaseAuditTest {
         assertEquals("RIC-000043",db.item(next)!!.sku)
     }
 }
+

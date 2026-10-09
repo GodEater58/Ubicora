@@ -91,3 +91,68 @@ test('A failed server reload retains the unconfirmed conflict copy',async()=>{
  const c=appContext();const result=await vm.runInContext(`(async()=>{shared=true;tenant={id:'tenant'};pending={conflict:true,data:empty()};download=()=>{};api=async()=>{throw Error('offline')};await refresh();return pending!==null;})()`,c);
  assert.equal(result,true);
 });
+
+test('Receipt tolerance never invents stock beyond the order remainder',()=>{
+ let s=demo();s=apply(s,{type:'order',id:s.items[0].id,quantity:1,price:2});const id=s.orders[0].id;
+ s=apply(s,{type:'advance',id});s=apply(s,{type:'advance',id});s=apply(s,{type:'receive',id,quantity:1.00000005});
+ assert.equal(s.items[0].quantity,27);assert.equal(s.orders[0].received,1);assert.equal(s.movements[0].delta,1);
+ assert.throws(()=>apply(s,{type:'receive',id,quantity:0.00000001}));
+});
+test('Fractional stock can be fully reserved after an earlier decimal reservation',()=>{
+ let s=demo();s.reservations=[];s.items[0].quantity=0.3;
+ s=apply(s,{type:'reserve',id:s.items[0].id,quantity:0.1,reference:'Prima attività'});
+ s=apply(s,{type:'reserve',id:s.items[0].id,quantity:0.2,reference:'Seconda attività'});
+ for(const r of s.reservations)s=apply(s,{type:'reservation',id:r.id,consume:true});
+ assert.equal(s.items[0].quantity,0);
+});
+test('Machine names matching object properties retain numeric independent totals',()=>{
+ let s=demo();const wid=s.warehouses[0].id;
+ for(const machine of ['constructor','__proto__','toString']){
+  s=apply(s,{type:'work',warehouseId:wid,machine,description:'Prova',hours:1,rate:10});s=apply(s,{type:'finish',id:s.works[0].id});
+ }
+ assert.deepEqual(new Map(analytics(s,wid).machines),new Map([['constructor',10],['__proto__',10],['toString',10]]));
+});
+test('Android CSV supports 180-character descriptions and 3000-character notes',()=>{
+ const s=demo();s.items=s.items.slice(0,1);s.items[0].name='A'.repeat(180);s.items[0].note='N'.repeat(3000);
+ let dest=apply(empty(),{type:'warehouse',name:'Importazione'});dest=importCsv(dest,exportCsv(s,s.warehouses[0].id),dest.warehouses[0].id);
+ assert.equal(dest.items[0].name.length,180);assert.equal(dest.items[0].note.length,3000);
+});
+test('CSV rejects junk after a quoted field without partially importing rows',()=>{
+ const s=demo(),csv=exportCsv(s,s.warehouses[0].id).replace('"Cuscinetto 6204"','"Cuscinetto 6204"spazzatura');
+ assert.throws(()=>parseCsv(csv),/chiusura/);assert.throws(()=>importCsv(s,csv,s.warehouses[0].id));assert.equal(s.items.length,4);
+});
+test('Maintenance descriptions accepted by the server can be reopened in the browser',()=>{
+ let s=demo();s=apply(s,{type:'work',warehouseId:s.warehouses[0].id,machine:'Compressore',description:'A'.repeat(2000),hours:1,rate:10});
+ assert.equal(validate(JSON.parse(JSON.stringify(s))).works[0].description.length,2000);
+ assert.throws(()=>apply(s,{type:'work',warehouseId:s.warehouses[0].id,machine:'X',description:'Test',hours:100001,rate:1}));
+});
+test('Switching archives during a delayed save cannot replace its state or flags',async()=>{
+ const c=appContext();const result=await vm.runInContext(`(async()=>{
+ state=demo();let release;storagePut=()=>new Promise(r=>release=r);
+ const saving=persist({...state,budget:17});let blocked=false;try{await showDemo()}catch{blocked=true}
+ release();await saving;return {blocked,demo:demoMode,budget:state.budget};})()`,c);
+ assert.equal(result.blocked,true);assert.equal(result.demo,false);assert.equal(result.budget,17);
+});
+test('A failed logout keeps the shared session and pending copy recoverable',async()=>{
+ const c=appContext();const result=await vm.runInContext(`(async()=>{shared=true;token='session';tenant={id:'tenant'};pending={data:demo()};storageGet=async()=>{throw Error('disk error')};try{await logout()}catch{}return {shared,token,pending:pending!==null,busy};})()`,c);
+ assert.equal(result.shared,true);assert.equal(result.token,'session');assert.equal(result.pending,true);assert.equal(result.busy,false);
+});
+test('Seeded mixed operations preserve stock balance and never mutate rejected inputs',()=>{
+ let s=demo();s.reservations=[];s.items[0].quantity=100;s.movements=s.movements.filter(m=>m.itemId!==s.items[0].id);
+ let seed=719,expected=100;const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+ for(let n=0;n<1000;n++){
+  const q=rand()%7+1,kind=rand()%3===0?'out':'in',before=structuredClone(s);
+  if(kind==='out'&&q>expected){assert.throws(()=>apply(s,{type:'move',id:s.items[0].id,kind,quantity:q,note:'Sequenza'}));assert.deepEqual(s,before);}
+  else{s=apply(s,{type:'move',id:s.items[0].id,kind,quantity:q,note:'Sequenza'});expected+=kind==='in'?q:-q;}
+  assert.equal(s.items[0].quantity,expected);assert.equal(100+s.movements.filter(m=>m.itemId===s.items[0].id).reduce((a,m)=>a+m.delta,0),expected);
+ }
+});
+
+test('A delayed background response cannot roll back a newer confirmed save',async()=>{
+ const c=appContext();const result=await vm.runInContext(`(async()=>{
+ shared=true;tenant={id:'tenant'};revision=1;state=demo();let release;
+ api=async(path,opts)=>opts?.method==='PUT'?{revision:2,mutation_id:JSON.parse(opts.body).mutation_id}:new Promise(r=>release=r);
+ const polling=pollShared();await persist({...state,budget:29});release({revision:1,can_write:true,data:empty()});await polling;
+ return {budget:state.budget,revision};})()`,c);
+ assert.equal(result.budget,29);assert.equal(result.revision,2);
+});
