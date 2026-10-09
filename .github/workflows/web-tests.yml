@@ -1,0 +1,35 @@
+name: Ubicora Web - Browser and domain tests
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'server/web/**', '.github/workflows/web-tests.yml']
+  pull_request:
+    paths: ['web/**', 'server/web/**', '.github/workflows/web-tests.yml']
+jobs:
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify standalone build is current
+        run: |
+          python web/build.py
+          git diff --exit-code -- web/Ubicora.html server/web/Ubicora.html
+      - name: Domain operations, CSV and 10,000-item import
+        run: node --test web/tests/core.test.mjs
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.51.1
+          npx playwright install --with-deps chromium
+      - name: Actual browser - desktop, persistence, mobile and offline file
+        run: node web/tests/browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ubicora-web-browser-screenshots
+          path: /tmp/ubicora-*.png

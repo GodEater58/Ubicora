@@ -17,6 +17,8 @@ import jwt
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
+from pathlib import Path
 from jwt import PyJWKClient, InvalidTokenError, PyJWKClientError
 from pydantic import BaseModel, Field, ConfigDict
 from psycopg.rows import dict_row
@@ -39,6 +41,16 @@ READ_RIGHTS = {
 }
 
 app = FastAPI(title="Ubicora Enterprise", version="1.0.0")
+
+
+@app.middleware("http")
+async def response_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 class Event(BaseModel):
@@ -281,4 +293,14 @@ def changes(tenant_uuid: uuid.UUID, cursor: str | None = None,
     } for x in rows]
     next_cursor = (rows[-1]["accepted_at"].isoformat() + "|" + str(rows[-1]["event_id"])) if rows else cursor
     return {"protocol_version": 1, "events": events, "next_cursor": next_cursor}
+
+
+from workspace import router as workspace_router
+app.include_router(workspace_router(authorize, connect, role_for))
+
+
+@app.get("/", include_in_schema=False)
+def browser_app():
+    return FileResponse(Path(__file__).resolve().parent / "web" / "Ubicora.html",
+                        media_type="text/html")
 

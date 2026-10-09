@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10333d"><meta http-equiv="Content-Security-Policy" content="__CSP__"><title>Ubicora | Spazio di lavoro</title><style>__CSS__</style></head>
+<body>
+<div class="shell"><aside><a class="brand" href="#" aria-label="Ubicora Home"><span class="brandmark">U</span><span>Ubicora<small>INVENTARIO · SPAZI · ANALISI</small></span></a>
+<div class="workspace"><span class="eyebrow">IL TUO AMBIENTE</span><select id="warehouse" aria-label="Magazzino corrente"></select><button id="addWarehouse" class="text-button">+ Nuovo magazzino</button></div>
+<nav aria-label="Sezioni"><button data-page="home" class="active"><span>◈</span> Panoramica</button><button data-page="items"><span>▦</span> Inventario</button><button data-page="map"><span>⌖</span> Planimetria</button><button data-page="orders"><span>↗</span> Acquisti</button><button data-page="reservations"><span>◇</span> Prenotazioni</button><button data-page="works"><span>⚙</span> Manutenzioni</button><button data-page="history"><span>≡</span> Movimenti</button><button data-page="settings"><span>◎</span> Dati e connessione</button></nav>
+<div class="aside-bottom"><span id="modeBadge" class="badge">Solo questo browser</span><p id="syncStatus" role="status">Archivio locale</p><small>UBICORA WEB 1.0<br/>Compatibile CSV Android 4.6</small></div></aside>
+<main><header><div><span class="eyebrow" id="breadcrumb">IL TUO MAGAZZINO</span><h1 id="pageTitle">Panoramica</h1></div><div class="header-actions"><button id="refresh" class="secondary">Aggiorna</button><button id="primary" class="primary">+ Articolo</button></div></header>
+<div id="connectionNotice" class="notice">Spazio locale: i dati sono salvati in questo browser. Per condividere il magazzino tra dispositivi, apri Dati e connessione.</div>
+<section id="content" aria-label="Contenuto della sezione"></section>
+<footer>Ubicora · Spazio di lavoro per PC e browser mobile <span id="saveStatus"></span></footer></main></div>
+<dialog id="editor"><form id="editorForm"><div class="modal-head"><div><span class="eyebrow">UBICORA</span><h2 id="modalTitle"></h2></div><button type="button" id="closeModal" class="icon-button" aria-label="Chiudi">×</button></div><div id="fields" class="fields"></div><p id="formError" class="error" role="alert"></p><div class="modal-actions"><button type="button" id="cancelModal" class="secondary">Annulla</button><button type="submit" id="submitModal" class="primary">Salva</button></div></form></dialog>
+<div id="toast" class="toast" role="status" hidden></div><input id="fileInput" type="file" hidden>
+<script type="module">__SCRIPT__</script></body></html>
