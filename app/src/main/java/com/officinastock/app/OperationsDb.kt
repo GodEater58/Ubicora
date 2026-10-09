@@ -142,11 +142,11 @@ class OperationsDb(private val stock:StockDb) {
             return result
         } finally {db.endTransaction()}
     }
-    private fun changeStock(db:SQLiteDatabase,itemId:Long,delta:Double,note:String) {
+    private fun changeStock(db:SQLiteDatabase,itemId:Long,delta:Double,note:String,counted:Double?=null) {
         val old=db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use {
             require(it.moveToFirst()){"Articolo mancante"};it.getDouble(0)
         }
-        val next=StockRules.applyDelta(old,delta)
+        val next=counted ?: StockRules.applyDelta(old,delta)
         StockPlanningDb.assertUnreservedStock(db,itemId,next)
         StockTraceDb.assertPhysicalFloor(db,itemId,next)
         require(delta.isFinite() && delta!=0.0){"Movimento nullo"}
@@ -268,8 +268,8 @@ class OperationsDb(private val stock:StockDb) {
         if(approve){
             val item=requireItem(wid,count[0].toLong())
             require(item.quantity==count[1].toDouble()){"Giacenza cambiata dopo il conteggio; ripeti l'inventario"}
-            val delta=count[2].toDouble()-item.quantity
-            if(delta!=0.0)changeStock(db,item.id,delta,"Inventario ciclico #$id · ${count[3]}")
+            val delta=StockRules.difference(count[2].toDouble(),item.quantity)
+            if(delta!=0.0)changeStock(db,item.id,delta,"Inventario ciclico #$id · ${count[3]}",count[2].toDouble())
         }
         val status=if(approve)"APPLIED" else "CANCELLED"
         require(db.update("ops_counts",ContentValues().apply{put("status",status)},"id=? AND status='PENDING'",

@@ -389,10 +389,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             put("item_id",itemId);put("delta",delta);put("note",note);put("created_at",System.currentTimeMillis())
         })
     }
-    private fun adjust(db: SQLiteDatabase, itemId: Long, delta: Double, note: String) {
+    private fun adjust(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, counted: Double? = null) {
         db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { cursor ->
             require(cursor.moveToFirst()) { "Articolo non trovato" }
-            val next = StockRules.applyDelta(cursor.getDouble(0),delta)
+            val next = counted ?: StockRules.applyDelta(cursor.getDouble(0),delta)
             StockPlanningDb.assertUnreservedStock(db,itemId,next)
             StockTraceDb.assertPhysicalFloor(db,itemId,next)
             db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
@@ -414,9 +414,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 require(c.moveToFirst()) { "Articolo non trovato" }
                 c.getDouble(0)
             }
-            val delta=counted-old
+            val delta=StockRules.difference(counted,old)
             require(delta.isFinite() && delta!=0.0) { "Nessuna differenza da rettificare" }
-            adjust(sql,itemId,delta,"Rettifica inventario: " + reason.trim())
+            adjust(sql,itemId,delta,"Rettifica inventario: " + reason.trim(),counted)
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
     }
@@ -806,12 +806,20 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         for(profile in profiles()) for(w in warehouses(profile.id)) {
             require(w.mapWidth.isFinite() && w.mapWidth in 2f..150f && w.mapHeight.isFinite() && w.mapHeight in 2f..150f) { "Dimensioni pianta non valide nel backup" }
-            for(p in placements(w.id)) require(listOf(p.x,p.y,p.width,p.depth,p.rotation).all{it.isFinite()} && p.width in .2f..15f && p.depth in .2f..15f) { "Struttura non valida nel backup" }
-            for(wall in walls(w.id)) StockRules.normalizeWall(floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
+            for(p in placements(w.id)) require(listOf(p.x,p.y,p.width,p.depth,p.rotation).all{it.isFinite()} && p.width in .2f..15f && p.depth in .2f..15f && PlanGeometry.placementFitsRoom(p,w.mapWidth,w.mapHeight)) { "Struttura non valida nel backup" }
+            for(wall in walls(w.id)) {
+                StockRules.normalizeWall(floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
+                require(wall.x1 in 0f..w.mapWidth && wall.x2 in 0f..w.mapWidth && wall.y1 in 0f..w.mapHeight && wall.y2 in 0f..w.mapHeight) { "Parete fuori dalla pianta nel backup" }
+            }
         }
         db.rawQuery("SELECT quantity,minimum,unit_cost FROM items",null).use { c -> while(c.moveToNext()) {
             require(StockRules.validQuantity(c.getDouble(0)) && StockRules.validQuantity(c.getDouble(1)) &&
                 (c.isNull(2) || StockRules.validQuantity(c.getDouble(2)))) { "Quantità o costo non valido nel backup" }
+        } }
+        db.rawQuery("SELECT quantity,received,status FROM ops_orders",null).use { c -> while(c.moveToNext()) {
+            val total=c.getDouble(0);val received=c.getDouble(1)
+            require(total.isFinite() && received.isFinite() && received<=total &&
+                (c.getString(2)!="RECEIVED" || received==total)) { "Ricezione ordine incoerente nel backup" }
         } }
         // Foreign keys cannot by themselves enforce cross-profile business ownership.
         for((query,message) in listOf(

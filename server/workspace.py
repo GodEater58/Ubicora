@@ -31,7 +31,7 @@ class Item(Strict):
     id: uuid.UUID
     warehouseId: uuid.UUID
     sku: str = Field(min_length=1, max_length=100)
-    name: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=180)
     category: str = Field(default="Ricambi", max_length=100)
     unit: str = Field(default="pz", min_length=1, max_length=24)
     quantity: float = Field(ge=0, le=1e12)
@@ -40,14 +40,14 @@ class Item(Strict):
     supplier: str = Field(default="", max_length=160)
     leadDays: int | None = Field(default=None, ge=0, le=3650)
     location: str = Field(default="", max_length=160)
-    note: str = Field(default="", max_length=2000)
+    note: str = Field(default="", max_length=3000)
 
 class Movement(Strict):
     id: uuid.UUID
     itemId: uuid.UUID
     delta: float = Field(ge=-1e12, le=1e12)
     note: str = Field(min_length=1, max_length=2000)
-    at: int = Field(ge=0)
+    at: int = Field(ge=0, le=8640000000000000)
 
 class Placement(Strict):
     id: uuid.UUID
@@ -66,7 +66,7 @@ class Order(Strict):
     price: float | None = Field(default=None, ge=0, le=1e12)
     supplier: str = Field(default="", max_length=160)
     status: Literal["DRAFT", "APPROVED", "ORDERED", "RECEIVED", "CANCELLED"]
-    at: int = Field(ge=0)
+    at: int = Field(ge=0, le=8640000000000000)
     @model_validator(mode="after")
     def receipt(self):
         if self.received > self.quantity or (self.status == "RECEIVED" and self.received != self.quantity):
@@ -79,7 +79,7 @@ class Reservation(Strict):
     quantity: float = Field(gt=0, le=1e12)
     reference: str = Field(min_length=3, max_length=300)
     status: Literal["ACTIVE", "CONSUMED", "RELEASED"]
-    at: int = Field(ge=0)
+    at: int = Field(ge=0, le=8640000000000000)
 
 class Work(Strict):
     id: uuid.UUID
@@ -90,32 +90,40 @@ class Work(Strict):
     quantity: float = Field(default=0, ge=0, le=1e12)
     hours: float = Field(default=0, ge=0, le=100000)
     rate: float | None = Field(default=None, ge=0, le=1e9)
-    partsCost: float | None = Field(default=None, ge=0, le=1e15)
+    partsCost: float | None = Field(default=None, ge=0, le=1e12)
     status: Literal["OPEN", "DONE", "CANCELLED"]
-    at: int = Field(ge=0)
-    completedAt: int | None = Field(default=None, ge=0)
+    at: int = Field(ge=0, le=8640000000000000)
+    completedAt: int | None = Field(default=None, ge=0, le=8640000000000000)
 
 class Document(Strict):
     format: Literal["ubicora-web-1"]
     warehouses: list[Warehouse] = Field(max_length=100)
     items: list[Item] = Field(max_length=20000)
     movements: list[Movement] = Field(max_length=100000)
-    placements: list[Placement] = Field(max_length=5000)
+    placements: list[Placement] = Field(max_length=20000)
     orders: list[Order] = Field(max_length=20000)
     reservations: list[Reservation] = Field(max_length=20000)
     works: list[Work] = Field(max_length=20000)
-    budget: float | None = Field(default=None, ge=0, le=1e15)
+    budget: float | None = Field(default=None, ge=0, le=1e12)
     @model_validator(mode="after")
     def references(self):
         for rows in (self.warehouses, self.items, self.movements, self.placements,
                      self.orders, self.reservations, self.works):
             if len({x.id for x in rows}) != len(rows):
                 raise ValueError("Duplicate IDs")
-        warehouses = {x.id for x in self.warehouses}
+        warehouses = {x.id: x for x in self.warehouses}
         items = {x.id: x for x in self.items}
+        for rows, fields in ((self.warehouses,("name",)),(self.items,("sku","name","unit")),
+                             (self.placements,("name",)),(self.works,("machine","description")),
+                             (self.movements,("note",))):
+            for row in rows:
+                if any(not getattr(row, field).strip() for field in fields):
+                    raise ValueError("Required text is blank")
+        if any(len(r.reference.strip()) < 3 for r in self.reservations):
+            raise ValueError("Reservation reference too short")
         skus = set()
         for item in self.items:
-            key = (item.warehouseId, item.sku.casefold())
+            key = (item.warehouseId, item.sku.strip().lower())
             if item.warehouseId not in warehouses or key in skus:
                 raise ValueError("Invalid warehouse or duplicate SKU")
             skus.add(key)
@@ -125,6 +133,10 @@ class Document(Strict):
         for row in [*self.placements, *self.works]:
             if row.warehouseId not in warehouses:
                 raise ValueError("Invalid warehouse reference")
+        for placement in self.placements:
+            room = warehouses[placement.warehouseId]
+            if placement.x + placement.width > room.width or placement.y + placement.depth > room.depth:
+                raise ValueError("Placement outside warehouse")
         reserved = {}
         for r in self.reservations:
             if r.status == "ACTIVE":
@@ -133,6 +145,8 @@ class Document(Strict):
             if quantity > items[id_].quantity + 1e-7:
                 raise ValueError("Reservations exceed stock")
         for work in self.works:
+            if work.status == "DONE" and work.completedAt is None:
+                raise ValueError("Completed maintenance requires a completion date")
             if work.itemId is not None and (work.itemId not in items or
                 items[work.itemId].warehouseId != work.warehouseId):
                 raise ValueError("Invalid maintenance item")
@@ -145,7 +159,7 @@ def empty():
 
 class Write(Strict):
     mutation_id: uuid.UUID
-    expected_revision: int = Field(ge=0)
+    expected_revision: int = Field(ge=0, le=9007199254740990)
     data: Document
 
 def browser_config():
@@ -233,3 +247,4 @@ def router(authorize, connect, role_for):
                         (tenant, command.mutation_id, digest, principal.subject, next_revision))
         return {"revision": next_revision, "mutation_id": str(command.mutation_id)}
     return api
+

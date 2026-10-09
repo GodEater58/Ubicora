@@ -43,6 +43,17 @@ class DatabaseAuditTest {
         db.validateRestoredData()
         assertNotEquals(db.item(id)!!.sku,db.item(item())!!.sku)
     }
+    @Test fun restoreRejectsGeometryOutsideRoomAndImpossibleReceipts() {
+        val id=item();val placement=db.addPlacement(warehouse,"Scaffale","A1",2f,2f)
+        db.writableDatabase.execSQL("UPDATE placements SET x=150 WHERE id=?",arrayOf(placement))
+        rejects{db.validateRestoredData()}
+        db.writableDatabase.execSQL("UPDATE placements SET x=2 WHERE id=?",arrayOf(placement))
+        val order=OperationsDb(db).createOrder(warehouse,id,2.0,"Fornitore","Manager")
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=3 WHERE id=?",arrayOf(order))
+        rejects{db.validateRestoredData()}
+        db.writableDatabase.execSQL("UPDATE ops_orders SET received=1,status='RECEIVED' WHERE id=?",arrayOf(order))
+        rejects{db.validateRestoredData()}
+    }
     @Test fun shrinkingMapDoesNotHideExistingObjects(){
         val id=db.addPlacement(warehouse,"Scaffale","A1",10f,6f)
         rejects{db.updateMapSize(warehouse,3f,3f)}
@@ -229,3 +240,4 @@ class DatabaseAuditTest {
         assertEquals("RIC-000043",db.item(next)!!.sku)
     }
 }
+
