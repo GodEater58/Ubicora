@@ -158,7 +158,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 }
 
 @Composable fun DashboardScreen(
-    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,
+    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,goManager:()->Unit,
     onStockFocus:(StockFocus)->Unit,
     onActivityFocus:(ActivityFocus,Int)->Unit,
     onItemFocus:(Long)->Unit
@@ -212,6 +212,25 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
                 SmallMetric("UBICAZIONI",u.placements.size.toString(),"Nella planimetria",Sky,Modifier.weight(1f),onClick=goMap)
                 SmallMetric("IN UTILIZZO",u.loans.size.toString(),"Prestiti aperti",TextPrimary,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.LOANS,0)})
+            }
+        }
+        item {
+            Panel(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AssignmentTurnedIn,contentDescription=null,tint=Mint)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Centro operativo",fontWeight=FontWeight.Bold,fontSize=17.sp)
+                        Text("Acquisti · conteggi · trasferimenti · manutenzioni",fontSize=12.sp,color=TextSecondary)
+                    }
+                }
+                val pending=u.orders.count{it.status in listOf("DRAFT","APPROVED","ORDERED")}+
+                    u.stockCounts.count{it.status=="PENDING"}+
+                    u.stockTransfers.count{it.status in listOf("REQUESTED","IN_TRANSIT")}+
+                    u.maintenanceWork.count{it.status=="OPEN"}
+                Text(if(pending==0)"Nessuna azione aperta" else "$pending attività da seguire",
+                    color=if(pending>0)Amber else Mint,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                PrimaryAction("Apri gestione aziendale",goManager,modifier=Modifier.fillMaxWidth())
             }
         }
         item { ManagerAnalyticsPanel(u.items,u.manager,
