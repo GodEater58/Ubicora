@@ -1,5 +1,8 @@
 package com.officinastock.app
 
+data class ManagerAction(val id:Long,val warehouseId:Long,val itemId:Long?,val kind:String,
+    val title:String,val quantity:Double?,val assignee:String,val details:String,val status:String,
+    val createdAt:Long,val completedAt:Long?)
 data class Profile(val id: Long, val name: String)
 data class Warehouse(val id: Long, val profileId: Long, val name: String, val location: String, val mapWidth: Float = 12f, val mapHeight: Float = 8f)
 data class StockItem(
