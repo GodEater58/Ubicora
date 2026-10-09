@@ -1,0 +1,286 @@
+package com.officinastock.app
+
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro")
+private fun statusLabel(status:String)=when(status) {
+    "DRAFT"->"Da approvare";"APPROVED"->"Approvato";"ORDERED"->"Ordinato"
+    "RECEIVED"->"Ricevuto";"CANCELLED"->"Annullato";"PENDING"->"Da verificare"
+    "APPLIED"->"Confermato";"REQUESTED"->"Richiesto";"IN_TRANSIT"->"In transito"
+    "OPEN"->"Aperto";"DONE"->"Completato";else->status
+}
+
+@Composable fun OperationsScreen(model:StockViewModel,onBack:()->Unit,onCsvExport:()->Unit) {
+    val ui=model.ui
+    var section by remember {mutableIntStateOf(0)}
+    var create by remember {mutableStateOf<String?>(null)}
+    val openOrders=ui.orders.count { it.status=="DRAFT"||it.status=="APPROVED"||it.status=="ORDERED" }
+    val pendingCounts=ui.stockCounts.count{it.status=="PENDING"}
+    val activeTransfers=ui.stockTransfers.count{it.status=="REQUESTED"||it.status=="IN_TRANSIT"}
+    val openWork=ui.maintenanceWork.count{it.status=="OPEN"}
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
+            IconButton(onClick=onBack){Icon(Icons.Outlined.ArrowBack,contentDescription="Torna alla panoramica")}
+            Column(Modifier.weight(1f)) {
+                Text("UBICORA · AZIENDALE",color=Mint,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                Text("Centro operativo",fontSize=22.sp,fontWeight=FontWeight.Bold)
+            }
+            IconButton(onClick=onCsvExport){Icon(Icons.Outlined.Download,contentDescription="Esporta report CSV")}
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp),
+            horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            sections.forEachIndexed {idx,name ->
+                FilterChip(selected=section==idx,onClick={section=idx},label={Text(name)})
+            }
+        }
+        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            if(section==0) {
+                item{Text("LE TUE PRIORITÀ",color=Mint,fontSize=11.sp,fontWeight=FontWeight.Bold)}
+                item{
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        SmallMetric("ACQUISTI",openOrders.toString(),"Da seguire",Amber,Modifier.weight(1f),onClick={section=1})
+                        SmallMetric("CONTEGGI",pendingCounts.toString(),"Da confermare",Sky,Modifier.weight(1f),onClick={section=2})
+                    }
+                }
+                item{
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        SmallMetric("TRASFERIMENTI",activeTransfers.toString(),"Da completare",Mint,Modifier.weight(1f),onClick={section=3})
+                        SmallMetric("INTERVENTI",openWork.toString(),"Aperti",Amber,Modifier.weight(1f),onClick={section=4})
+                    }
+                }
+                item{Panel(Modifier.fillMaxWidth()) {
+                    Text("Scorte da riordinare",fontWeight=FontWeight.Bold)
+                    val risks=ui.items.filter{it.lowStock}.take(8)
+                    if(risks.isEmpty())Text("Nessuna referenza sotto soglia.",color=TextSecondary)
+                    risks.forEach{item ->
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontSize=13.sp)
+                                Text(item.sku+" · "+amount(item.quantity)+" / minimo "+amount(item.minimum),
+                                    color=TextSecondary,fontSize=11.sp)
+                            }
+                            TextButton(onClick={create="purchase"}){Text("Acquista")}
+                        }
+                    }
+                    Text("Il riordino richiede approvazione e conferma di ricezione: non modifica le scorte quando crei una richiesta.",
+                        color=TextSecondary,fontSize=11.sp)
+                }}
+                item{Panel(Modifier.fillMaxWidth()) {
+                    Text("Responsabilità e accessi",fontWeight=FontWeight.Bold)
+                    Text("Le operazioni sono attribuite al profilo locale corrente. La separazione tra persone, ruoli e approvazioni su dispositivi diversi richiede account verificati e sincronizzazione: non è simulata con un semplice campo di testo.",
+                        color=TextSecondary,fontSize=12.sp)
+                }}
+            }
+            if(section==1) {
+                item{PrimaryAction("+ Richiesta d'acquisto",{create="purchase"},enabled=ui.items.isNotEmpty(),modifier=Modifier.fillMaxWidth())}
+                if(ui.orders.isEmpty())item{EmptyOperation("Nessun ordine. Crea una richiesta scegliendo articolo e quantità.")}
+                items(ui.orders.size){idx->
+                    val o=ui.orders[idx]
+                    Panel(Modifier.fillMaxWidth()) {
+                        OperationHeading("Ordine #"+o.id,o.itemName,statusLabel(o.status))
+                        Text(amount(o.quantity)+" · "+o.supplier.ifBlank{"Fornitore non indicato"}+" · "+o.owner,
+                            color=TextSecondary,fontSize=12.sp)
+                        o.unitPrice?.let{Text("Valore previsto: "+String.format(java.util.Locale.ITALY,"%.2f €",o.quantity*it),fontSize=12.sp)}
+                        Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
+                            when(o.status) {
+                                "DRAFT"->{
+                                    TextButton(onClick={model.advancePurchase(o.id,"APPROVE")}){Text("Approva")}
+                                    TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
+                                }
+                                "APPROVED"->{
+                                    TextButton(onClick={model.advancePurchase(o.id,"PLACE")}){Text("Segna ordinato")}
+                                    TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
+                                }
+                                "ORDERED"->{
+                                    TextButton(onClick={model.advancePurchase(o.id,"RECEIVE")}){Text("Conferma arrivo")}
+                                    TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(section==2) {
+                item{PrimaryAction("+ Nuovo conteggio",{create="count"},enabled=ui.items.isNotEmpty(),modifier=Modifier.fillMaxWidth())}
+                if(ui.stockCounts.isEmpty())item{EmptyOperation("Nessun inventario ciclico avviato.")}
+                items(ui.stockCounts.size){idx->
+                    val c=ui.stockCounts[idx]
+                    Panel(Modifier.fillMaxWidth()) {
+                        OperationHeading("Conteggio #"+c.id,c.itemName,statusLabel(c.status))
+                        Text("Sistema: "+amount(c.expected)+" · Rilevati: "+amount(c.counted)+
+                            " · Differenza: "+amount(c.counted-c.expected),fontSize=12.sp)
+                        Text(c.reason,color=TextSecondary,fontSize=12.sp)
+                        if(c.status=="PENDING") Row {
+                            TextButton(onClick={model.decideCycleCount(c.id,true)}){Text("Conferma rettifica")}
+                            TextButton(onClick={model.decideCycleCount(c.id,false)}){Text("Scarta")}
+                        }
+                    }
+                }
+            }
+            if(section==3) {
+                item{PrimaryAction("+ Trasferisci tra magazzini",{create="transfer"},
+                    enabled=ui.items.isNotEmpty()&&ui.warehouses.size>1,modifier=Modifier.fillMaxWidth())}
+                if(ui.warehouses.size<2)item{EmptyOperation("Crea un altro magazzino nello stesso profilo per eseguire trasferimenti.")}
+                if(ui.stockTransfers.isEmpty())item{EmptyOperation("Nessun trasferimento registrato.")}
+                items(ui.stockTransfers.size){idx->
+                    val t=ui.stockTransfers[idx]
+                    Panel(Modifier.fillMaxWidth()) {
+                        OperationHeading("Trasferimento #"+t.id,t.itemName,statusLabel(t.status))
+                        val source=ui.warehouses.firstOrNull{it.id==t.fromId}?.name ?: "Magazzino "+t.fromId
+                        val dest=ui.warehouses.firstOrNull{it.id==t.toId}?.name ?: "Magazzino "+t.toId
+                        Text(source+" → "+dest+" · "+amount(t.quantity),color=TextSecondary,fontSize=12.sp)
+                        if(t.status=="REQUESTED"&&ui.warehouse?.id==t.fromId)Row {
+                            TextButton(onClick={model.processTransfer(t.id,"SHIP")}){Text("Conferma spedizione")}
+                            TextButton(onClick={model.processTransfer(t.id,"CANCEL")}){Text("Annulla")}
+                        }
+                        if(t.status=="IN_TRANSIT")Row {
+                            if(ui.warehouse?.id==t.toId)TextButton(onClick={model.processTransfer(t.id,"RECEIVE")}){Text("Ricevi articoli")}
+                            if(ui.warehouse?.id==t.fromId)TextButton(onClick={model.processTransfer(t.id,"CANCEL")}){Text("Annulla e rientra")}
+                        }
+                    }
+                }
+                item{Text("La spedizione scarica l'origine; la ricezione carica la destinazione. Per confermare l'arrivo seleziona il magazzino destinatario.",
+                    color=TextSecondary,fontSize=11.sp)}
+            }
+            if(section==4) {
+                item{PrimaryAction("+ Intervento di manutenzione",{create="maintenance"},modifier=Modifier.fillMaxWidth())}
+                if(ui.maintenanceWork.isEmpty())item{EmptyOperation("Nessun intervento di manutenzione inserito.")}
+                items(ui.maintenanceWork.size){idx->
+                    val w=ui.maintenanceWork[idx]
+                    Panel(Modifier.fillMaxWidth()) {
+                        OperationHeading("Intervento #"+w.id,w.machine,statusLabel(w.status))
+                        Text(w.description,color=TextSecondary,fontSize=12.sp)
+                        if(w.itemId!=null)Text("Ricambio: "+(ui.items.firstOrNull{it.id==w.itemId}?.name ?: "Articolo rimosso")+
+                            " · "+amount(w.quantity),fontSize=12.sp)
+                        if(w.status=="OPEN")Row {
+                            TextButton(onClick={model.finishWorkOrder(w.id,true)}){Text("Completa")}
+                            TextButton(onClick={model.finishWorkOrder(w.id,false)}){Text("Annulla")}
+                        }
+                    }
+                }
+                item{Text("La chiusura dell'intervento scarica automaticamente i ricambi indicati e registra il movimento.",
+                    color=TextSecondary,fontSize=11.sp)}
+            }
+            if(section==5) {
+                item{Text("REGISTRO LOCALE",fontWeight=FontWeight.Bold,color=Mint)}
+                if(ui.operationsEvents.isEmpty())item{EmptyOperation("Nessuna operazione registrata.")}
+                items(ui.operationsEvents.size){idx->
+                    val event=ui.operationsEvents[idx]
+                    Panel(Modifier.fillMaxWidth()) {
+                        Text(event.action.replace('_',' '),fontWeight=FontWeight.Bold,fontSize=13.sp)
+                        Text(event.detail,fontSize=12.sp)
+                        Text(event.actor+" · "+date(event.at),color=TextSecondary,fontSize=11.sp)
+                    }
+                }
+            }
+            item{Spacer(Modifier.height(14.dp))}
+        }
+    }
+    create?.let { kind ->
+        NewOperationDialog(kind,model,onClose={create=null})
+    }
+}
+
+@Composable private fun EmptyOperation(message:String) {
+    Panel(Modifier.fillMaxWidth()) {Text(message,color=TextSecondary,fontSize=12.sp)}
+}
+@Composable private fun OperationHeading(id:String,name:String,state:String) {
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(id,color=Mint,fontSize=10.sp,fontWeight=FontWeight.SemiBold)
+            Text(name,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
+        }
+        Text(state,color=Amber,fontWeight=FontWeight.SemiBold,fontSize=11.sp)
+    }
+}
+@Composable private fun NewOperationDialog(kind:String,model:StockViewModel,onClose:()->Unit) {
+    val ui=model.ui
+    var search by remember(kind){mutableStateOf("")}
+    var selected by remember(kind){mutableStateOf<Long?>(null)}
+    var amountInput by remember(kind){mutableStateOf("")}
+    var reason by remember(kind){mutableStateOf("")}
+    var supplier by remember(kind){mutableStateOf("")}
+    var person by remember(kind){mutableStateOf(ui.profile?.name.orEmpty())}
+    var machine by remember(kind){mutableStateOf("")}
+    var target by remember(kind){mutableStateOf<Long?>(null)}
+    val parsed=amountInput.replace(',','.').trim().toDoubleOrNull()
+    val needsItem=kind!="maintenance" || parsed!=null && parsed>0
+    val validQuantity=parsed!=null && parsed.isFinite() && parsed>0.0
+    val valid=when(kind) {
+        "purchase" -> selected!=null && validQuantity && person.trim().length>=2
+        "count" -> selected!=null && parsed!=null && StockRules.validQuantity(parsed) && reason.trim().length>=3
+        "transfer" -> selected!=null && validQuantity && target!=null
+        "maintenance" -> machine.trim().length>=2 && reason.trim().length>=3 &&
+            (amountInput.isBlank() || (parsed!=null && StockRules.validQuantity(parsed) && (parsed==0.0 || selected!=null)))
+        else -> false
+    }
+    val title=when(kind){"purchase"->"Nuovo acquisto";"count"->"Inventario ciclico";
+        "transfer"->"Trasferimento";else->"Intervento manutenzione"}
+    AlertDialog(onDismissRequest=onClose,title={Text(title)},text={
+        Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement=Arrangement.spacedBy(9.dp)) {
+            if(kind=="maintenance") {
+                Input(machine,{machine=it},"Macchina / impianto")
+                Input(reason,{reason=it},"Descrizione intervento")
+            }
+            if(kind=="count")Text("Confronta il conteggio fisico con il dato a sistema. Nessuna rettifica avviene prima della conferma.",fontSize=12.sp,color=TextSecondary)
+            if(kind=="transfer")Text("Scegli prima l'articolo nel magazzino attuale e poi la destinazione.",fontSize=12.sp,color=TextSecondary)
+            if(kind!="maintenance")Input(search,{search=it},"Cerca articolo / codice")
+            if(kind=="maintenance")Input(search,{search=it},"Ricambio facoltativo (cerca)")
+            val candidates=ui.items.filter {
+                search.isBlank() || it.name.contains(search,true) || it.sku.contains(search,true)
+            }.take(6)
+            candidates.forEach{item->
+                Row(Modifier.fillMaxWidth().clickable{selected=item.id},verticalAlignment=Alignment.CenterVertically) {
+                    RadioButton(selected=selected==item.id,onClick={selected=item.id})
+                    Column(Modifier.weight(1f)) {
+                        Text(item.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontSize=12.sp)
+                        Text(item.sku+" · giacenza "+amount(item.quantity),color=TextSecondary,fontSize=10.sp)
+                    }
+                }
+            }
+            Input(amountInput,{amountInput=it},when(kind) {
+                "count"->"Quantità fisicamente contata"
+                "maintenance"->"Ricambi consumati (lascia vuoto se nessuno)"
+                else->"Quantità"
+            },number=true)
+            if(kind=="purchase") {
+                Input(supplier,{supplier=it},"Fornitore")
+                Input(person,{person=it},"Responsabile")
+            }
+            if(kind=="count")Input(reason,{reason=it},"Motivo / riferimento inventario")
+            if(kind=="transfer") {
+                Text("Magazzino di destinazione",fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                ui.warehouses.filter{it.id!=ui.warehouse?.id}.forEach {wh->
+                    Row(Modifier.fillMaxWidth().clickable{target=wh.id},verticalAlignment=Alignment.CenterVertically) {
+                        RadioButton(selected=target==wh.id,onClick={target=wh.id})
+                        Text(wh.name,fontSize=12.sp)
+                    }
+                }
+            }
+            if(kind=="maintenance")Text("Senza ricambi puoi lasciare vuota la quantità. Per scaricarli seleziona articolo e quantità.",fontSize=11.sp,color=TextSecondary)
+        }
+    },confirmButton={TextButton(onClick={
+        when(kind) {
+            "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person)
+            "count"->model.requestCycleCount(selected!!,parsed!!,reason)
+            "transfer"->model.requestTransfer(selected!!,target!!,parsed!!)
+            "maintenance"->model.createWorkOrder(machine,reason,selected,parsed?:0.0)
+        }
+        onClose()
+    },enabled=valid&&!ui.busy){Text("Salva")}},
+        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+}
