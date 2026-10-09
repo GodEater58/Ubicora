@@ -1,0 +1,109 @@
+name: Ubicora Stable Signed Update
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version_code:
+        description: 'VersionCode presente in app/build.gradle.kts (deve crescere tra gli aggiornamenti)'
+        required: true
+        type: number
+permissions:
+  contents: read
+concurrency:
+  group: ubicora-stable-release
+  cancel-in-progress: false
+jobs:
+  build-signed-update:
+    name: Verify and package signed Ubicora update
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK 36 and build tools
+        run: |
+          set -euo pipefail
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null || true
+          "$SDKMGR" --install 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools'
+      - name: Restore the existing permanent keystore, never generate another
+        env:
+          KEYSTORE_BASE64: ${{ secrets.UBICORA_KEYSTORE_BASE64 }}
+          UBICORA_RELEASE_STORE_PASSWORD: ${{ secrets.UBICORA_STORE_PASSWORD }}
+          UBICORA_RELEASE_KEY_ALIAS: ${{ secrets.UBICORA_KEY_ALIAS }}
+          UBICORA_RELEASE_KEY_PASSWORD: ${{ secrets.UBICORA_KEY_PASSWORD }}
+          EXPECTED_SIGNER: ${{ vars.UBICORA_SIGNING_CERT_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 UBICORA_RELEASE_STORE_PASSWORD UBICORA_RELEASE_KEY_ALIAS UBICORA_RELEASE_KEY_PASSWORD EXPECTED_SIGNER; do
+            if [[ -z "$(printenv "$name")" ]]; then
+              echo "::error::Missing $name. Configure the existing keystore in repository Actions secrets; no APK will be published."
+              exit 1
+            fi
+          done
+          signing_dir="$RUNNER_TEMP/ubicora-signing"
+          mkdir -m 700 -p "$signing_dir"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$signing_dir/ubicora-keystore.jks"
+          test -s "$signing_dir/ubicora-keystore.jks"
+          echo "UBICORA_RELEASE_STORE_FILE=$signing_dir/ubicora-keystore.jks" >> "$GITHUB_ENV"
+          echo "Using a stable signing key from Actions secrets"
+      - name: Build and test signed release
+        env:
+          UBICORA_RELEASE_STORE_PASSWORD: ${{ secrets.UBICORA_STORE_PASSWORD }}
+          UBICORA_RELEASE_KEY_ALIAS: ${{ secrets.UBICORA_KEY_ALIAS }}
+          UBICORA_RELEASE_KEY_PASSWORD: ${{ secrets.UBICORA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --max-workers=2 lint testDebugUnitTest testReleaseUnitTest assembleRelease
+      - name: Verify identity, exact versionCode and expected certificate
+        env:
+          EXPECTED_SIGNER: ${{ vars.UBICORA_SIGNING_CERT_SHA256 }}
+          EXPECTED_VERSION_CODE: ${{ inputs.expected_version_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -s "$apk"
+          mkdir -p app/build/reports/signed-update
+          "$apksigner" verify --verbose --print-certs "$apk" > app/build/reports/signed-update/apk-verification.txt
+          signer="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' app/build/reports/signed-update/apk-verification.txt | sed -n '1p' | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          expected="$(printf '%s' "$EXPECTED_SIGNER" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$signer" != "$expected" ]]; then
+            echo "::error::Signing certificate differs from the permanent expected fingerprint. Refusing to publish this APK."
+            exit 1
+          fi
+          package_line="$("$aapt" dump badging "$apk" | sed -n '1p')"
+          echo "$package_line" | grep -q "name='com.ubicora.app'"
+          echo "$package_line" | grep -q "versionCode='$EXPECTED_VERSION_CODE'"
+          {
+            echo "Package: com.ubicora.app"
+            echo "VersionCode: $EXPECTED_VERSION_CODE"
+            echo "Signer SHA-256: $signer"
+            echo "APK SHA-256: $(sha256sum "$apk" | cut -d ' ' -f 1)"
+            echo "Identity validated against the configured permanent signing fingerprint."
+            echo "Device install update is permitted only when the installed app uses this same signer and a compatible versionCode."
+          } > app/build/reports/signed-update/RELEASE-AUDIT.txt
+      - name: Upload signed UPDATE APK (never the debug artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubicora-signed-update-code-${{ inputs.expected_version_code }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/reports/signed-update/RELEASE-AUDIT.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary signing keystore
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/ubicora-signing"

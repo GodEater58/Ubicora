@@ -1,4 +1,4 @@
-name: Build Android Native Debug APK
+name: Build Android Native Debug APK (NOT UPDATABLE)
 on:
   workflow_dispatch:
   push:
@@ -38,7 +38,7 @@ jobs:
       - name: Verify compliance integration
         run: python3 tests/compliance_contract_test.py
       - name: Verify Ubicora branding and compatibility
-        run: python3 tests/brand_identity_contract_test.py
+        run: python3 tests/brand_identity_contract_test.py && python3 tests/update_signing_contract_test.py
       - name: Build and test
         run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean lint testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease assembleDebugAndroidTest
       - name: Upload verification reports
@@ -60,6 +60,6 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: officina-stock-4-native-debug-apk
+          name: ubicora-DEBUG-do-not-use-for-updates
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

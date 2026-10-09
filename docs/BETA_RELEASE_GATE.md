@@ -10,6 +10,12 @@
 4. **Scenari fisici.** Eseguire test UI, rotazione, notch/status bar, Android 15/16, picker foto, QR, scanner, accesso per profilo, background, AR con e senza servizi, tastiera, import CSV, mappa con zoom/drag e connessione offline.
 5. **Carico reale.** Misurare avvio, RAM, ANR, scrolling e ricerca con 1.000, 10.000 e 20.000 articoli. Il benchmark JVM non misura la latenza del telefono.
 
+## Aggiornamenti installabili senza perdere i dati
+
+Per gli APK distribuiti agli utenti usare **esclusivamente** il nuovo workflow manuale `Ubicora Stable Signed Update` che verifica la firma persistente e il codice versione. La guida operativa è [AGGIORNAMENTI_APK_SENZA_DISINSTALLARE.md](AGGIORNAMENTI_APK_SENZA_DISINSTALLARE.md).
+
+La firma degli APK debug generati nella normale CI non è garantita tra diverse esecuzioni. Il certificato di un APK già installato non può essere ricostruito senza la sua chiave privata originale. Se questa non è recuperabile, pianificare un unico passaggio tramite backup cifrato e ripristino; non disinstallare senza un backup testato.
+
 ## Firma release opzionale
 
 Configurazione Gradle attraverso le variabili di ambiente seguenti, senza committare password o file di firma:
