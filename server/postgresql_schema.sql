@@ -63,3 +63,32 @@ CREATE POLICY entity_manager_update ON entity_versions FOR UPDATE USING (
 );
 -- The API must additionally enforce per-resource privileges, immutable audit,
 -- idempotency, version conflicts and anti-replay. RLS alone is insufficient.
+
+-- Additional policy for operational asset editors, scoped to their own tenant.
+CREATE POLICY entity_asset_staff_insert ON entity_versions FOR INSERT WITH CHECK (
+    resource='asset' AND EXISTS(
+        SELECT 1 FROM tenant_members m WHERE m.tenant_id=entity_versions.tenant_id
+        AND m.subject=current_setting('app.user_subject',true)
+        AND m.is_active AND m.role IN ('WAREHOUSE','MAINTENANCE'))
+);
+CREATE POLICY entity_asset_staff_update ON entity_versions FOR UPDATE USING (
+    resource='asset' AND EXISTS(
+        SELECT 1 FROM tenant_members m WHERE m.tenant_id=entity_versions.tenant_id
+        AND m.subject=current_setting('app.user_subject',true)
+        AND m.is_active AND m.role IN ('WAREHOUSE','MAINTENANCE'))
+) WITH CHECK (
+    resource='asset' AND EXISTS(
+        SELECT 1 FROM tenant_members m WHERE m.tenant_id=entity_versions.tenant_id
+        AND m.subject=current_setting('app.user_subject',true)
+        AND m.is_active AND m.role IN ('WAREHOUSE','MAINTENANCE'))
+);
+CREATE POLICY entity_authorized_delete ON entity_versions FOR DELETE USING (
+    EXISTS(SELECT 1 FROM tenant_members m WHERE m.tenant_id=entity_versions.tenant_id
+        AND m.subject=current_setting('app.user_subject',true) AND m.is_active
+        AND (m.role='MANAGER'
+             OR (m.role='PURCHASING' AND resource IN ('supplier','cost_center'))
+             OR (m.role IN ('WAREHOUSE','MAINTENANCE') AND resource='asset')))
+);
+-- Event receipts are written only by the authenticated API, never directly by clients.
+CREATE INDEX IF NOT EXISTS idx_event_cursor
+    ON accepted_events(tenant_id,accepted_at,event_id);
