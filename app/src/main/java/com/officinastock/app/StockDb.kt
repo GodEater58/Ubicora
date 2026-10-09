@@ -218,7 +218,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }
     fun updateMapSize(warehouseId: Long, width: Float, height: Float) {
         require(width.isFinite() && width in 2f..150f && height.isFinite() && height in 2f..150f) { "Dimensioni ammesse: 2–150 metri" }
-        require(placements(warehouseId).all{it.x in 0f..width && it.y in 0f..height} &&
+        require(placements(warehouseId).all{PlanGeometry.placementFitsRoom(it,width,height)} &&
             walls(warehouseId).all{it.x1 in 0f..width && it.x2 in 0f..width && it.y1 in 0f..height && it.y2 in 0f..height}) {
             "Sposta le strutture e le pareti prima di ridurre la pianta: elementi fuori dai nuovi confini."
         }
@@ -302,6 +302,25 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         validatePurchase(cost,leadDays)
         val original=requireNotNull(item(itemId)) { "Articolo inesistente" }
         require(original.warehouseId==warehouseId) { "Articolo appartenente a un altro magazzino" }
+        // An open operation recorded its numeric quantity in the previous unit.
+        // Changing pz -> kg in place would silently corrupt receipts, stock counts and parts usage.
+        if(!original.unit.trim().equals(unit.trim(),ignoreCase=true)) {
+            require(original.quantity==0.0) {
+                "Prima esaurisci o trasferisci la giacenza: cambiare l'unità a una quantità già presente la falserebbe."
+            }
+            val hasOpenWork=readableDatabase.rawQuery(
+                """SELECT (
+                    EXISTS(SELECT 1 FROM ops_orders WHERE item_id=? AND status IN ('DRAFT','APPROVED','ORDERED'))
+                    OR EXISTS(SELECT 1 FROM ops_counts WHERE item_id=? AND status='PENDING')
+                    OR EXISTS(SELECT 1 FROM ops_transfers WHERE item_id=? AND status IN ('REQUESTED','IN_TRANSIT'))
+                    OR EXISTS(SELECT 1 FROM ops_maintenance WHERE item_id=? AND status='OPEN')
+                    OR EXISTS(SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL)
+                )""",Array(5){itemId.toString()}
+            ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0)!=0 }
+            require(!hasOpenWork) {
+                "Impossibile cambiare l'unità di misura: completa o annulla prima acquisti, conteggi, trasferimenti, manutenzioni e prestiti aperti."
+            }
+        }
         val values=ContentValues().apply {
             put("name",name.trim());put("category",category);put("minimum",minimum)
             put("unit",unit.trim());put("note",note.trim())
@@ -433,26 +452,49 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         require(label.trim().isNotEmpty()) { "Inserisci un nome" }
         val (mapWidth,mapHeight)=mapBounds(warehouseId)
         val (furnitureWidth,furnitureDepth)=PlanGeometry.defaultSize(kind)
+        require(furnitureWidth<=mapWidth && furnitureDepth<=mapHeight) {
+            "Struttura troppo grande per la pianta: aumenta le dimensioni del locale."
+        }
+        val pos=PlanGeometry.boundedPlacementCenter(x,y,furnitureWidth,furnitureDepth,0f,mapWidth,mapHeight)
         return writableDatabase.insertOrThrow("placements",null,ContentValues().apply {
             put("warehouse_id",warehouseId);put("kind",kind);put("label",label.trim())
-            put("x",x.coerceIn(0f,mapWidth));put("y",y.coerceIn(0f,mapHeight));put("locked",0)
+            put("x",pos.x);put("y",pos.y);put("locked",0)
             put("width_m",furnitureWidth);put("depth_m",furnitureDepth);put("rotation_deg",0)
         })
     }
     fun movePlacement(id: Long, x: Float, y: Float): Boolean {
         require(x.isFinite() && y.isFinite()) { "Coordinate non valide" }
-        val warehouseId=readableDatabase.rawQuery("SELECT warehouse_id FROM placements WHERE id=?",arrayOf(id.toString())).use {
-            if(!it.moveToFirst()) return false;it.getLong(0)
+        val fixture=readableDatabase.rawQuery(
+            "SELECT warehouse_id,width_m,depth_m,rotation_deg FROM placements WHERE id=?",
+            arrayOf(id.toString())).use { c ->
+            if(!c.moveToFirst()) return false
+            Triple(c.getLong(0),Pair(c.getFloat(1),c.getFloat(2)),c.getFloat(3))
         }
-        val (mapWidth,mapHeight)=mapBounds(warehouseId)
+        val (mapWidth,mapHeight)=mapBounds(fixture.first)
+        val pos=PlanGeometry.boundedPlacementCenter(x,y,fixture.second.first,
+            fixture.second.second,fixture.third,mapWidth,mapHeight)
         return writableDatabase.update("placements",ContentValues().apply {
-            put("x",x.coerceIn(0f,mapWidth));put("y",y.coerceIn(0f,mapHeight))
+            put("x",pos.x);put("y",pos.y)
         },"id=? AND locked=0",arrayOf(id.toString())) == 1
     }
     fun updatePlacementGeometry(id: Long, width: Float, depth: Float, rotation: Float) {
         require(width.isFinite() && depth.isFinite() && rotation.isFinite() && width in 0.2f..15f && depth in 0.2f..15f) { "Dimensioni della struttura non valide" }
+        val entry=readableDatabase.rawQuery("SELECT warehouse_id,x,y FROM placements WHERE id=?",
+            arrayOf(id.toString())).use { c ->
+            require(c.moveToFirst()) { "Struttura non trovata" }
+            Triple(c.getLong(0),c.getFloat(1),c.getFloat(2))
+        }
+        val (mapWidth,mapHeight)=mapBounds(entry.first)
+        val normalized=((rotation%360f)+360f)%360f
+        val pos=PlanGeometry.boundedPlacementCenter(entry.second,entry.third,
+            width,depth,normalized,mapWidth,mapHeight)
+        val testPlacement=Placement(id,entry.first,"","",pos.x,pos.y,false,width,depth,normalized)
+        require(PlanGeometry.placementFitsRoom(testPlacement,mapWidth,mapHeight)) {
+            "Ingombro troppo grande per la pianta: riduci la struttura o ingrandisci il locale."
+        }
         writableDatabase.update("placements",ContentValues().apply {
-            put("width_m",width);put("depth_m",depth);put("rotation_deg",((rotation%360f)+360f)%360f)
+            put("width_m",width);put("depth_m",depth);put("rotation_deg",normalized)
+            put("x",pos.x);put("y",pos.y)
         },"id=?",arrayOf(id.toString()))
     }
     fun lockPlacement(id: Long, locked: Boolean) { writableDatabase.update("placements",ContentValues().apply {

@@ -27,6 +27,7 @@ private fun statusLabel(status:String)=when(status) {
     val ui=model.ui
     var section by remember {mutableIntStateOf(0)}
     var create by remember {mutableStateOf<String?>(null)}
+    var purchaseItemId by remember {mutableStateOf<Long?>(null)}
     val openOrders=ui.orders.count { it.status=="DRAFT"||it.status=="APPROVED"||it.status=="ORDERED" }
     val pendingCounts=ui.stockCounts.count{it.status=="PENDING"}
     val activeTransfers=ui.stockTransfers.count{it.status=="REQUESTED"||it.status=="IN_TRANSIT"}
@@ -95,7 +96,7 @@ private fun statusLabel(status:String)=when(status) {
                                 Text(item.sku+" · "+amount(item.quantity)+" / minimo "+amount(item.minimum),
                                     color=TextSecondary,fontSize=11.sp)
                             }
-                            TextButton(onClick={create="purchase"}){Text("Acquista")}
+                            TextButton(onClick={purchaseItemId=item.id;create="purchase"}){Text("Acquista")}
                         }
                     }
                     Text("Il riordino richiede approvazione e conferma di ricezione: non modifica le scorte quando crei una richiesta.",
@@ -229,7 +230,8 @@ private fun statusLabel(status:String)=when(status) {
         }
     }
     create?.let { kind ->
-        NewOperationDialog(kind,model,onClose={create=null})
+        NewOperationDialog(kind,model,preselectedItemId=if(kind=="purchase") purchaseItemId else null,
+            onClose={create=null;purchaseItemId=null})
     }
 }
 
@@ -245,10 +247,10 @@ private fun statusLabel(status:String)=when(status) {
         Text(state,color=Amber,fontWeight=FontWeight.SemiBold,fontSize=11.sp)
     }
 }
-@Composable private fun NewOperationDialog(kind:String,model:StockViewModel,onClose:()->Unit) {
+@Composable private fun NewOperationDialog(kind:String,model:StockViewModel,preselectedItemId:Long?=null,onClose:()->Unit) {
     val ui=model.ui
-    var search by remember(kind){mutableStateOf("")}
-    var selected by remember(kind){mutableStateOf<Long?>(null)}
+    var search by remember(kind,preselectedItemId){mutableStateOf(preselectedItemId?.let{id->ui.items.firstOrNull{it.id==id}?.name}.orEmpty())}
+    var selected by remember(kind,preselectedItemId){mutableStateOf(preselectedItemId)}
     var amountInput by remember(kind){mutableStateOf("")}
     var reason by remember(kind){mutableStateOf("")}
     var supplier by remember(kind){mutableStateOf("")}

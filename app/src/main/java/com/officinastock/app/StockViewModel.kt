@@ -239,7 +239,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     // Durante il drag aggiorniamo l'UI immediatamente; il commit avviene solo al rilascio.
     fun previewMove(id:Long,x:Float,y:Float) {
-        ui=ui.copy(placements=ui.placements.map{if(it.id==id && !it.locked)it.copy(x=x.coerceIn(0f,ui.warehouse?.mapWidth ?: 12f),y=y.coerceIn(0f,ui.warehouse?.mapHeight ?: 8f)) else it})
+        val wh=ui.warehouse ?: return
+        ui=ui.copy(placements=ui.placements.map{p ->
+            if(p.id!=id || p.locked) p else {
+                val pos=PlanGeometry.boundedPlacementCenter(x,y,p.width,p.depth,p.rotation,
+                    wh.mapWidth,wh.mapHeight)
+                p.copy(x=pos.x,y=pos.y)
+            }
+        })
     }
     fun commitMove(id:Long,x:Float,y:Float) = execute { db.movePlacement(id,x,y) }
     fun lockPlacement(id:Long,locked:Boolean)=execute{db.lockPlacement(id,locked)}

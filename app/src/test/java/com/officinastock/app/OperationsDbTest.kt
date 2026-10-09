@@ -90,6 +90,34 @@ class OperationsDbTest {
         ops.progressTransfer(transfer,"Manager","CANCEL")
         assertEquals(20.0,db.item(item)!!.quantity,0.0)
     }
+    @Test fun pendingOperationsPreventUnitChangesUntilResolved(){
+        val row=db.item(item)!!
+        fun setUnit(unit:String)=db.updateItemDetails(source,item,row.name,row.category,
+            row.minimum,unit,row.note,row.unitCost,row.supplier,row.leadDays)
+        val order=ops.createOrder(source,item,4.0,"ACME","Manager")
+        val count=ops.requestCount(source,item,18.0,"Inventario","Manager")
+        val transfer=ops.requestTransfer(source,destination,item,2.0,"Manager")
+        val work=ops.createMaintenance(source,"Pressa","Sostituzione sensore",item,1.0,"Manager")
+        rejects {setUnit("kg")}
+        assertEquals("pz",db.item(item)!!.unit)
+        assertEquals(20.0,db.item(item)!!.quantity,0.0)
+        ops.advanceOrder(source,order,"CANCEL","Manager")
+        rejects {setUnit("kg")}
+        ops.finishCount(source,count,false,"Manager")
+        rejects {setUnit("kg")}
+        ops.progressTransfer(transfer,"Manager","CANCEL")
+        rejects {setUnit("kg")}
+        ops.finishMaintenance(source,work,false,"Manager")
+        rejects {setUnit("kg")} // Even without open work, converting 20 pz into 20 kg is incorrect.
+        db.lend(item,"Operatore",20.0)
+        assertEquals(0.0,db.item(item)!!.quantity,0.0)
+        rejects {setUnit("kg")} // An active loan still holds quantities in the old unit.
+        db.returnLoan(db.activeLoans(source).single().id)
+        db.movement(item,-20.0,"Esaurimento prima del cambio unità")
+        setUnit("kg")
+        assertEquals("kg",db.item(item)!!.unit)
+        assertEquals(0.0,db.item(item)!!.quantity,0.0)
+    }
     @Test fun cancellationReturnsInventoryAndMaintenanceUsesMovement(){
         val transfer=ops.requestTransfer(source,destination,item,3.0,"Manager")
         ops.progressTransfer(transfer,"Manager","SHIP")
