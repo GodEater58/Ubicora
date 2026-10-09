@@ -90,6 +90,27 @@ class OperationsDbTest {
         assertTrue(db.movements(source).any{it.note.contains("manutenzione #$id")})
         rejects{ops.finishMaintenance(source,id,true,"Manager")}
     }
+    @Test fun businessModeBudgetAndCsvAreIsolatedPerProfile(){
+        val second=db.createProfile("Casa","5678")
+        assertFalse(ops.businessMode(profile))
+        ops.setBusinessMode(profile,true)
+        ops.setMonthlyBudget(profile,750.0)
+        assertTrue(ops.businessMode(profile))
+        assertEquals(750.0,ops.monthlyBudget(profile)!!,0.0)
+        assertFalse(ops.businessMode(second))
+        assertNull(ops.monthlyBudget(second))
+        val dangerous=PurchaseRequest(1,source,item,"Test",5.0,0.0,2.5,
+            "=HYPERLINK(\"bad\")","Manager","DRAFT",1L)
+        val report=OperationsCsv.export(StockUiState(
+            profile=Profile(profile,"Gestore"),
+            warehouse=db.warehouses(profile).first{it.id==source},
+            orders=listOf(dangerous),
+            items=db.items(source)
+        ))
+        assertTrue(report.contains("'=HYPERLINK"))
+        assertTrue(report.contains("12.5"))
+        assertTrue(runCatching{ops.setMonthlyBudget(profile,-1.0)}.isFailure)
+    }
     @Test fun encryptedBackupRestoresEveryManagerWorkflow(){
         val order=ops.createOrder(source,item,4.0,"Acme","Manager")
         ops.advanceOrder(source,order,"APPROVE","Manager")
