@@ -18,11 +18,11 @@ import androidx.compose.ui.unit.sp
     var code by remember {mutableStateOf("")}
     var second by remember {mutableStateOf("")}
     var third by remember {mutableStateOf("")}
-    var amount by remember {mutableStateOf("")}
+    var amountInput by remember {mutableStateOf("")}
     var role by remember {mutableStateOf("WAREHOUSE")}
     var center by remember {mutableStateOf<Long?>(null)}
     fun resetAndOpen(kind:String){
-        title="";code="";second="";third="";amount="";role="WAREHOUSE";center=null
+        title="";code="";second="";third="";amountInput="";role="WAREHOUSE";center=null
         dialog=kind
     }
     Panel(Modifier.fillMaxWidth()) {
@@ -73,13 +73,13 @@ import androidx.compose.ui.unit.sp
     }
     val current=dialog
     if(current!=null) {
-        val enteredBudget=amount.trim().replace(',','.').toDoubleOrNull()
-        val lead=amount.trim().toIntOrNull()
+        val enteredBudget=amountInput.trim().replace(',','.').toDoubleOrNull()
+        val lead=amountInput.trim().toIntOrNull()
         val valid=when(current) {
             "center" -> code.trim().matches(Regex("[A-Za-z0-9_-]{2,24}")) &&
-                title.trim().length>=2 && (amount.isBlank() || (enteredBudget!=null && enteredBudget.isFinite() && enteredBudget>=0))
+                title.trim().length>=2 && (amountInput.isBlank() || (enteredBudget!=null && enteredBudget.isFinite() && enteredBudget>=0))
             "supplier" -> title.trim().length>=2 &&
-                (amount.isBlank()||(lead!=null && lead in 0..3650)) &&
+                (amountInput.isBlank()||(lead!=null && lead in 0..3650)) &&
                 (third.isBlank() || third.contains('@'))
             "asset" -> code.trim().matches(Regex("[A-Za-z0-9_-]{2,32}")) && title.trim().length>=2
             else -> title.trim().length>=2
@@ -97,14 +97,14 @@ import androidx.compose.ui.unit.sp
                     modifier=Modifier.fillMaxWidth())
                 if(current=="center" || current=="asset") OutlinedTextField(code,{code=it.take(32)},
                     label={Text("Codice")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                if(current=="center") OutlinedTextField(amount,{amount=it},label={Text("Budget mensile € (facoltativo)")},
+                if(current=="center") OutlinedTextField(amountInput,{amountInput=it},label={Text("Budget mensile € (facoltativo)")},
                     singleLine=true,modifier=Modifier.fillMaxWidth())
                 if(current=="supplier") {
                     OutlinedTextField(second,{second=it.take(40)},label={Text("P. IVA / identificativo fiscale")},
                         singleLine=true,modifier=Modifier.fillMaxWidth())
                     OutlinedTextField(third,{third=it.take(180)},label={Text("Email (facoltativa)")},
                         singleLine=true,modifier=Modifier.fillMaxWidth())
-                    OutlinedTextField(amount,{amount=it.take(4)},label={Text("Consegna prevista, giorni")},
+                    OutlinedTextField(amountInput,{amountInput=it.take(4)},label={Text("Consegna prevista, giorni")},
                         singleLine=true,modifier=Modifier.fillMaxWidth())
                 }
                 if(current=="asset") {
