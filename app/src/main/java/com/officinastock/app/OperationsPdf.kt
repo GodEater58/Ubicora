@@ -73,7 +73,7 @@ object OperationsPdf {
             writeLine("Articoli: "+report.itemCount+" · Esauriti: "+report.zeroStock+" · Sotto soglia: "+report.lowStock)
             writeLine("Senza ubicazione: "+report.missingLocation+" · Costo noto per "+report.pricedCount+" articoli")
             writeLine("Valore noto scorte: "+eur.format(report.knownStockValue))
-            writeLine("Budget mensile: "+(state.monthlyBudget?.let(eur::format) ?: "non impostato"))
+            writeLine("Budget mensile: "+(state.monthlyBudget?.let{eur.format(it)} ?: "non impostato"))
             section("Acquisti")
             if(state.orders.isEmpty())writeLine("Nessuna richiesta registrata.")
             state.orders.forEach {o->
