@@ -23,7 +23,7 @@ private fun statusLabel(status:String)=when(status) {
     "OPEN"->"Aperto";"DONE"->"Completato";else->status
 }
 
-@Composable fun OperationsScreen(model:StockViewModel,onBack:()->Unit,onCsvExport:()->Unit) {
+@Composable fun OperationsScreen(model:StockViewModel,onBack:()->Unit,onCsvExport:()->Unit,onPdfExport:()->Unit) {
     val ui=model.ui
     var section by remember {mutableIntStateOf(0)}
     var create by remember {mutableStateOf<String?>(null)}
@@ -38,6 +38,7 @@ private fun statusLabel(status:String)=when(status) {
                 Text("UBICORA · AZIENDALE",color=Mint,fontSize=10.sp,fontWeight=FontWeight.Bold)
                 Text("Centro operativo",fontSize=22.sp,fontWeight=FontWeight.Bold)
             }
+            IconButton(onClick=onPdfExport){Icon(Icons.Outlined.PictureAsPdf,contentDescription="Esporta report PDF")}
             IconButton(onClick=onCsvExport){Icon(Icons.Outlined.Download,contentDescription="Esporta report CSV")}
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp),
