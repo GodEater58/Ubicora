@@ -21,6 +21,28 @@ class PlanGeometryTest {
         assertTrue(PlanGeometry.contains(PointMetres(5f,4.9f),fixture))
         assertFalse(PlanGeometry.contains(PointMetres(6.7f,4f),fixture))
     }
+    @Test fun rotatedFixtureBoundsStayInsideRoom() {
+        val straight=PlanGeometry.boundedPlacementCenter(0f,0f,2f,.8f,0f,12f,8f)
+        assertEquals(1f,straight.x,.001f)
+        assertEquals(.4f,straight.y,.001f)
+        val rotated=PlanGeometry.boundedPlacementCenter(0f,0f,2f,.8f,90f,12f,8f)
+        assertEquals(.4f,rotated.x,.001f)
+        assertEquals(1f,rotated.y,.001f)
+        val skew=PlanGeometry.boundedPlacementCenter(12f,8f,2f,1f,45f,12f,8f)
+        val half=3f*kotlin.math.sqrt(.5f)/2f
+        assertEquals(12f-half,skew.x,.001f)
+        assertEquals(8f-half,skew.y,.001f)
+        assertTrue(PlanGeometry.placementFitsRoom(
+            Placement(1,1,"Scaffale","A",skew.x,skew.y,false,2f,1f,45f),12f,8f))
+    }
+    @Test fun oversizedFixtureIsRecognizedAsNotFitting() {
+        val center=PlanGeometry.boundedPlacementCenter(-3f,50f,15f,10f,0f,2f,3f)
+        assertEquals(1f,center.x,.001f)
+        assertEquals(1.5f,center.y,.001f)
+        assertFalse(PlanGeometry.placementFitsRoom(
+            Placement(1,1,"Area","Gigante",center.x,center.y,false,15f,10f,0f),2f,3f))
+        assertTrue(runCatching{PlanGeometry.boundedPlacementCenter(Float.NaN,0f,1f,1f,0f,12f,8f)}.isFailure)
+    }
     @Test fun dimensionsAndOrthogonal() {
         val fixed=PlanGeometry.orthogonal(PointMetres(2f,3f),PointMetres(6f,3.2f))
         assertEquals(3f,fixed.y,.001f)
