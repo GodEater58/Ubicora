@@ -39,6 +39,6 @@ assert "verify-update-on-device.ps1" in guide
 assert "NON" in guide or "non" in guide
 assert "& $apksigner verify --print-certs" in script
 assert "exit 1" in script and "exit 0" in script
-assert "adb pull" in script
+assert "& $adb pull" in script
 assert "Remove-Item" in script
 print("Permanent signing / no-uninstall update contract: PASS")
