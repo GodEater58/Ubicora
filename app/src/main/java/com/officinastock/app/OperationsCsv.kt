@@ -5,7 +5,7 @@ object OperationsCsv {
     private fun field(value:Any?):String {
         var s=value?.toString().orEmpty()
         // Non permettere formule eseguibili quando si apre il report in un foglio di calcolo.
-        if(s.trimStart().startsWith("=") || s.trimStart().startsWith("+") ||
+        if(value is String && (s.trimStart().startsWith("=") || s.trimStart().startsWith("+") ||
             s.trimStart().startsWith("-") || s.trimStart().startsWith("@") ||
             s.startsWith("\t") || s.startsWith("\r")) s="'"+s
         return "\""+s.replace("\"","＂").replace("\r"," ").replace("\n"," ")+"\""
