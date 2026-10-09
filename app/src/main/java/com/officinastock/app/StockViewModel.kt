@@ -59,7 +59,6 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private val trace = StockTraceDb(db)
     var ui by mutableStateOf(StockUiState())
         private set
-    init { refresh() }
     private var operationalRowLimit=250
     private var backgroundGeneration=0L
     private var archiveAuthorization:Set<Long>?=null
@@ -127,7 +126,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 } ?: ManagerSnapshot(),
                 demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
-                busy=false,message=error).copy(
+                busy=true,message=error).copy(
                     orders=warehouse?.let {operations.orders(it.id,operationalRowLimit)} ?: emptyList(),
                     stockCounts=warehouse?.let {operations.counts(it.id,operationalRowLimit)} ?: emptyList(),
                     stockTransfers=warehouse?.let {operations.transfers(it.id,operationalRowLimit)} ?: emptyList(),
@@ -163,6 +162,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     private var pendingProfileId: Long? = null
     private var pendingWarehouseId: Long? = null
+    // All operation/session fields must exist before the first coroutine starts.
+    init { refresh() }
     fun unlock(profile: Profile,pin: String) = execute {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
@@ -469,7 +470,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(selectedWarehouse!=null) {
             val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}
             operationalRowLimit=250
-        ui=ui.copy(warehouse=w)
+            ui=ui.copy(warehouse=w)
         }
         pendingProfileId=null;pendingWarehouseId=null
         reload(error)
