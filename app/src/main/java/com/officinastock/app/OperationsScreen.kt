@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro")
+private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche")
 private fun statusLabel(status:String)=when(status) {
     "DRAFT"->"Da approvare";"APPROVED"->"Approvato";"ORDERED"->"Ordinato"
     "RECEIVED"->"Ricevuto";"CANCELLED"->"Annullato";"PENDING"->"Da verificare"
@@ -28,6 +28,7 @@ private fun statusLabel(status:String)=when(status) {
     var section by remember {mutableIntStateOf(0)}
     var create by remember {mutableStateOf<String?>(null)}
     var purchaseItemId by remember {mutableStateOf<Long?>(null)}
+    var receivingOrder by remember {mutableStateOf<PurchaseRequest?>(null)}
     val openOrders=ui.orders.count { it.status=="DRAFT"||it.status=="APPROVED"||it.status=="ORDERED" }
     val pendingCounts=ui.stockCounts.count{it.status=="PENDING"}
     val activeTransfers=ui.stockTransfers.count{it.status=="REQUESTED"||it.status=="IN_TRANSIT"}
@@ -133,6 +134,14 @@ private fun statusLabel(status:String)=when(status) {
                         OperationHeading("Ordine #"+o.id,o.itemName,statusLabel(o.status))
                         Text(amount(o.quantity)+" · "+o.supplier.ifBlank{"Fornitore non indicato"}+" · "+o.owner,
                             color=TextSecondary,fontSize=12.sp)
+                        o.centerId?.let { id ->
+                            ui.costCenters.firstOrNull{it.id==id}?.let{c->
+                                Text("Centro di costo: "+c.code+" · "+c.name,color=Sky,fontSize=11.sp)
+                            }
+                        }
+                        Text("Ricevuti "+amount(o.received)+" / "+amount(o.quantity)+
+                            " · Da ricevere "+amount((o.quantity-o.received).coerceAtLeast(0.0)),
+                            fontSize=12.sp,color=TextSecondary)
                         o.unitPrice?.let{Text("Valore previsto: "+String.format(java.util.Locale.ITALY,"%.2f €",o.quantity*it),fontSize=12.sp)}
                         Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
                             when(o.status) {
@@ -145,7 +154,7 @@ private fun statusLabel(status:String)=when(status) {
                                     TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
                                 }
                                 "ORDERED"->{
-                                    TextButton(onClick={model.advancePurchase(o.id,"RECEIVE")}){Text("Conferma arrivo")}
+                                    TextButton(onClick={receivingOrder=o}){Text("Registra consegna")}
                                     TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
                                 }
                             }
@@ -226,12 +235,34 @@ private fun statusLabel(status:String)=when(status) {
                     }
                 }
             }
+            if(section==6) item {EnterpriseDirectoryPanel(model)}
             item{Spacer(Modifier.height(14.dp))}
         }
     }
     create?.let { kind ->
         NewOperationDialog(kind,model,preselectedItemId=if(kind=="purchase") purchaseItemId else null,
             onClose={create=null;purchaseItemId=null})
+    }
+    receivingOrder?.let { order ->
+        var quantity by remember(order.id){mutableStateOf("")}
+        val value=quantity.trim().replace(',','.').toDoubleOrNull()
+        val remaining=order.quantity-order.received
+        AlertDialog(onDismissRequest={receivingOrder=null},title={Text("Ricevimento ordine #"+order.id)},
+            text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Text(order.itemName+" · ancora da ricevere: "+amount(remaining),fontSize=13.sp)
+                Text("Carica soltanto la merce arrivata. L'ordine resta aperto fino al saldo.",
+                    fontSize=12.sp,color=TextSecondary)
+                OutlinedTextField(quantity,{quantity=it},label={Text("Quantità ricevuta")},
+                    singleLine=true,modifier=Modifier.fillMaxWidth())
+            }},
+            confirmButton={TextButton(onClick={
+                model.receivePurchase(order.id,value!!)
+                receivingOrder=null
+            },enabled=value!=null && value.isFinite() && value>0.0 && value<=remaining && !ui.busy){
+                Text("Registra arrivo")
+            }},
+            dismissButton={TextButton(onClick={receivingOrder=null}){Text("Annulla")}}
+        )
     }
 }
 
@@ -254,6 +285,8 @@ private fun statusLabel(status:String)=when(status) {
     var amountInput by remember(kind){mutableStateOf("")}
     var reason by remember(kind){mutableStateOf("")}
     var supplier by remember(kind){mutableStateOf("")}
+    var selectedCenter by remember(kind){mutableStateOf<Long?>(null)}
+    var selectedSupplier by remember(kind){mutableStateOf<Long?>(null)}
     var person by remember(kind){mutableStateOf(ui.profile?.name.orEmpty())}
     var machine by remember(kind){mutableStateOf("")}
     var target by remember(kind){mutableStateOf<Long?>(null)}
@@ -299,7 +332,24 @@ private fun statusLabel(status:String)=when(status) {
                 else->"Quantità"
             },number=true)
             if(kind=="purchase") {
-                Input(supplier,{supplier=it},"Fornitore")
+                if(ui.costCenters.isNotEmpty()) {
+                    Text("Centro di costo (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    ui.costCenters.take(30).forEach {c->
+                        FilterChip(selected=selectedCenter==c.id,
+                            onClick={selectedCenter=if(selectedCenter==c.id)null else c.id},
+                            label={Text(c.code+" · "+c.name,fontSize=11.sp)})
+                    }
+                }
+                if(ui.businessSuppliers.isNotEmpty()) {
+                    Text("Fornitore da anagrafica (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    ui.businessSuppliers.take(30).forEach{f->
+                        FilterChip(selected=selectedSupplier==f.id,onClick={
+                            selectedSupplier=if(selectedSupplier==f.id)null else f.id
+                            if(selectedSupplier!=null)supplier=f.name
+                        },label={Text(f.name,fontSize=11.sp)})
+                    }
+                }
+                Input(supplier,{supplier=it;selectedSupplier=null},"Fornitore (testo libero)")
                 Input(person,{person=it},"Responsabile")
             }
             if(kind=="count")Input(reason,{reason=it},"Motivo / riferimento inventario")
@@ -316,7 +366,7 @@ private fun statusLabel(status:String)=when(status) {
         }
     },confirmButton={TextButton(onClick={
         when(kind) {
-            "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person)
+            "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person,selectedCenter,selectedSupplier)
             "count"->model.requestCycleCount(selected!!,parsed!!,reason)
             "transfer"->model.requestTransfer(selected!!,target!!,parsed!!)
             "maintenance"->model.createWorkOrder(machine,reason,selected,parsed?:0.0)

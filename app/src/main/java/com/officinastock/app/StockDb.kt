@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 7) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 8) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -54,6 +54,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         createSkuSequences(db)
         createDemoAssets(db)
         OperationsDb.createTables(db)
+        EnterpriseDb.createTables(db)
+        EnterpriseDb.addOperationLinks(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -102,6 +104,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         if (oldVersion < 7 && newVersion >= 7) {
             OperationsDb.createTables(db)
+        }
+        if (oldVersion < 8 && newVersion >= 8) {
+            EnterpriseDb.createTables(db)
+            EnterpriseDb.addOperationLinks(db)
         }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
@@ -790,6 +796,20 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(StockRules.validQuantity(c.getDouble(0)) && StockRules.validQuantity(c.getDouble(1)) &&
                 (c.isNull(2) || StockRules.validQuantity(c.getDouble(2)))) { "Quantità o costo non valido nel backup" }
         } }
+        // Foreign keys cannot by themselves enforce cross-profile business ownership.
+        for((query,message) in listOf(
+            """SELECT 1 FROM org_assets a JOIN warehouses w ON w.id=a.warehouse_id
+                JOIN org_centers c ON c.id=a.center_id
+                WHERE c.profile_id<>w.profile_id LIMIT 1""" to "Macchina assegnata a centro di un altro profilo",
+            """SELECT 1 FROM ops_orders o JOIN warehouses w ON w.id=o.warehouse_id
+                JOIN org_centers c ON c.id=o.center_id
+                WHERE c.profile_id<>w.profile_id LIMIT 1""" to "Ordine con centro di costo esterno",
+            """SELECT 1 FROM ops_orders o JOIN warehouses w ON w.id=o.warehouse_id
+                JOIN org_suppliers s ON s.id=o.supplier_id
+                WHERE s.profile_id<>w.profile_id LIMIT 1""" to "Ordine con fornitore di un altro profilo",
+            """SELECT 1 FROM ops_maintenance m JOIN org_assets a ON a.id=m.asset_id
+                WHERE a.warehouse_id<>m.warehouse_id LIMIT 1""" to "Intervento collegato ad altra macchina"
+        )) db.rawQuery(query,null).use {c->require(!c.moveToFirst()){message}}
         // Prevent cross-warehouse workflow references even in imported encrypted archives.
         db.rawQuery("""SELECT 1 FROM ops_orders o JOIN items i ON i.id=o.item_id
             WHERE o.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {

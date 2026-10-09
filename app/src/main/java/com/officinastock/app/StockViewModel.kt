@@ -38,11 +38,17 @@ data class StockUiState(
     val maintenanceWork: List<MaintenanceWork> = emptyList(),
     val operationsEvents: List<OperationsEvent> = emptyList(),
     val businessMode: Boolean = false,
-    val monthlyBudget: Double? = null
+    val monthlyBudget: Double? = null,
+    val costCenters: List<CostCenter> = emptyList(),
+    val businessSuppliers: List<BusinessSupplier> = emptyList(),
+    val businessAssets: List<BusinessAsset> = emptyList(),
+    val staffDirectory: List<StaffDirectoryEntry> = emptyList(),
+    val unsentCatalogEvents: Int = 0
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
     private val operations = OperationsDb(db)
+    private val enterprise = EnterpriseDb(db)
     var ui by mutableStateOf(StockUiState())
         private set
     init { refresh() }
@@ -119,7 +125,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     maintenanceWork=warehouse?.let {operations.maintenance(it.id)} ?: emptyList(),
                     operationsEvents=warehouse?.let {operations.events(it.id)} ?: emptyList(),
                     businessMode=profile?.let {operations.businessMode(it.id)} ?: false,
-                    monthlyBudget=profile?.let {operations.monthlyBudget(it.id)}
+                    monthlyBudget=profile?.let {operations.monthlyBudget(it.id)},
+                    costCenters=profile?.let {enterprise.centers(it.id)} ?: emptyList(),
+                    businessSuppliers=profile?.let {enterprise.suppliers(it.id)} ?: emptyList(),
+                    businessAssets=warehouse?.let {enterprise.assets(it.id)} ?: emptyList(),
+                    staffDirectory=profile?.let {enterprise.staffDirectory(it.id)} ?: emptyList(),
+                    unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
@@ -200,11 +211,35 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val profile=requireNotNull(ui.profile){"Profilo non selezionato"}
         operations.setMonthlyBudget(profile.id,value)
     }
-    fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String) = execute {
-        operations.createOrder(requireWarehouse(),itemId,quantity,supplier,owner.ifBlank{managerActor()})
+    fun addCostCenter(code:String,name:String,budget:Double?) = execute {
+        val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        enterprise.createCenter(pid,code,name,budget)
+    }
+    fun addBusinessSupplier(name:String,taxId:String,email:String,leadDays:Int?) = execute {
+        val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        enterprise.createSupplier(pid,name,taxId,email,leadDays)
+    }
+    fun addBusinessAsset(code:String,name:String,centerId:Long?) = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        enterprise.createAsset(requireWarehouse(),code,name,centerId)
+    }
+    fun addStaffDirectoryEntry(name:String,role:String) = execute {
+        val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        enterprise.addStaffDirectoryEntry(pid,name,role)
+    }
+    fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String,
+                        costCenterId:Long?=null,supplierId:Long?=null) = execute {
+        operations.createOrder(requireWarehouse(),itemId,quantity,supplier,owner.ifBlank{managerActor()},
+            costCenterId,supplierId)
     }
     fun advancePurchase(id:Long,action:String) = execute {
         operations.advanceOrder(requireWarehouse(),id,action,managerActor())
+    }
+    fun receivePurchase(id:Long,quantity:Double) = execute {
+        operations.receiveOrderQuantity(requireWarehouse(),id,quantity,managerActor())
     }
     fun requestCycleCount(itemId:Long,counted:Double,reason:String) = execute {
         operations.requestCount(requireWarehouse(),itemId,counted,reason,managerActor())
