@@ -76,13 +76,13 @@ jobs:
           test -s "$apk"
           mkdir -p app/build/reports/signed-update
           "$apksigner" verify --verbose --print-certs "$apk" > app/build/reports/signed-update/apk-verification.txt
-          signer="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' app/build/reports/signed-update/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          signer="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' app/build/reports/signed-update/apk-verification.txt | sed -n '1p' | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
           expected="$(printf '%s' "$EXPECTED_SIGNER" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
           if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$signer" != "$expected" ]]; then
             echo "::error::Signing certificate differs from the permanent expected fingerprint. Refusing to publish this APK."
             exit 1
           fi
-          package_line="$("$aapt" dump badging "$apk" | head -n 1)"
+          package_line="$("$aapt" dump badging "$apk" | sed -n '1p')"
           echo "$package_line" | grep -q "name='com.ubicora.app'"
           echo "$package_line" | grep -q "versionCode='$EXPECTED_VERSION_CODE'"
           {
