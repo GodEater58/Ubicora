@@ -27,6 +27,7 @@ import java.time.Instant
     var consumingLot by remember{mutableStateOf<StockLot?>(null)}
     var discarding by remember{mutableStateOf(false)}
     var issuingSerial by remember{mutableStateOf<StockSerial?>(null)}
+    var showHistory by remember{mutableStateOf(false)}
     fun open(kind:String){selected=null;search="";code="";quantity="";expiry="";dialog=kind}
     val today=LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant().toEpochMilli()
     Panel(Modifier.fillMaxWidth()){
@@ -66,7 +67,22 @@ import java.time.Instant
                 fontSize=12.sp,fontWeight=FontWeight.SemiBold)
             TextButton(onClick={issuingSerial=serial},enabled=!ui.busy){Text("Registra assegnazione del seriale")}
         }
-        Text("Lotti esauriti e seriali assegnati restano nello storico locale. I movimenti di magazzino sono registrati allo scarico.",
+        val usedLots=ui.stockLots.filter{it.quantity==0.0}
+        val issued=ui.stockSerials.filter{it.state=="ISSUED"}
+        TextButton(onClick={showHistory=!showHistory}){
+            Text((if(showHistory)"Nascondi" else "Mostra")+" storico · "+(usedLots.size+issued.size)+" riferimenti")
+        }
+        if(showHistory) {
+            usedLots.take(35).forEach{l->
+                Text("Lotto esaurito: "+l.code+" · "+(ui.items.firstOrNull{it.id==l.itemId}?.name ?: "Articolo"),
+                    color=TextSecondary,fontSize=11.sp)
+            }
+            issued.take(35).forEach{serial->
+                Text("Seriale assegnato: "+serial.code+" · "+(ui.items.firstOrNull{it.id==serial.itemId}?.name ?: "Articolo"),
+                    color=TextSecondary,fontSize=11.sp)
+            }
+        }
+        Text("I movimenti sono registrati allo scarico. Per consultare la cronologia completa usa il registro magazzino.",
             color=TextSecondary,fontSize=11.sp)
     }
     dialog?.let{kind->
