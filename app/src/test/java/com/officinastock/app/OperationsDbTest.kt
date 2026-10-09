@@ -77,6 +77,19 @@ class OperationsDbTest {
         assertEquals(8.0,db.item(destItem.id)!!.quantity,0.0)
         assertTrue(db.movements(destination).any{it.note.contains("Ricezione trasferimento")})
     }
+    @Test fun transferDoesNotMergeSameSkuWithIncompatibleItems() {
+        val conflicting=db.addItem(destination,"Valvola incompatibile","Pneumatica",4.0,0.0,"kg","")
+        db.writableDatabase.execSQL("UPDATE items SET sku=? WHERE id=?",
+            arrayOf(db.item(item)!!.sku,conflicting))
+        val transfer=ops.requestTransfer(source,destination,item,3.0,"Manager")
+        ops.progressTransfer(transfer,"Manager","SHIP")
+        assertEquals(17.0,db.item(item)!!.quantity,0.0)
+        rejects{ops.progressTransfer(transfer,"Manager","RECEIVE")}
+        assertEquals("IN_TRANSIT",ops.transfers(source).single().status)
+        assertEquals(4.0,db.item(conflicting)!!.quantity,0.0)
+        ops.progressTransfer(transfer,"Manager","CANCEL")
+        assertEquals(20.0,db.item(item)!!.quantity,0.0)
+    }
     @Test fun cancellationReturnsInventoryAndMaintenanceUsesMovement(){
         val transfer=ops.requestTransfer(source,destination,item,3.0,"Manager")
         ops.progressTransfer(transfer,"Manager","SHIP")
