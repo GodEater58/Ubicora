@@ -330,7 +330,11 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
              SUM(CASE WHEN m.created_at>=? THEN -m.delta ELSE 0 END),
              SUM(-m.delta)
              FROM movements m JOIN items i ON i.id=m.item_id
-             WHERE i.warehouse_id=? AND m.created_at>=? AND m.delta<0 AND m.note NOT LIKE 'Assegnato a %'
+             WHERE i.warehouse_id=? AND m.created_at>=? AND m.delta<0
+             AND m.note NOT LIKE 'Assegnato a %'
+             AND m.note NOT LIKE 'Spedizione trasferimento %'
+             AND m.note NOT LIKE 'Inventario ciclico %'
+             AND m.note NOT LIKE 'Rettifica inventario:%'
              GROUP BY m.item_id""",
             arrayOf(since7.toString(),since30.toString(),warehouseId.toString(),since90.toString())
         ).use{c -> buildList {while(c.moveToNext()) add(ItemUsage(c.getLong(0),c.getDouble(1),c.getDouble(2),c.getDouble(3)))}}
