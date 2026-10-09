@@ -30,15 +30,17 @@ class MapPlacementBoundsTest {
         assertTrue(db.movePlacement(id,0f,0f))
         db.updatePlacementGeometry(id,2f,.75f,90f)
         val rotated=db.placements(warehouse).single()
-        assertEquals(.375f,rotated.x,.001f)
-        assertEquals(1f,rotated.y,.001f)
+        assertEquals(1f,rotated.x,.001f) // Existing x is valid after rotation.
+        assertEquals(1f,rotated.y,.001f) // Old y would clip the rotated shelf.
         assertTrue(db.movePlacement(id,0f,0f))
-        assertEquals(rotated,db.placements(warehouse).single())
+        val moved=db.placements(warehouse).single()
+        assertEquals(.375f,moved.x,.001f)
+        assertEquals(1f,moved.y,.001f)
         db.lockPlacement(id,true)
         assertFalse(db.movePlacement(id,11f,7f))
         val stillLocked=db.placements(warehouse).single()
-        assertEquals(rotated.x,stillLocked.x,.001f)
-        assertEquals(rotated.y,stillLocked.y,.001f)
+        assertEquals(moved.x,stillLocked.x,.001f)
+        assertEquals(moved.y,stillLocked.y,.001f)
     }
 
     @Test fun geometryAndRoomResizeRejectClippedFixtures() {
