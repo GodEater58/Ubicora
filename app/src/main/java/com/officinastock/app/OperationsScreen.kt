@@ -61,6 +61,28 @@ private fun statusLabel(status:String)=when(status) {
                         SmallMetric("INTERVENTI",openWork.toString(),"Aperti",Amber,Modifier.weight(1f),onClick={section=4})
                     }
                 }
+                item { Panel(Modifier.fillMaxWidth()) {
+                    val month=java.time.YearMonth.now()
+                    val currentMonth=ui.orders.filter {
+                        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it.createdAt)
+                            .atZone(java.time.ZoneId.systemDefault()))==month &&
+                            it.status in listOf("APPROVED","ORDERED","RECEIVED")
+                    }
+                    val known=currentMonth.sumOf{it.unitPrice?.times(it.quantity) ?: 0.0}
+                    val missing=currentMonth.count{it.unitPrice==null}
+                    Text("Budget acquisti · "+month,fontWeight=FontWeight.Bold)
+                    Text("Impegni conosciuti: "+String.format(java.util.Locale.ITALY,"%.2f €",known),color=Mint)
+                    ui.monthlyBudget?.let {limit ->
+                        Text("Budget: "+String.format(java.util.Locale.ITALY,"%.2f €",limit)+
+                            " · Residuo stimato: "+String.format(java.util.Locale.ITALY,"%.2f €",limit-known),
+                            color=if(known>limit)Danger else TextSecondary,fontSize=12.sp)
+                        LinearProgressIndicator(progress={if(limit<=0.0)1f else (known/limit).toFloat().coerceIn(0f,1f)},
+                            modifier=Modifier.fillMaxWidth().height(6.dp),color=if(known>limit)Danger else Mint)
+                    }
+                    if(missing>0)Text("$missing ordini senza prezzo: valori parziali.",color=Amber,fontSize=11.sp)
+                    Text("Calcolo indicativo sulle ultime 250 richieste; non sostituisce la contabilità.",
+                        color=TextSecondary,fontSize=11.sp)
+                }}
                 item{Panel(Modifier.fillMaxWidth()) {
                     Text("Scorte da riordinare",fontWeight=FontWeight.Bold)
                     val risks=ui.items.filter{it.lowStock}.take(8)
