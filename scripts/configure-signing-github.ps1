@@ -33,10 +33,11 @@ try {
     $keyInfo = & keytool -list -v -keystore $KeystorePath -alias $Alias -storepass:env UBICORA_KEYTOOL_STOREPASSWORD_TEMP 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Impossibile aprire la chiave / alias. Controlla password, file e alias." }
     $certLine = $keyInfo | Where-Object { $_ -match 'SHA256:\s*([A-Fa-f0-9:]{64,95})' } | Select-Object -First 1
-    if (-not $certLine -or "$certLine" -notmatch 'SHA256:\s*([A-Fa-f0-9:]{64,95})') {
+    $certificateMatch = [regex]::Match([string]$certLine, 'SHA256:\s*([A-Fa-f0-9:]{64,95})')
+    if (-not $certificateMatch.Success) {
         throw "Impossibile ricavare l'impronta SHA256 del certificato."
     }
-    $cert = $Matches[1].Replace(":","").ToLowerInvariant()
+    $cert = $certificateMatch.Groups[1].Value.Replace(":","").ToLowerInvariant()
     if ($cert -notmatch '^[a-f0-9]{64}$') { throw "Fingerprint SHA256 non valida." }
 
     # gh secret set reads sensitive input from stdin, not visible as command-line arguments.
