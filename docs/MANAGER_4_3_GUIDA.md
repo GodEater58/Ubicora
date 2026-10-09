@@ -12,7 +12,7 @@ Da **Impostazioni → Modalità d'uso** scegli Personale o Aziendale. La prefere
 - **Trasferimenti**: richiedi da un magazzino a un altro **dello stesso profilo**. La spedizione scarica l'origine e mette `IN_TRANSIT`; la ricezione, dal magazzino destinatario, carica la destinazione. Puoi annullare l'invio e reintegrare l'origine finché non risulta ricevuto. Se manca l'articolo in destinazione lo crea con lo stesso SKU; non copia automaticamente la foto privata del magazzino origine.
 - **Manutenzioni**: specifica macchina, descrizione, e se necessario ricambio e quantità. Il materiale viene scalato soltanto quando completi l'intervento; la mancanza di quantità sufficiente impedisce la chiusura.
 - **Registro**: gli eventi manageriali sono registrati in SQLite con data, azione, profilo e riferimento. Limite UI delle ultime 80 operazioni; backup conserva tutto.
-- **Report**: icona *Esporta* in Centro operativo crea un CSV apribile in Excel: ordini, conteggi, trasferimenti, interventi e scorte critiche (fino alle ultime 250 voci per tipologia mostrata, non report contabile esaustivo).
+- **Report**: le icone *PDF* e *Esporta* in Centro operativo creano un PDF A4 multipagina e un CSV apribile in Excel: ordini, conteggi, trasferimenti, interventi e scorte critiche (fino alle ultime 250 voci per tipologia mostrata, non report contabile esaustivo).
 
 ## Budget
 In **Impostazioni** puoi inserire un budget mensile per profilo. La schermata Decisioni confronta il limite con il valore noto delle richieste approvate/ordinate/ricevute nel mese. È **un indicatore di impegno**, non un blocco agli acquisti e non un sostituto di contabilità, IVA o consuntivi. Se mancano prezzi la stima è parziale.
