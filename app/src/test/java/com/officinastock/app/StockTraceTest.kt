@@ -93,6 +93,15 @@ class StockTraceTest {
             db.validateRestoredData()
         } finally {file.delete()}
     }
+    @Test fun expiredLotsRequireExplicitWasteMovement(){
+        val id=trace.registerLot(warehouse,item,"OLD-BATCH",3.0,1L)
+        assertTrue(runCatching{trace.consumeLot(warehouse,id,1.0,"Operatore")}.isFailure)
+        assertEquals(12.0,db.item(item)!!.quantity,0.0)
+        trace.consumeLot(warehouse,id,1.0,"Operatore",discard=true)
+        assertEquals(11.0,db.item(item)!!.quantity,0.0)
+        assertEquals(2.0,trace.lots(warehouse).single().quantity,0.0)
+        assertTrue(db.movements(warehouse).any{it.note.contains("Scarto lotto OLD-BATCH")})
+    }
     @Test fun historicalTraceBlocksUnitChangeAndV9MigrationIsAdditive(){
         val serial=trace.registerSerial(warehouse,item,"SN0000012")
         trace.issueSerial(warehouse,serial,"Operatore")
