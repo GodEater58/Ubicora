@@ -275,8 +275,19 @@ class OperationsDb(private val stock:StockDb) {
             "SHIP" -> {require(current=="REQUESTED"){"Trasferimento già avviato"};changeStock(db,itemId,-qty,"Spedizione trasferimento #$id");"IN_TRANSIT"}
             "RECEIVE" -> {
                 require(current=="IN_TRANSIT"){"Trasferimento non ancora spedito"}
-                val existing=db.rawQuery("SELECT id FROM items WHERE warehouse_id=? AND sku=?",
-                    arrayOf(to.toString(),original.sku)).use{c->if(c.moveToFirst())c.getLong(0) else null}
+                val existing=db.rawQuery("SELECT id,name,category,unit FROM items WHERE warehouse_id=? AND sku=?",
+                    arrayOf(to.toString(),original.sku)).use { c ->
+                    if(!c.moveToFirst()) null else {
+                        // SKU alone is not sufficient if legacy CSVs reused codes in different warehouses.
+                        // Never silently mix incompatible products or measurement units.
+                        require(c.getString(1).trim().equals(original.name.trim(),ignoreCase=true) &&
+                            c.getString(2).trim().equals(original.category.trim(),ignoreCase=true) &&
+                            c.getString(3).trim().equals(original.unit.trim(),ignoreCase=true)) {
+                            "SKU presente in destinazione ma riferito a un articolo diverso. Correggi i codici prima della ricezione."
+                        }
+                        c.getLong(0)
+                    }
+                }
                 val destination=existing ?: db.insertOrThrow("items",null,ContentValues().apply {
                     put("warehouse_id",to);put("sku",original.sku);put("name",original.name)
                     put("category",original.category);put("quantity",0.0);put("minimum",original.minimum)
