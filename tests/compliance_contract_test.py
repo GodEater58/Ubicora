@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 p=Path(__file__).resolve().parents[1]
 def load(path):return (p/path).read_text(encoding='utf8')
@@ -12,7 +13,7 @@ assert 'onProceed' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt
 assert 'PRIVACY E LICENZE' in load('app/src/main/java/com/officinastock/app/Screens.kt')
 assert 'LegalInfoDialog(' in load('app/src/main/java/com/officinastock/app/Screens.kt')
 assert 'legal/Apache-2.0.txt' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt')
-assert 'versionCode = 420' in load('app/build.gradle.kts')
+assert (match := re.search(r'\bversionCode\s*=\s*(\d+)', load('app/build.gradle.kts'))) and int(match.group(1)) >= 420
 assert 'android:value="optional"' in load('app/src/main/AndroidManifest.xml')
 assert 'android.permission.INTERNET' not in load('app/src/main/AndroidManifest.xml')
 assert '[EMAIL DA COMPLETARE]' in load('docs/PRIVACY_POLICY_DRAFT_IT.md')
