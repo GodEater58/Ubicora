@@ -100,6 +100,22 @@ private fun statusLabel(status:String)=when(status) {
                     Text("Il riordino richiede approvazione e conferma di ricezione: non modifica le scorte quando crei una richiesta.",
                         color=TextSecondary,fontSize=11.sp)
                 }}
+                item {Panel(Modifier.fillMaxWidth()) {
+                    Text("Fornitori · ordini recenti",fontWeight=FontWeight.Bold)
+                    val grouped=ui.orders.filter{it.supplier.isNotBlank()}.groupBy{it.supplier}
+                        .toList().sortedByDescending{it.second.size}.take(5)
+                    if(grouped.isEmpty())Text("Nessun fornitore con ordini registrati.",color=TextSecondary,fontSize=12.sp)
+                    grouped.forEach{(supplier,orders)->
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            Text(supplier,modifier=Modifier.weight(1f),maxLines=1,
+                                overflow=TextOverflow.Ellipsis,fontSize=12.sp)
+                            Text("Ricevuti "+orders.count{it.status=="RECEIVED"}+" / "+orders.size,
+                                color=Sky,fontSize=11.sp)
+                        }
+                    }
+                    Text("Analisi limitata alle ultime 250 richieste. La puntualità richiederà date di consegna effettive.",
+                        color=TextSecondary,fontSize=11.sp)
+                }}
                 item{Panel(Modifier.fillMaxWidth()) {
                     Text("Responsabilità e accessi",fontWeight=FontWeight.Bold)
                     Text("Le operazioni sono attribuite al profilo locale corrente. La separazione tra persone, ruoli e approvazioni su dispositivi diversi richiede account verificati e sincronizzazione: non è simulata con un semplice campo di testo.",
