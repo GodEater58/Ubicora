@@ -28,6 +28,7 @@ private fun statusLabel(status:String)=when(status) {
     var section by remember {mutableIntStateOf(0)}
     var create by remember {mutableStateOf<String?>(null)}
     var purchaseItemId by remember {mutableStateOf<Long?>(null)}
+    var receivingOrder by remember {mutableStateOf<PurchaseRequest?>(null)}
     val openOrders=ui.orders.count { it.status=="DRAFT"||it.status=="APPROVED"||it.status=="ORDERED" }
     val pendingCounts=ui.stockCounts.count{it.status=="PENDING"}
     val activeTransfers=ui.stockTransfers.count{it.status=="REQUESTED"||it.status=="IN_TRANSIT"}
@@ -138,6 +139,9 @@ private fun statusLabel(status:String)=when(status) {
                                 Text("Centro di costo: "+c.code+" · "+c.name,color=Sky,fontSize=11.sp)
                             }
                         }
+                        Text("Ricevuti "+amount(o.received)+" / "+amount(o.quantity)+
+                            " · Da ricevere "+amount((o.quantity-o.received).coerceAtLeast(0.0)),
+                            fontSize=12.sp,color=TextSecondary)
                         o.unitPrice?.let{Text("Valore previsto: "+String.format(java.util.Locale.ITALY,"%.2f €",o.quantity*it),fontSize=12.sp)}
                         Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
                             when(o.status) {
@@ -150,7 +154,7 @@ private fun statusLabel(status:String)=when(status) {
                                     TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
                                 }
                                 "ORDERED"->{
-                                    TextButton(onClick={model.advancePurchase(o.id,"RECEIVE")}){Text("Conferma arrivo")}
+                                    TextButton(onClick={receivingOrder=o}){Text("Registra consegna")}
                                     TextButton(onClick={model.advancePurchase(o.id,"CANCEL")}){Text("Annulla")}
                                 }
                             }
@@ -238,6 +242,27 @@ private fun statusLabel(status:String)=when(status) {
     create?.let { kind ->
         NewOperationDialog(kind,model,preselectedItemId=if(kind=="purchase") purchaseItemId else null,
             onClose={create=null;purchaseItemId=null})
+    }
+    receivingOrder?.let { order ->
+        var quantity by remember(order.id){mutableStateOf("")}
+        val value=quantity.trim().replace(',','.').toDoubleOrNull()
+        val remaining=order.quantity-order.received
+        AlertDialog(onDismissRequest={receivingOrder=null},title={Text("Ricevimento ordine #"+order.id)},
+            text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Text(order.itemName+" · ancora da ricevere: "+amount(remaining),fontSize=13.sp)
+                Text("Carica soltanto la merce arrivata. L'ordine resta aperto fino al saldo.",
+                    fontSize=12.sp,color=TextSecondary)
+                OutlinedTextField(quantity,{quantity=it},label={Text("Quantità ricevuta")},
+                    singleLine=true,modifier=Modifier.fillMaxWidth())
+            }},
+            confirmButton={TextButton(onClick={
+                model.receivePurchase(order.id,value!!)
+                receivingOrder=null
+            },enabled=value!=null && value.isFinite() && value>0.0 && value<=remaining && !ui.busy){
+                Text("Registra arrivo")
+            }},
+            dismissButton={TextButton(onClick={receivingOrder=null}){Text("Annulla")}}
+        )
     }
 }
 
