@@ -37,7 +37,7 @@ assert 'UBICORA_KEYSTORE_BASE64' not in debug
 
 assert "verify-update-on-device.ps1" in guide
 assert "NON" in guide or "non" in guide
-assert "apksigner verify --print-certs" in script
+assert "& $apksigner verify --print-certs" in script
 assert "exit 1" in script and "exit 0" in script
 assert "adb pull" in script
 assert "Remove-Item" in script
