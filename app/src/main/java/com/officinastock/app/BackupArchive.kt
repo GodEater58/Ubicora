@@ -16,7 +16,7 @@ import java.util.zip.ZipOutputStream
 /** Backup OFFLINE cifrato: SQLite logico + immagini. Mai usare CSV come backup. */
 class BackupArchive(private val context: Context, private val stockDb: StockDb) {
     companion object {
-        private val tables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets")
+        private val tables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets", "manager_actions")
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -178,13 +178,14 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             require(manifest.optString("app")=="OfficinaStock" && manifest.optInt("schema")==1) {
                 "Backup incompatibile con questa versione"
             }
-            require(tables.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
+            // Legacy archives (schema 1) predate manager_actions; other tables remain mandatory.
+            require(tables.filterNot { it=="manager_actions" }.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
             val db=stockDb.writableDatabase
             val snapshots=linkedMapOf<String,List<ContentValues>>()
             for(table in tables) {
                 val columns=mutableSetOf<String>()
                 db.rawQuery("PRAGMA table_info($table)",null).use {c-> while(c.moveToNext())columns.add(c.getString(1))}
-                snapshots[table]=readDbFile(File(parts,"$table.ndjson"),columns)
+                snapshots[table]=if(names.contains("db/$table.ndjson")) readDbFile(File(parts,"$table.ndjson"),columns) else emptyList()
             }
             val oldFiles=mutableSetOf<String>()
             db.rawQuery("SELECT photo_file FROM items WHERE photo_file IS NOT NULL",null).use {c ->
