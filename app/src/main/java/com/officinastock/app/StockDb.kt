@@ -744,6 +744,24 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(StockRules.validQuantity(c.getDouble(0)) && StockRules.validQuantity(c.getDouble(1)) &&
                 (c.isNull(2) || StockRules.validQuantity(c.getDouble(2)))) { "Quantità o costo non valido nel backup" }
         } }
+        // Prevent cross-warehouse workflow references even in imported encrypted archives.
+        db.rawQuery("""SELECT 1 FROM ops_orders o JOIN items i ON i.id=o.item_id
+            WHERE o.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Ordine collegato a un altro magazzino nel backup"}
+        }
+        db.rawQuery("""SELECT 1 FROM ops_counts c JOIN items i ON i.id=c.item_id
+            WHERE c.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Conteggio collegato a un altro magazzino nel backup"}
+        }
+        db.rawQuery("""SELECT 1 FROM ops_maintenance m JOIN items i ON i.id=m.item_id
+            WHERE m.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Ricambio manutenzione in altro magazzino nel backup"}
+        }
+        db.rawQuery("""SELECT 1 FROM ops_transfers t JOIN items i ON i.id=t.item_id
+            JOIN warehouses a ON a.id=t.from_id JOIN warehouses b ON b.id=t.to_id
+            WHERE t.from_id<>i.warehouse_id OR a.profile_id<>b.profile_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Trasferimento non coerente nel backup"}
+        }
         // Restoring stale counters must not make the next insert collide with an existing SKU.
         db.rawQuery("SELECT sku FROM items",null).use { c -> while(c.moveToNext()) {
             val sku=c.getString(0);val prefix=sku.substringBefore('-');val serial=sku.substringAfter('-').toLongOrNull()
