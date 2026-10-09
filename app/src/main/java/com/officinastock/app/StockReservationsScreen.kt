@@ -26,7 +26,8 @@ import androidx.compose.ui.unit.sp
         Text("SCORTE PRENOTATE",fontWeight=FontWeight.Bold,color=Mint,fontSize=14.sp)
         Text("La prenotazione blocca la quantità disponibile senza scaricarla. Al consumo viene registrato il movimento.",
             color=TextSecondary,fontSize=12.sp)
-        for(item in ui.items.filter{it.quantity>0 || active.any{r->r.itemId==it.id}}.take(35)){
+        Text("Prime 35 referenze critiche o prenotate, incluse quelle esaurite.",color=TextSecondary,fontSize=11.sp)
+        for(item in ui.items.filter{model.availableStock(it.id).reserved>0 || model.availableStock(it.id).available<=it.minimum}.take(35)){
             val available=model.availableStock(item.id)
             if(available.reserved>0 || item.quantity<=item.minimum) {
                 Text("${item.name}: fisiche ${amount(available.physical)} · riservate ${amount(available.reserved)} · disponibili ${amount(available.available)}",
