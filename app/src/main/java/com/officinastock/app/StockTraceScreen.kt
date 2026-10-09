@@ -29,7 +29,7 @@ import java.time.Instant
     var issuingSerial by remember{mutableStateOf<StockSerial?>(null)}
     var showHistory by remember{mutableStateOf(false)}
     fun open(kind:String){selected=null;search="";code="";quantity="";expiry="";dialog=kind}
-    val today=LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant().toEpochMilli()
+    val today=LocalDate.now(ZoneOffset.UTC).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
     Panel(Modifier.fillMaxWidth()){
         Text("TRACCIABILITÀ MATERIALI",fontWeight=FontWeight.Bold,fontSize=14.sp,color=Mint)
         Text("Lotti, scadenze e numeri di serie su quantità già presenti. Registrare un codice non crea nuove scorte.",
