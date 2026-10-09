@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche")
+private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche","Prenotazioni")
 private fun statusLabel(status:String)=when(status) {
     "DRAFT"->"Da approvare";"APPROVED"->"Approvato";"ORDERED"->"Ordinato"
     "RECEIVED"->"Ricevuto";"CANCELLED"->"Annullato";"PENDING"->"Da verificare"
@@ -236,6 +236,7 @@ private fun statusLabel(status:String)=when(status) {
                 }
             }
             if(section==6) item {EnterpriseDirectoryPanel(model)}
+            if(section==7) item {StockReservationsPanel(model)}
             item{Spacer(Modifier.height(14.dp))}
         }
     }
