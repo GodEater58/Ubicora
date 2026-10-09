@@ -7,7 +7,8 @@ import android.database.sqlite.SQLiteDatabase
 data class PurchaseRequest(
     val id:Long, val warehouseId:Long, val itemId:Long, val itemName:String,
     val quantity:Double, val received:Double, val unitPrice:Double?,
-    val supplier:String, val owner:String, val status:String, val createdAt:Long
+    val supplier:String, val owner:String, val status:String, val createdAt:Long,
+    val centerId:Long?=null, val supplierId:Long?=null
 )
 data class StockCount(
     val id:Long, val warehouseId:Long, val itemId:Long, val itemName:String,
@@ -151,15 +152,27 @@ class OperationsDb(private val stock:StockDb) {
         })
     }
 
-    fun createOrder(wid:Long,itemId:Long,quantity:Double,supplier:String,actor:String):Long {
+    fun createOrder(wid:Long,itemId:Long,quantity:Double,supplier:String,actor:String,
+                    centerId:Long?=null,supplierId:Long?=null):Long {
         require(quantity.isFinite() && quantity>0.0 && quantity<=1e8){"Quantità ordine non valida"}
         require(actor.trim().length in 2..100){"Indica il responsabile"}
         val item=requireItem(wid,itemId)
+        val directory=EnterpriseDb(stock)
+        val profileId=stock.readableDatabase.rawQuery("SELECT profile_id FROM warehouses WHERE id=?",
+            arrayOf(wid.toString())).use {c->require(c.moveToFirst());c.getLong(0)}
+        require(centerId==null || directory.profileForCenter(centerId)==profileId){"Centro di costo di un altro profilo"}
+        require(supplierId==null || directory.profileForSupplier(supplierId)==profileId){"Fornitore di un altro profilo"}
+        val resolvedSupplier=supplierId?.let { sid ->
+            directory.suppliers(profileId).firstOrNull{it.id==sid}?.name
+                ?: error("Fornitore non trovato")
+        } ?: supplier.trim().take(160).ifEmpty{item.supplier}
         return transaction { db ->
             val id=db.insertOrThrow("ops_orders",null,ContentValues().apply {
                 put("warehouse_id",wid);put("item_id",itemId);put("quantity",quantity);put("received",0.0)
                 if(item.unitCost!=null)put("unit_price",item.unitCost)
-                put("supplier",supplier.trim().take(160).ifEmpty{item.supplier})
+                put("supplier",resolvedSupplier)
+                if(centerId!=null)put("center_id",centerId)
+                if(supplierId!=null)put("supplier_id",supplierId)
                 put("owner",actor.trim());put("status","DRAFT");put("created_at",System.currentTimeMillis())
             })
             audit(db,wid,"ORDINE_CREATO",actor,"Richiesta #$id · ${item.sku} · $quantity ${item.unit}")
@@ -193,12 +206,13 @@ class OperationsDb(private val stock:StockDb) {
         audit(db,wid,"ORDINE_$next",actor,"Ordine #$id")
     }
     fun orders(wid:Long):List<PurchaseRequest> = stock.readableDatabase.rawQuery(
-        """SELECT o.id,o.warehouse_id,o.item_id,i.name,o.quantity,o.received,o.unit_price,o.supplier,o.owner,o.status,o.created_at
+        """SELECT o.id,o.warehouse_id,o.item_id,i.name,o.quantity,o.received,o.unit_price,o.supplier,o.owner,o.status,o.created_at,o.center_id,o.supplier_id
             FROM ops_orders o JOIN items i ON i.id=o.item_id
             WHERE o.warehouse_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT 250""",arrayOf(wid.toString())
     ).use { c -> buildList {while(c.moveToNext()) add(PurchaseRequest(c.getLong(0),c.getLong(1),c.getLong(2),
         c.getString(3),c.getDouble(4),c.getDouble(5),if(c.isNull(6))null else c.getDouble(6),c.getString(7),
-        c.getString(8),c.getString(9),c.getLong(10))) } }
+        c.getString(8),c.getString(9),c.getLong(10),
+        if(c.isNull(11))null else c.getLong(11),if(c.isNull(12))null else c.getLong(12))) } }
 
     fun requestCount(wid:Long,itemId:Long,counted:Double,reason:String,actor:String):Long {
         val item=requireItem(wid,itemId)
