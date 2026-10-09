@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 data class StockReservation(val id:Long,val warehouseId:Long,val itemId:Long,
     val quantity:Double,val reference:String,val requestedBy:String,val status:String,val createdAt:Long)
 data class StockAvailability(val physical:Double,val reserved:Double) {
-    val available:Double get()=(physical-reserved).coerceAtLeast(0.0)
+    val available:Double get()=StockRules.difference(physical,reserved).coerceAtLeast(0.0)
 }
 
 /** Stock allocation is separate from physical inventory until consumed. All writes are atomic. */
@@ -134,4 +134,5 @@ class StockPlanningDb(private val stock:StockDb) {
         }
     }
 }
+
 
