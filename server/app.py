@@ -17,7 +17,7 @@ import jwt
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from jwt import PyJWKClient, InvalidTokenError
+from jwt import PyJWKClient, InvalidTokenError, PyJWKClientError
 from pydantic import BaseModel, Field, ConfigDict
 from psycopg.rows import dict_row
 
@@ -99,6 +99,8 @@ def authorize(authorization: str | None = Header(default=None)) -> Principal:
         return Principal(subject=subject)
     except (InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid or expired bearer token")
+    except PyJWKClientError:
+        raise HTTPException(503, "Authentication service temporarily unavailable")
     except RuntimeError:
         # Misconfigured servers must fail closed.
         raise HTTPException(503, "Authentication service not configured")
@@ -279,3 +281,4 @@ def changes(tenant_uuid: uuid.UUID, cursor: str | None = None,
     } for x in rows]
     next_cursor = (rows[-1]["accepted_at"].isoformat() + "|" + str(rows[-1]["event_id"])) if rows else cursor
     return {"protocol_version": 1, "events": events, "next_cursor": next_cursor}
+

@@ -29,10 +29,11 @@ private fun statusLabel(status:String)=when(status) {
     var create by remember {mutableStateOf<String?>(null)}
     var purchaseItemId by remember {mutableStateOf<Long?>(null)}
     var receivingOrder by remember {mutableStateOf<PurchaseRequest?>(null)}
-    val openOrders=ui.orders.count { it.status=="DRAFT"||it.status=="APPROVED"||it.status=="ORDERED" }
-    val pendingCounts=ui.stockCounts.count{it.status=="PENDING"}
-    val activeTransfers=ui.stockTransfers.count{it.status=="REQUESTED"||it.status=="IN_TRANSIT"}
-    val openWork=ui.maintenanceWork.count{it.status=="OPEN"}
+    val report=ui.operationalReports[30] ?: OperationalReport()
+    val openOrders=report.openOrders
+    val pendingCounts=report.pendingCounts
+    val activeTransfers=report.activeTransfers
+    val openWork=report.openWork
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
             IconButton(onClick=onBack){Icon(Icons.Outlined.ArrowBack,contentDescription="Torna alla panoramica")}
@@ -64,37 +65,16 @@ private fun statusLabel(status:String)=when(status) {
                         SmallMetric("INTERVENTI",openWork.toString(),"Aperti",Amber,Modifier.weight(1f),onClick={section=4})
                     }
                 }
-                item { Panel(Modifier.fillMaxWidth()) {
-                    val month=java.time.YearMonth.now()
-                    val currentMonth=ui.orders.filter {
-                        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(it.createdAt)
-                            .atZone(java.time.ZoneId.systemDefault()))==month &&
-                            it.status in listOf("APPROVED","ORDERED","RECEIVED")
-                    }
-                    val known=currentMonth.sumOf{it.unitPrice?.times(it.quantity) ?: 0.0}
-                    val missing=currentMonth.count{it.unitPrice==null}
-                    Text("Budget acquisti · "+month,fontWeight=FontWeight.Bold)
-                    Text("Impegni conosciuti: "+String.format(java.util.Locale.ITALY,"%.2f €",known),color=Mint)
-                    ui.monthlyBudget?.let {limit ->
-                        Text("Budget: "+String.format(java.util.Locale.ITALY,"%.2f €",limit)+
-                            " · Residuo stimato: "+String.format(java.util.Locale.ITALY,"%.2f €",limit-known),
-                            color=if(known>limit)Danger else TextSecondary,fontSize=12.sp)
-                        LinearProgressIndicator(progress={if(limit<=0.0)1f else (known/limit).toFloat().coerceIn(0f,1f)},
-                            modifier=Modifier.fillMaxWidth().height(6.dp),color=if(known>limit)Danger else Mint)
-                    }
-                    if(missing>0)Text("$missing ordini senza prezzo: valori parziali.",color=Amber,fontSize=11.sp)
-                    Text("Calcolo indicativo sulle ultime 250 richieste; non sostituisce la contabilità.",
-                        color=TextSecondary,fontSize=11.sp)
-                }}
+                item { OperationalCharts(ui.operationalReports,ui.monthlyBudget,onSection={section=it}) }
                 item{Panel(Modifier.fillMaxWidth()) {
                     Text("Scorte da riordinare",fontWeight=FontWeight.Bold)
-                    val risks=ui.items.filter{it.lowStock}.take(8)
+                    val risks=ui.items.filter{model.availableStock(it.id).available<=it.minimum}.take(8)
                     if(risks.isEmpty())Text("Nessuna referenza sotto soglia.",color=TextSecondary)
                     risks.forEach{item ->
                         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(item.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontSize=13.sp)
-                                Text(item.sku+" · "+amount(item.quantity)+" / minimo "+amount(item.minimum),
+                                Text(item.sku+" · disponibile "+amount(model.availableStock(item.id).available)+" / minimo "+amount(item.minimum),
                                     color=TextSecondary,fontSize=11.sp)
                             }
                             TextButton(onClick={purchaseItemId=item.id;create="purchase"}){Text("Acquista")}
@@ -218,7 +198,7 @@ private fun statusLabel(status:String)=when(status) {
                             }
                         }
                         if(w.status=="DONE") {
-                            val laborCost=w.hourlyRate?.let{it*w.laborHours}
+                            val laborCost=if(w.laborHours==0.0)0.0 else w.hourlyRate?.let{it*w.laborHours}
                             val total=if(laborCost!=null && w.partsCost!=null)laborCost+w.partsCost else null
                             Text("Costo ricambi: "+(w.partsCost?.let{amount(it)+" €"} ?: "non noto")+
                                 " · Manodopera: "+(laborCost?.let{amount(it)+" €"} ?: "non nota"),
@@ -251,6 +231,16 @@ private fun statusLabel(status:String)=when(status) {
             if(section==6) item {EnterpriseDirectoryPanel(model)}
             if(section==7) item {StockReservationsPanel(model)}
             if(section==8) item {StockTracePanel(model)}
+            val loaded=when(section) {
+                1->ui.orders.size;2->ui.stockCounts.size;3->ui.stockTransfers.size
+                4->ui.maintenanceWork.size;5->ui.operationsEvents.size;7->ui.reservations.size
+                8->maxOf(ui.stockLots.size,ui.stockSerials.size);else->0
+            }
+            if(section!=0 && loaded>=ui.operationsLimit && ui.operationsLimit<1000000) item {
+                OutlinedButton(onClick={model.loadMoreOperations()},enabled=!ui.busy,modifier=Modifier.fillMaxWidth()) {
+                    Text("Carica altre 250 operazioni")
+                }
+            }
             item{Spacer(Modifier.height(14.dp))}
         }
     }
@@ -410,3 +400,4 @@ private fun statusLabel(status:String)=when(status) {
     },enabled=valid&&!ui.busy){Text("Salva")}},
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
+

@@ -49,4 +49,16 @@ class SessionAuditTest {
         model.lockForBackground();awaitIdle()
         assertTrue(model.ui.sessionLocked)
     }
+    @Test fun consecutiveProfileUnlocksFinishBeforeAnotherOperationCanStart() = runBlocking {
+        repeat(10) { index ->
+            val id=if(index%2==0)first else second
+            val pin=if(index%2==0)"1234" else "5678"
+            model.unlock(Profile(id,if(index%2==0)"A" else "B"),pin)
+            awaitIdle()
+            assertEquals("Unlock must be fully committed before busy clears",id,model.ui.profile?.id)
+            model.signOut()
+            assertNull(model.ui.profile)
+        }
+    }
 }
+

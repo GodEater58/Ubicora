@@ -231,10 +231,10 @@ class OperationsDb(private val stock:StockDb) {
         audit(db,wid,"ORDINE_RICEZIONE",actor,
             "Ordine #$id · ricevuti $delivered · totale $nextReceived / $total")
     }
-    fun orders(wid:Long):List<PurchaseRequest> = stock.readableDatabase.rawQuery(
+    fun orders(wid:Long,limit:Int=250):List<PurchaseRequest> = stock.readableDatabase.rawQuery(
         """SELECT o.id,o.warehouse_id,o.item_id,i.name,o.quantity,o.received,o.unit_price,o.supplier,o.owner,o.status,o.created_at,o.center_id,o.supplier_id
             FROM ops_orders o JOIN items i ON i.id=o.item_id
-            WHERE o.warehouse_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT 250""",arrayOf(wid.toString())
+            WHERE o.warehouse_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT ?""",arrayOf(wid.toString(),limit.coerceIn(1,1000000).toString())
     ).use { c -> buildList {while(c.moveToNext()) add(PurchaseRequest(c.getLong(0),c.getLong(1),c.getLong(2),
         c.getString(3),c.getDouble(4),c.getDouble(5),if(c.isNull(6))null else c.getDouble(6),c.getString(7),
         c.getString(8),c.getString(9),c.getLong(10),
@@ -272,10 +272,10 @@ class OperationsDb(private val stock:StockDb) {
             arrayOf(id.toString()))==1){"Conteggio già gestito"}
         audit(db,wid,"CONTEGGIO_$status",actor,"Conteggio #$id")
     }
-    fun counts(wid:Long):List<StockCount> = stock.readableDatabase.rawQuery(
+    fun counts(wid:Long,limit:Int=250):List<StockCount> = stock.readableDatabase.rawQuery(
         """SELECT c.id,c.warehouse_id,c.item_id,i.name,c.expected,c.counted,c.reason,c.status,c.created_at
             FROM ops_counts c JOIN items i ON i.id=c.item_id WHERE c.warehouse_id=?
-            ORDER BY c.created_at DESC,c.id DESC LIMIT 250""",arrayOf(wid.toString())
+            ORDER BY c.created_at DESC,c.id DESC LIMIT ?""",arrayOf(wid.toString(),limit.coerceIn(1,1000000).toString())
     ).use {c -> buildList {while(c.moveToNext())add(StockCount(c.getLong(0),c.getLong(1),c.getLong(2),
         c.getString(3),c.getDouble(4),c.getDouble(5),c.getString(6),c.getString(7),c.getLong(8)))}}
 
@@ -350,11 +350,11 @@ class OperationsDb(private val stock:StockDb) {
         audit(db,from,"TRASFERIMENTO_$next",actor,"Trasferimento #$id")
         audit(db,to,"TRASFERIMENTO_$next",actor,"Trasferimento #$id")
     }
-    fun transfers(wid:Long):List<StockTransfer> = stock.readableDatabase.rawQuery(
+    fun transfers(wid:Long,limit:Int=250):List<StockTransfer> = stock.readableDatabase.rawQuery(
         """SELECT t.id,t.from_id,t.to_id,t.item_id,i.name,t.quantity,t.status,t.created_at
             FROM ops_transfers t JOIN items i ON i.id=t.item_id
-            WHERE t.from_id=? OR t.to_id=? ORDER BY t.created_at DESC,t.id DESC LIMIT 250""",
-        arrayOf(wid.toString(),wid.toString())
+            WHERE t.from_id=? OR t.to_id=? ORDER BY t.created_at DESC,t.id DESC LIMIT ?""",
+        arrayOf(wid.toString(),wid.toString(),limit.coerceIn(1,1000000).toString())
     ).use{c->buildList{while(c.moveToNext())add(StockTransfer(c.getLong(0),c.getLong(1),
         c.getLong(2),c.getLong(3),c.getString(4),c.getDouble(5),c.getString(6),c.getLong(7)))}}
 
@@ -414,19 +414,20 @@ class OperationsDb(private val stock:StockDb) {
         }
         audit(db,wid,"INTERVENTO_$status",actor,"Intervento #$id")
     }
-    fun maintenance(wid:Long):List<MaintenanceWork> = stock.readableDatabase.rawQuery(
+    fun maintenance(wid:Long,limit:Int=250):List<MaintenanceWork> = stock.readableDatabase.rawQuery(
         """SELECT id,warehouse_id,machine,description,item_id,quantity,status,created_at,
                 asset_id,labor_hours,hourly_rate,parts_cost,completed_at
-            FROM ops_maintenance WHERE warehouse_id=? ORDER BY created_at DESC,id DESC LIMIT 250""",
-        arrayOf(wid.toString())
+            FROM ops_maintenance WHERE warehouse_id=? ORDER BY created_at DESC,id DESC LIMIT ?""",
+        arrayOf(wid.toString(),limit.coerceIn(1,1000000).toString())
     ).use{c->buildList{while(c.moveToNext())add(MaintenanceWork(c.getLong(0),c.getLong(1),
         c.getString(2),c.getString(3),if(c.isNull(4))null else c.getLong(4),c.getDouble(5),
         c.getString(6),c.getLong(7),if(c.isNull(8))null else c.getLong(8),
         c.getDouble(9),if(c.isNull(10))null else c.getDouble(10),
         if(c.isNull(11))null else c.getDouble(11),if(c.isNull(12))null else c.getLong(12)))}}
-    fun events(wid:Long):List<OperationsEvent> = stock.readableDatabase.rawQuery(
+    fun events(wid:Long,limit:Int=250):List<OperationsEvent> = stock.readableDatabase.rawQuery(
         """SELECT id,action,actor,detail,created_at FROM ops_events WHERE warehouse_id=?
-           ORDER BY created_at DESC,id DESC LIMIT 80""",arrayOf(wid.toString())
+           ORDER BY created_at DESC,id DESC LIMIT ?""",arrayOf(wid.toString(),limit.coerceIn(1,1000000).toString())
     ).use{c->buildList{while(c.moveToNext())add(OperationsEvent(c.getLong(0),c.getString(1),
         c.getString(2),c.getString(3),c.getLong(4)))}}
 }
+
