@@ -24,6 +24,7 @@ data class StockUiState(
     val movements: List<Movement> = emptyList(),
     val loans: List<Loan> = emptyList(),
     val manager: ManagerSnapshot = ManagerSnapshot(),
+    val managerActions: List<ManagerAction> = emptyList(),
     val demoCount: Int = 0,
     val createdItemId: Long? = null,
     val scannedItemId: Long? = null,
@@ -102,6 +103,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     val day=86_400_000L
                     ManagerSnapshot(db.dailyActivity(it.id,now-90*day),db.usageSummary(it.id,now))
                 } ?: ManagerSnapshot(),
+                managerActions=warehouse?.let {db.managerActions(it.id)} ?: emptyList(),
                 demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error)
@@ -166,6 +168,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
                           unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
         db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
+    }
+    fun createManagerAction(kind:String,title:String,quantity:Double?,assignee:String,details:String,itemId:Long?=null) = execute {
+        require(!ui.sessionLocked && ui.profile!=null) { "Effettua l'accesso" }
+        db.createManagerAction(requireWarehouse(),kind,title,quantity,assignee,details,itemId)
+    }
+    fun closeManagerAction(id:Long,cancel:Boolean=false) = execute {
+        require(!ui.sessionLocked && ui.profile!=null) { "Effettua l'accesso" }
+        db.closeManagerAction(requireWarehouse(),id,cancel)
     }
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
         db.updatePurchase(itemId,cost,supplier,leadDays)
