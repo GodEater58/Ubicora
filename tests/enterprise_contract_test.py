@@ -15,7 +15,7 @@ transport=(root/'app/src/main/java/com/officinastock/app/EnterpriseServerClient.
 gradle=(root/'app/build.gradle.kts').read_text(encoding='utf8')
 assert 'null, 9)' in base and 'oldVersion < 9' in base
 assert 'EnterpriseDb.createTables(db)' in base and 'EnterpriseDb.addOperationLinks(db)' in base
-assert 'versionCode = 440' in gradle
+assert 'versionCode = 450' in gradle
 assert 'managerTables.size' in backup and 'legacyTables.size' in backup and 'companyTables' in backup
 assert 'EnterpriseDirectoryPanel(model)' in (root/'app/src/main/java/com/officinastock/app/OperationsScreen.kt').read_text(encoding='utf8')
 assert 'supplier_id' in ops and 'center_id' in ops
