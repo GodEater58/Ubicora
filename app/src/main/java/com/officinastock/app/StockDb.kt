@@ -305,16 +305,20 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         // An open operation recorded its numeric quantity in the previous unit.
         // Changing pz -> kg in place would silently corrupt receipts, stock counts and parts usage.
         if(!original.unit.trim().equals(unit.trim(),ignoreCase=true)) {
+            require(original.quantity==0.0) {
+                "Prima esaurisci o trasferisci la giacenza: cambiare l'unità a una quantità già presente la falserebbe."
+            }
             val hasOpenWork=readableDatabase.rawQuery(
                 """SELECT (
                     EXISTS(SELECT 1 FROM ops_orders WHERE item_id=? AND status IN ('DRAFT','APPROVED','ORDERED'))
                     OR EXISTS(SELECT 1 FROM ops_counts WHERE item_id=? AND status='PENDING')
                     OR EXISTS(SELECT 1 FROM ops_transfers WHERE item_id=? AND status IN ('REQUESTED','IN_TRANSIT'))
                     OR EXISTS(SELECT 1 FROM ops_maintenance WHERE item_id=? AND status='OPEN')
-                )""",Array(4){itemId.toString()}
+                    OR EXISTS(SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL)
+                )""",Array(5){itemId.toString()}
             ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0)!=0 }
             require(!hasOpenWork) {
-                "Impossibile cambiare l'unità di misura: completa o annulla prima gli acquisti, conteggi, trasferimenti e interventi aperti."
+                "Impossibile cambiare l'unità di misura: completa o annulla prima acquisti, conteggi, trasferimenti, manutenzioni e prestiti aperti."
             }
         }
         val values=ContentValues().apply {
