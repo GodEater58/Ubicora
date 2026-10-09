@@ -43,12 +43,14 @@ data class StockUiState(
     val businessSuppliers: List<BusinessSupplier> = emptyList(),
     val businessAssets: List<BusinessAsset> = emptyList(),
     val staffDirectory: List<StaffDirectoryEntry> = emptyList(),
-    val unsentCatalogEvents: Int = 0
+    val unsentCatalogEvents: Int = 0,
+    val reservations: List<StockReservation> = emptyList()
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
     private val operations = OperationsDb(db)
     private val enterprise = EnterpriseDb(db)
+    private val planning = StockPlanningDb(db)
     var ui by mutableStateOf(StockUiState())
         private set
     init { refresh() }
@@ -130,7 +132,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     businessSuppliers=profile?.let {enterprise.suppliers(it.id)} ?: emptyList(),
                     businessAssets=warehouse?.let {enterprise.assets(it.id)} ?: emptyList(),
                     staffDirectory=profile?.let {enterprise.staffDirectory(it.id)} ?: emptyList(),
-                    unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0
+                    unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0,
+                    reservations=warehouse?.let {planning.reservations(it.id)} ?: emptyList()
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
@@ -230,6 +233,21 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
         enterprise.addStaffDirectoryEntry(pid,name,role)
     }
+    fun reserveStock(itemId:Long,quantity:Double,reference:String) = execute {
+        val actor=managerActor()
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        planning.reserve(requireWarehouse(),itemId,quantity,reference,actor)
+    }
+    fun closeReservation(id:Long,consume:Boolean) = execute {
+        val actor=managerActor()
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        planning.close(requireWarehouse(),id,consume,actor)
+    }
+    fun availableStock(itemId:Long):StockAvailability {
+        val item=ui.items.firstOrNull{it.id==itemId} ?: return StockAvailability(0.0,0.0)
+        val held=ui.reservations.filter{it.itemId==item.id && it.status=="ACTIVE"}.sumOf{it.quantity}
+        return StockAvailability(item.quantity,held)
+    }
     fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String,
                         costCenterId:Long?=null,supplierId:Long?=null) = execute {
         operations.createOrder(requireWarehouse(),itemId,quantity,supplier,owner.ifBlank{managerActor()},
@@ -258,8 +276,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(action=="RECEIVE")require(ui.warehouse?.id==transfer.toId){"Seleziona il magazzino di destinazione"}
         operations.progressTransfer(id,managerActor(),action)
     }
-    fun createWorkOrder(machine:String,description:String,itemId:Long?,quantity:Double) = execute {
-        operations.createMaintenance(requireWarehouse(),machine,description,itemId,quantity,managerActor())
+    fun createWorkOrder(machine:String,description:String,itemId:Long?,quantity:Double,
+                        assetId:Long?=null,laborHours:Double=0.0,hourlyRate:Double?=null) = execute {
+        operations.createMaintenance(requireWarehouse(),machine,description,itemId,quantity,managerActor(),
+            assetId,laborHours,hourlyRate)
     }
     fun finishWorkOrder(id:Long,complete:Boolean) = execute {
         operations.finishMaintenance(requireWarehouse(),id,complete,managerActor())

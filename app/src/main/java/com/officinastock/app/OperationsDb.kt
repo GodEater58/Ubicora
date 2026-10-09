@@ -21,7 +21,9 @@ data class StockTransfer(
 )
 data class MaintenanceWork(
     val id:Long, val warehouseId:Long, val machine:String, val description:String,
-    val itemId:Long?, val quantity:Double, val status:String, val createdAt:Long
+    val itemId:Long?, val quantity:Double, val status:String, val createdAt:Long,
+    val assetId:Long?=null,val laborHours:Double=0.0,val hourlyRate:Double?=null,
+    val partsCost:Double?=null,val completedAt:Long?=null
 )
 data class OperationsEvent(
     val id:Long, val action:String, val actor:String, val detail:String, val at:Long
@@ -145,6 +147,7 @@ class OperationsDb(private val stock:StockDb) {
             require(it.moveToFirst()){"Articolo mancante"};it.getDouble(0)
         }
         val next=StockRules.applyDelta(old,delta)
+        StockPlanningDb.assertUnreservedStock(db,itemId,next)
         require(delta.isFinite() && delta!=0.0){"Movimento nullo"}
         require(db.update("items",ContentValues().apply{put("quantity",next)},"id=?",arrayOf(itemId.toString()))==1){"Movimento non applicato"}
         db.insertOrThrow("movements",null,ContentValues().apply {
@@ -354,16 +357,27 @@ class OperationsDb(private val stock:StockDb) {
     ).use{c->buildList{while(c.moveToNext())add(StockTransfer(c.getLong(0),c.getLong(1),
         c.getLong(2),c.getLong(3),c.getString(4),c.getDouble(5),c.getString(6),c.getLong(7)))}}
 
-    fun createMaintenance(wid:Long,machine:String,description:String,itemId:Long?,qty:Double,actor:String):Long {
+    fun createMaintenance(wid:Long,machine:String,description:String,itemId:Long?,qty:Double,actor:String,
+                          assetId:Long?=null,laborHours:Double=0.0,hourlyRate:Double?=null):Long {
         require(machine.trim().length in 2..120){"Indica macchina o impianto"}
         require(description.trim().length in 3..400){"Descrivi l'intervento"}
         require(StockRules.validQuantity(qty) && qty<=1e8){"Quantità ricambio non valida"}
         require(itemId!=null || qty==0.0){"Seleziona il ricambio"}
         if(itemId!=null)requireItem(wid,itemId)
+        require(laborHours.isFinite() && laborHours>=0 && laborHours<=10000){"Ore lavorate non valide"}
+        require(hourlyRate==null || (hourlyRate.isFinite() && hourlyRate>=0 && hourlyRate<=1e7)){"Costo orario non valido"}
+        if(assetId!=null) {
+            val valid=stock.readableDatabase.rawQuery(
+                "SELECT 1 FROM org_assets WHERE id=? AND warehouse_id=?",
+                arrayOf(assetId.toString(),wid.toString())).use{it.moveToFirst()}
+            require(valid){"Macchina non appartenente al magazzino selezionato"}
+        }
         return transaction {db->
             val id=db.insertOrThrow("ops_maintenance",null,ContentValues().apply {
                 put("warehouse_id",wid);put("machine",machine.trim());put("description",description.trim())
                 if(itemId!=null)put("item_id",itemId);put("quantity",qty)
+                if(assetId!=null)put("asset_id",assetId)
+                put("labor_hours",laborHours);if(hourlyRate!=null)put("hourly_rate",hourlyRate)
                 put("status","OPEN");put("created_at",System.currentTimeMillis())
             })
             audit(db,wid,"INTERVENTO_CREATO",actor,"Intervento #$id · ${machine.trim()}")
@@ -371,28 +385,44 @@ class OperationsDb(private val stock:StockDb) {
         }
     }
     fun finishMaintenance(wid:Long,id:Long,complete:Boolean,actor:String) = transaction {db->
-        val job=db.rawQuery("SELECT item_id,quantity,status FROM ops_maintenance WHERE id=? AND warehouse_id=?",
+        val job=db.rawQuery("""SELECT item_id,quantity,status,labor_hours,hourly_rate
+            FROM ops_maintenance WHERE id=? AND warehouse_id=?""",
             arrayOf(id.toString(),wid.toString())).use{c->
             require(c.moveToFirst()){"Intervento inesistente"}
-            Triple(if(c.isNull(0))null else c.getLong(0),c.getDouble(1),c.getString(2))
+            listOf(if(c.isNull(0))null else c.getLong(0),c.getDouble(1),c.getString(2),
+                c.getDouble(3),if(c.isNull(4))null else c.getDouble(4))
         }
-        require(job.third=="OPEN"){"Intervento già gestito"}
-        if(complete && job.first!=null && job.second>0) {
-            requireItem(wid,job.first!!)
-            changeStock(db,job.first!!,-job.second,"Ricambio per manutenzione #$id")
+        require(job[2]=="OPEN"){"Intervento già gestito"}
+        val partId=job[0] as Long?
+        val quantity=job[1] as Double
+        var partsCost:Double?=if(partId==null || quantity==0.0)0.0 else null
+        if(complete && partId!=null && quantity>0) {
+            val material=requireItem(wid,partId)
+            partsCost=material.unitCost?.let{cost ->
+                (cost*quantity).takeIf{it.isFinite()}
+            }
+            changeStock(db,partId,-quantity,"Ricambio per manutenzione #$id")
         }
         val status=if(complete)"DONE" else "CANCELLED"
-        require(db.update("ops_maintenance",ContentValues().apply{put("status",status)},
-            "id=? AND warehouse_id=? AND status='OPEN'",arrayOf(id.toString(),wid.toString()))==1){"Intervento già gestito"}
+        require(db.update("ops_maintenance",ContentValues().apply{
+            put("status",status)
+            if(complete && partsCost!=null)put("parts_cost",partsCost)
+            if(complete)put("completed_at",System.currentTimeMillis())
+        },"id=? AND warehouse_id=? AND status='OPEN'",arrayOf(id.toString(),wid.toString()))==1) {
+            "Intervento già gestito"
+        }
         audit(db,wid,"INTERVENTO_$status",actor,"Intervento #$id")
     }
     fun maintenance(wid:Long):List<MaintenanceWork> = stock.readableDatabase.rawQuery(
-        """SELECT id,warehouse_id,machine,description,item_id,quantity,status,created_at
+        """SELECT id,warehouse_id,machine,description,item_id,quantity,status,created_at,
+                asset_id,labor_hours,hourly_rate,parts_cost,completed_at
             FROM ops_maintenance WHERE warehouse_id=? ORDER BY created_at DESC,id DESC LIMIT 250""",
         arrayOf(wid.toString())
     ).use{c->buildList{while(c.moveToNext())add(MaintenanceWork(c.getLong(0),c.getLong(1),
         c.getString(2),c.getString(3),if(c.isNull(4))null else c.getLong(4),c.getDouble(5),
-        c.getString(6),c.getLong(7)))}}
+        c.getString(6),c.getLong(7),if(c.isNull(8))null else c.getLong(8),
+        c.getDouble(9),if(c.isNull(10))null else c.getDouble(10),
+        if(c.isNull(11))null else c.getDouble(11),if(c.isNull(12))null else c.getLong(12)))}}
     fun events(wid:Long):List<OperationsEvent> = stock.readableDatabase.rawQuery(
         """SELECT id,action,actor,detail,created_at FROM ops_events WHERE warehouse_id=?
            ORDER BY created_at DESC,id DESC LIMIT 80""",arrayOf(wid.toString())

@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche")
+private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche","Prenotazioni")
 private fun statusLabel(status:String)=when(status) {
     "DRAFT"->"Da approvare";"APPROVED"->"Approvato";"ORDERED"->"Ordinato"
     "RECEIVED"->"Ricevuto";"CANCELLED"->"Annullato";"PENDING"->"Da verificare"
@@ -212,6 +212,19 @@ private fun statusLabel(status:String)=when(status) {
                     Panel(Modifier.fillMaxWidth()) {
                         OperationHeading("Intervento #"+w.id,w.machine,statusLabel(w.status))
                         Text(w.description,color=TextSecondary,fontSize=12.sp)
+                        w.assetId?.let { asset ->
+                            ui.businessAssets.firstOrNull{it.id==asset}?.let{
+                                Text("Impianto: "+it.code+" · "+it.name,color=Sky,fontSize=11.sp)
+                            }
+                        }
+                        if(w.status=="DONE") {
+                            val laborCost=w.hourlyRate?.let{it*w.laborHours}
+                            val total=if(laborCost!=null && w.partsCost!=null)laborCost+w.partsCost else null
+                            Text("Costo ricambi: "+(w.partsCost?.let{amount(it)+" €"} ?: "non noto")+
+                                " · Manodopera: "+(laborCost?.let{amount(it)+" €"} ?: "non nota"),
+                                color=TextSecondary,fontSize=11.sp)
+                            if(total!=null)Text("Consuntivo: "+amount(total)+" €",color=Mint,fontSize=12.sp)
+                        }
                         if(w.itemId!=null)Text("Ricambio: "+(ui.items.firstOrNull{it.id==w.itemId}?.name ?: "Articolo rimosso")+
                             " · "+amount(w.quantity),fontSize=12.sp)
                         if(w.status=="OPEN")Row {
@@ -236,6 +249,7 @@ private fun statusLabel(status:String)=when(status) {
                 }
             }
             if(section==6) item {EnterpriseDirectoryPanel(model)}
+            if(section==7) item {StockReservationsPanel(model)}
             item{Spacer(Modifier.height(14.dp))}
         }
     }
@@ -289,15 +303,22 @@ private fun statusLabel(status:String)=when(status) {
     var selectedSupplier by remember(kind){mutableStateOf<Long?>(null)}
     var person by remember(kind){mutableStateOf(ui.profile?.name.orEmpty())}
     var machine by remember(kind){mutableStateOf("")}
+    var selectedAsset by remember(kind){mutableStateOf<Long?>(null)}
+    var laborHoursText by remember(kind){mutableStateOf("")}
+    var hourlyRateText by remember(kind){mutableStateOf("")}
     var target by remember(kind){mutableStateOf<Long?>(null)}
     val parsed=amountInput.replace(',','.').trim().toDoubleOrNull()
     val needsItem=kind!="maintenance" || parsed!=null && parsed>0
     val validQuantity=parsed!=null && parsed.isFinite() && parsed>0.0
+    val hours=laborHoursText.trim().replace(',','.').toDoubleOrNull()
+    val rate=hourlyRateText.trim().replace(',','.').toDoubleOrNull()
+    val validLabor=(laborHoursText.isBlank() || (hours!=null && hours.isFinite() && hours>=0 && hours<=10000)) &&
+        (hourlyRateText.isBlank() || (rate!=null && rate.isFinite() && rate>=0 && rate<=1e7))
     val valid=when(kind) {
         "purchase" -> selected!=null && validQuantity && person.trim().length>=2
         "count" -> selected!=null && parsed!=null && StockRules.validQuantity(parsed) && reason.trim().length>=3
         "transfer" -> selected!=null && validQuantity && target!=null
-        "maintenance" -> machine.trim().length>=2 && reason.trim().length>=3 &&
+        "maintenance" -> machine.trim().length>=2 && reason.trim().length>=3 && validLabor &&
             (amountInput.isBlank() || (parsed!=null && StockRules.validQuantity(parsed) && (parsed==0.0 || selected!=null)))
         else -> false
     }
@@ -307,8 +328,21 @@ private fun statusLabel(status:String)=when(status) {
         Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),
             verticalArrangement=Arrangement.spacedBy(9.dp)) {
             if(kind=="maintenance") {
-                Input(machine,{machine=it},"Macchina / impianto")
+                Input(machine,{machine=it;selectedAsset=null},"Macchina / impianto")
+                if(ui.businessAssets.isNotEmpty()){
+                    Text("Collega a un impianto registrato (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    ui.businessAssets.take(35).forEach{ asset ->
+                        FilterChip(selected=selectedAsset==asset.id,onClick={
+                            selectedAsset=if(selectedAsset==asset.id)null else asset.id
+                            if(selectedAsset!=null)machine=asset.name
+                        },label={Text(asset.code+" · "+asset.name,fontSize=11.sp)})
+                    }
+                }
                 Input(reason,{reason=it},"Descrizione intervento")
+                Input(laborHoursText,{laborHoursText=it},"Ore di manodopera",number=true)
+                Input(hourlyRateText,{hourlyRateText=it},"Costo orario € (facoltativo)",number=true)
+                Text("Il costo ricambi viene fissato alla chiusura dell'intervento. Se manca un prezzo, il totale resta non noto.",
+                    color=TextSecondary,fontSize=11.sp)
             }
             if(kind=="count")Text("Confronta il conteggio fisico con il dato a sistema. Nessuna rettifica avviene prima della conferma.",fontSize=12.sp,color=TextSecondary)
             if(kind=="transfer")Text("Scegli prima l'articolo nel magazzino attuale e poi la destinazione.",fontSize=12.sp,color=TextSecondary)
@@ -369,7 +403,7 @@ private fun statusLabel(status:String)=when(status) {
             "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person,selectedCenter,selectedSupplier)
             "count"->model.requestCycleCount(selected!!,parsed!!,reason)
             "transfer"->model.requestTransfer(selected!!,target!!,parsed!!)
-            "maintenance"->model.createWorkOrder(machine,reason,selected,parsed?:0.0)
+            "maintenance"->model.createWorkOrder(machine,reason,selected,parsed?:0.0,selectedAsset,hours?:0.0,rate)
         }
         onClose()
     },enabled=valid&&!ui.busy){Text("Salva")}},

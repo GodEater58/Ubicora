@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 8) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 9) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -56,6 +56,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         OperationsDb.createTables(db)
         EnterpriseDb.createTables(db)
         EnterpriseDb.addOperationLinks(db)
+        StockPlanningDb.createTables(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -108,6 +109,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         if (oldVersion < 8 && newVersion >= 8) {
             EnterpriseDb.createTables(db)
             EnterpriseDb.addOperationLinks(db)
+        }
+        if (oldVersion < 9 && newVersion >= 9) {
+            StockPlanningDb.createTables(db)
+            // StockPlanningDb.createTables also adds missing maintenance fields idempotently.
         }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
@@ -378,6 +383,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { cursor ->
             require(cursor.moveToFirst()) { "Articolo non trovato" }
             val next = StockRules.applyDelta(cursor.getDouble(0),delta)
+            StockPlanningDb.assertUnreservedStock(db,itemId,next)
             db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
             recordMovement(db,itemId,delta,note)
         }
@@ -810,6 +816,15 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             """SELECT 1 FROM ops_maintenance m JOIN org_assets a ON a.id=m.asset_id
                 WHERE a.warehouse_id<>m.warehouse_id LIMIT 1""" to "Intervento collegato ad altra macchina"
         )) db.rawQuery(query,null).use {c->require(!c.moveToFirst()){message}}
+        db.rawQuery("""SELECT 1 FROM stock_reservations r JOIN items i ON i.id=r.item_id
+            WHERE r.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Prenotazione collegata a un altro magazzino"}
+        }
+        db.rawQuery("""SELECT i.id,i.quantity,COALESCE(SUM(r.quantity),0)
+            FROM items i JOIN stock_reservations r ON r.item_id=i.id AND r.status='ACTIVE'
+            GROUP BY i.id HAVING SUM(r.quantity)>i.quantity+0.0000001 LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Prenotazioni superiori alle scorte fisiche"}
+        }
         // Prevent cross-warehouse workflow references even in imported encrypted archives.
         db.rawQuery("""SELECT 1 FROM ops_orders o JOIN items i ON i.id=o.item_id
             WHERE o.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
