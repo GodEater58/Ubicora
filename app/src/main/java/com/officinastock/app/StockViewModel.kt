@@ -36,7 +36,9 @@ data class StockUiState(
     val stockCounts: List<StockCount> = emptyList(),
     val stockTransfers: List<StockTransfer> = emptyList(),
     val maintenanceWork: List<MaintenanceWork> = emptyList(),
-    val operationsEvents: List<OperationsEvent> = emptyList()
+    val operationsEvents: List<OperationsEvent> = emptyList(),
+    val businessMode: Boolean = false,
+    val monthlyBudget: Double? = null
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -115,7 +117,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     stockCounts=warehouse?.let {operations.counts(it.id)} ?: emptyList(),
                     stockTransfers=warehouse?.let {operations.transfers(it.id)} ?: emptyList(),
                     maintenanceWork=warehouse?.let {operations.maintenance(it.id)} ?: emptyList(),
-                    operationsEvents=warehouse?.let {operations.events(it.id)} ?: emptyList()
+                    operationsEvents=warehouse?.let {operations.events(it.id)} ?: emptyList(),
+                    businessMode=profile?.let {operations.businessMode(it.id)} ?: false,
+                    monthlyBudget=profile?.let {operations.monthlyBudget(it.id)}
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
@@ -188,6 +192,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
     /** Local managerial actions operate only on the currently authenticated warehouse. */
     private fun managerActor():String = requireNotNull(ui.profile){"Profilo non selezionato"}.name
+    fun changeManagerMode(business:Boolean) = execute {
+        val profile=requireNotNull(ui.profile){"Profilo non selezionato"}
+        operations.setBusinessMode(profile.id,business)
+    }
+    fun changeMonthlyBudget(value:Double?) = execute {
+        val profile=requireNotNull(ui.profile){"Profilo non selezionato"}
+        operations.setMonthlyBudget(profile.id,value)
+    }
     fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String) = execute {
         operations.createOrder(requireWarehouse(),itemId,quantity,supplier,owner.ifBlank{managerActor()})
     }
