@@ -9,13 +9,14 @@ ops=(root/'app/src/main/java/com/officinastock/app/OperationsDb.kt').read_text(e
 org=(root/'app/src/main/java/com/officinastock/app/EnterpriseDb.kt').read_text(encoding='utf8')
 backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf8')
 planning=(root/'app/src/main/java/com/officinastock/app/StockPlanningDb.kt').read_text(encoding='utf8')
+trace=(root/'app/src/main/java/com/officinastock/app/StockTraceDb.kt').read_text(encoding='utf8')
 view=(root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf8')
 screen=(root/'app/src/main/java/com/officinastock/app/EnterpriseScreen.kt').read_text(encoding='utf8')
 transport=(root/'app/src/main/java/com/officinastock/app/EnterpriseServerClient.kt').read_text(encoding='utf8')
 gradle=(root/'app/build.gradle.kts').read_text(encoding='utf8')
-assert 'null, 9)' in base and 'oldVersion < 9' in base
+assert 'null, 10)' in base and 'oldVersion < 10' in base
 assert 'EnterpriseDb.createTables(db)' in base and 'EnterpriseDb.addOperationLinks(db)' in base
-assert 'versionCode = 450' in gradle
+assert 'versionCode = 460' in gradle
 assert 'managerTables.size' in backup and 'legacyTables.size' in backup and 'companyTables' in backup
 assert 'EnterpriseDirectoryPanel(model)' in (root/'app/src/main/java/com/officinastock/app/OperationsScreen.kt').read_text(encoding='utf8')
 assert 'supplier_id' in ops and 'center_id' in ops
@@ -30,8 +31,8 @@ db=sqlite3.connect(':memory:')
 db.execute("PRAGMA foreign_keys=ON")
 def tables(source):
     return re.findall(r'db\.execSQL\("""(CREATE TABLE .*?)"""\)',source,re.S)
-assert len(tables(base))==9 and len(tables(ops))==6 and len(tables(org))==5 and len(tables(planning))==1
-for ddl in tables(base)+tables(ops)+tables(org)+tables(planning):
+assert len(tables(base))==9 and len(tables(ops))==6 and len(tables(org))==5 and len(tables(planning))==1 and len(tables(trace))==2
+for ddl in tables(base)+tables(ops)+tables(org)+tables(planning)+tables(trace):
     db.execute(ddl)
 for line in re.findall(r'db\.execSQL\("(CREATE INDEX[^"\\]+)"\)',base):
     db.execute(line)
@@ -41,7 +42,7 @@ for statement in (
     'ALTER TABLE ops_maintenance ADD COLUMN asset_id INTEGER REFERENCES org_assets(id) ON DELETE SET NULL'):
     db.execute(statement)
 count=db.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-assert count==21,count
+assert count==23,count
 db.execute("INSERT INTO profiles(id,name,salt,verifier,created_at) VALUES(1,'work','salt','hash',0)")
 db.execute("INSERT INTO profiles(id,name,salt,verifier,created_at) VALUES(2,'personal','salt','hash',0)")
 db.execute("INSERT INTO warehouses(id,profile_id,name,location) VALUES(1,1,'A','')")
@@ -60,4 +61,4 @@ assert db.execute("SELECT count(*) FROM org_centers").fetchone()[0]==0
 assert db.execute("SELECT count(*) FROM org_suppliers").fetchone()[0]==0
 assert db.execute("SELECT count(*) FROM sync_outbox").fetchone()[0]==0
 assert db.execute("SELECT count(*) FROM ops_orders").fetchone()[0]==0
-print("PASS enterprise SQLite v9: 21 tables, reservations, links, cascade and backups 9/15/20/21")
+print("PASS enterprise SQLite v10: 23 tables, reservations, lots/serials and backup 9/15/20/21/23")
