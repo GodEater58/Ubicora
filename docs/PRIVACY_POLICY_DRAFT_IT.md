@@ -2,7 +2,7 @@
 
 **NON PUBBLICARE SENZA COMPLETARE I DATI DEL TITOLARE E LA VERIFICA DEL TRATTAMENTO EFFETTIVO.**
 
-Ultimo aggiornamento: 8 ottobre 2026.
+Ultimo aggiornamento: 9 ottobre 2026.
 
 ## Titolare e contatti
 
@@ -14,6 +14,10 @@ Ultimo aggiornamento: 8 ottobre 2026.
 ## Dati trattati e finalità
 
 L'applicazione memorizza localmente profili utente, PIN derivati tramite algoritmo di hashing, anagrafiche degli articoli, quantità, movimentazioni, eventuali nominativi degli assegnatari di utensili, foto e planimetrie. Tali dati sono utilizzati per la gestione dell'inventario e delle ubicazioni. La fotocamera viene utilizzata, su richiesta, per la lettura di QR code, lo scatto di fotografie e la scansione AR degli ambienti.
+
+## Connessione futura a server aziendali
+
+La versione 4.4 dichiara il permesso Internet per predisporre una futura sincronizzazione HTTPS autenticata. **Non è configurato alcun server e non avvengono invii automatici di dati inventariali o anagrafiche.** La coda locale prepara gli eventi delle nuove anagrafiche e conserva UUID e dati necessari in SQLite sul telefono. Per attivare un server occorreranno una nuova configurazione, verifica tecnica del trattamento e aggiornamento dell'informativa e della base giuridica prima della messa in servizio.
 
 ## Archiviazione e trasferimenti
 
