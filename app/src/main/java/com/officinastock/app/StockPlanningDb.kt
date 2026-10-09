@@ -25,6 +25,19 @@ class StockPlanningDb(private val stock:StockDb) {
                 created_at INTEGER NOT NULL,
                 closed_at INTEGER DEFAULT NULL
             )""")
+            // Maintenance cost columns exist in v9 fresh installs; upgrades add them via StockDb.onUpgrade.
+            // ops_maintenance is already present when this function is called.
+            val maintenanceColumns=db.rawQuery("PRAGMA table_info(ops_maintenance)",null).use{c->
+                buildSet { while(c.moveToNext()) add(c.getString(1)) }
+            }
+            for((column,definition) in listOf(
+                "labor_hours" to "REAL NOT NULL DEFAULT 0",
+                "hourly_rate" to "REAL DEFAULT NULL",
+                "parts_cost" to "REAL DEFAULT NULL",
+                "completed_at" to "INTEGER DEFAULT NULL")) {
+                if(column !in maintenanceColumns) db.execSQL(
+                    "ALTER TABLE ops_maintenance ADD COLUMN $column $definition")
+            }
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_reservations_item_state ON stock_reservations(item_id,status)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_reservations_warehouse_state ON stock_reservations(warehouse_id,status)")
         }

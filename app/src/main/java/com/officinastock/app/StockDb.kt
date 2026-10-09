@@ -112,6 +112,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         if (oldVersion < 9 && newVersion >= 9) {
             StockPlanningDb.createTables(db)
+            // StockPlanningDb.createTables also adds missing maintenance fields idempotently.
         }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {

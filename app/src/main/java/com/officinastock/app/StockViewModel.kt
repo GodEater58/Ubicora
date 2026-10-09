@@ -276,8 +276,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(action=="RECEIVE")require(ui.warehouse?.id==transfer.toId){"Seleziona il magazzino di destinazione"}
         operations.progressTransfer(id,managerActor(),action)
     }
-    fun createWorkOrder(machine:String,description:String,itemId:Long?,quantity:Double) = execute {
-        operations.createMaintenance(requireWarehouse(),machine,description,itemId,quantity,managerActor())
+    fun createWorkOrder(machine:String,description:String,itemId:Long?,quantity:Double,
+                        assetId:Long?=null,laborHours:Double=0.0,hourlyRate:Double?=null) = execute {
+        operations.createMaintenance(requireWarehouse(),machine,description,itemId,quantity,managerActor(),
+            assetId,laborHours,hourlyRate)
     }
     fun finishWorkOrder(id:Long,complete:Boolean) = execute {
         operations.finishMaintenance(requireWarehouse(),id,complete,managerActor())
