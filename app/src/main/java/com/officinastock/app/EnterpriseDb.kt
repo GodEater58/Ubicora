@@ -171,7 +171,7 @@ class EnterpriseDb(private val stock:StockDb) {
     private fun centerUuid(centerId:Long):String=stock.readableDatabase.rawQuery(
         "SELECT uuid FROM org_centers WHERE id=?",arrayOf(centerId.toString())
     ).use{c->require(c.moveToFirst());c.getString(0)}
-    fun assets(warehouseId:Long):List<BusinessAsset>=stock.readableDatabase.rawQuery(
+    fun assets(warehouseId:Long):List<BusinessAsset> = stock.readableDatabase.rawQuery(
         "SELECT id,warehouse_id,uuid,code,name,center_id FROM org_assets WHERE warehouse_id=? ORDER BY code LIMIT 500",
         arrayOf(warehouseId.toString())).use{c->buildList{
             while(c.moveToNext())add(BusinessAsset(c.getLong(0),c.getLong(1),c.getString(2),
