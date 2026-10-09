@@ -134,7 +134,7 @@ class EnterpriseDb(private val stock:StockDb) {
         }
     }
     fun centers(profileId:Long):List<CostCenter> = stock.readableDatabase.rawQuery(
-        "SELECT id,profile_id,uuid,code,name,monthly_budget FROM org_centers WHERE profile_id=? ORDER BY code LIMIT 500",
+        "SELECT id,profile_id,uuid,code,name,monthly_budget FROM org_centers WHERE profile_id=? ORDER BY code",
         arrayOf(profileId.toString())).use {c->buildList{
             while(c.moveToNext())add(CostCenter(c.getLong(0),c.getLong(1),c.getString(2),
                 c.getString(3),c.getString(4),if(c.isNull(5))null else c.getDouble(5)))
@@ -159,7 +159,7 @@ class EnterpriseDb(private val stock:StockDb) {
         }
     }
     fun suppliers(profileId:Long):List<BusinessSupplier> = stock.readableDatabase.rawQuery(
-        "SELECT id,profile_id,uuid,name,tax_id,email,lead_days FROM org_suppliers WHERE profile_id=? ORDER BY name LIMIT 500",
+        "SELECT id,profile_id,uuid,name,tax_id,email,lead_days FROM org_suppliers WHERE profile_id=? ORDER BY name",
         arrayOf(profileId.toString())).use{c->buildList{
             while(c.moveToNext())add(BusinessSupplier(c.getLong(0),c.getLong(1),c.getString(2),
                 c.getString(3),c.getString(4),c.getString(5),if(c.isNull(6))null else c.getInt(6)))
@@ -185,7 +185,7 @@ class EnterpriseDb(private val stock:StockDb) {
         "SELECT uuid FROM org_centers WHERE id=?",arrayOf(centerId.toString())
     ).use{c->require(c.moveToFirst());c.getString(0)}
     fun assets(warehouseId:Long):List<BusinessAsset> = stock.readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,uuid,code,name,center_id FROM org_assets WHERE warehouse_id=? ORDER BY code LIMIT 500",
+        "SELECT id,warehouse_id,uuid,code,name,center_id FROM org_assets WHERE warehouse_id=? ORDER BY code",
         arrayOf(warehouseId.toString())).use{c->buildList{
             while(c.moveToNext())add(BusinessAsset(c.getLong(0),c.getLong(1),c.getString(2),
                 c.getString(3),c.getString(4),if(c.isNull(5))null else c.getLong(5)))
@@ -205,11 +205,14 @@ class EnterpriseDb(private val stock:StockDb) {
         }
     }
     fun staffDirectory(profileId:Long):List<StaffDirectoryEntry> =stock.readableDatabase.rawQuery(
-        "SELECT id,profile_id,uuid,display_name,proposed_role,provider_subject FROM org_staff_directory WHERE profile_id=? ORDER BY display_name LIMIT 500",
+        "SELECT id,profile_id,uuid,display_name,proposed_role,provider_subject FROM org_staff_directory WHERE profile_id=? ORDER BY display_name",
         arrayOf(profileId.toString())).use{c->buildList{
             while(c.moveToNext())add(StaffDirectoryEntry(c.getLong(0),c.getLong(1),c.getString(2),
                 c.getString(3),c.getString(4),if(c.isNull(5))null else c.getString(5)))
         }}
+    fun pendingEventCount(profileId:Long):Int = stock.readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM sync_outbox WHERE profile_id=? AND ack_at IS NULL",
+        arrayOf(profileId.toString())).use{c->require(c.moveToFirst());c.getInt(0)}
     fun pendingEvents(profileId:Long,limit:Int=100):List<PendingSyncEvent> {
         require(limit in 1..100)
         return stock.readableDatabase.rawQuery("""SELECT id,profile_id,resource,entity_uuid,operation,payload,created_at
@@ -238,3 +241,4 @@ class EnterpriseDb(private val stock:StockDb) {
         "SELECT profile_id FROM org_suppliers WHERE id=?",arrayOf(supplierId.toString())
     ).use{c->require(c.moveToFirst()){"Fornitore non trovato"};c.getLong(0)}
 }
+

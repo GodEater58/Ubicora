@@ -138,7 +138,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     businessSuppliers=profile?.let {enterprise.suppliers(it.id)} ?: emptyList(),
                     businessAssets=warehouse?.let {enterprise.assets(it.id)} ?: emptyList(),
                     staffDirectory=profile?.let {enterprise.staffDirectory(it.id)} ?: emptyList(),
-                    unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0,
+                    unsentCatalogEvents=profile?.let {enterprise.pendingEventCount(it.id)} ?: 0,
                     reservations=warehouse?.let {planning.reservations(it.id,operationalRowLimit)} ?: emptyList(),
                     stockLots=warehouse?.let {trace.lots(it.id,operationalRowLimit)} ?: emptyList(),
                     stockSerials=warehouse?.let {trace.serials(it.id,operationalRowLimit)} ?: emptyList(),
@@ -476,4 +476,5 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         reload(error)
     }
 }
+
 
