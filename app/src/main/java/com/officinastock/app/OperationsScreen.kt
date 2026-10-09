@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro")
+private val sections=listOf("Decisioni","Acquisti","Inventari","Trasferimenti","Manutenzioni","Registro","Anagrafiche")
 private fun statusLabel(status:String)=when(status) {
     "DRAFT"->"Da approvare";"APPROVED"->"Approvato";"ORDERED"->"Ordinato"
     "RECEIVED"->"Ricevuto";"CANCELLED"->"Annullato";"PENDING"->"Da verificare"
@@ -133,6 +133,11 @@ private fun statusLabel(status:String)=when(status) {
                         OperationHeading("Ordine #"+o.id,o.itemName,statusLabel(o.status))
                         Text(amount(o.quantity)+" · "+o.supplier.ifBlank{"Fornitore non indicato"}+" · "+o.owner,
                             color=TextSecondary,fontSize=12.sp)
+                        o.centerId?.let { id ->
+                            ui.costCenters.firstOrNull{it.id==id}?.let{c->
+                                Text("Centro di costo: "+c.code+" · "+c.name,color=Sky,fontSize=11.sp)
+                            }
+                        }
                         o.unitPrice?.let{Text("Valore previsto: "+String.format(java.util.Locale.ITALY,"%.2f €",o.quantity*it),fontSize=12.sp)}
                         Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
                             when(o.status) {
@@ -226,6 +231,7 @@ private fun statusLabel(status:String)=when(status) {
                     }
                 }
             }
+            if(section==6) item {EnterpriseDirectoryPanel(model)}
             item{Spacer(Modifier.height(14.dp))}
         }
     }
@@ -254,6 +260,8 @@ private fun statusLabel(status:String)=when(status) {
     var amountInput by remember(kind){mutableStateOf("")}
     var reason by remember(kind){mutableStateOf("")}
     var supplier by remember(kind){mutableStateOf("")}
+    var selectedCenter by remember(kind){mutableStateOf<Long?>(null)}
+    var selectedSupplier by remember(kind){mutableStateOf<Long?>(null)}
     var person by remember(kind){mutableStateOf(ui.profile?.name.orEmpty())}
     var machine by remember(kind){mutableStateOf("")}
     var target by remember(kind){mutableStateOf<Long?>(null)}
@@ -299,7 +307,24 @@ private fun statusLabel(status:String)=when(status) {
                 else->"Quantità"
             },number=true)
             if(kind=="purchase") {
-                Input(supplier,{supplier=it},"Fornitore")
+                if(ui.costCenters.isNotEmpty()) {
+                    Text("Centro di costo (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    ui.costCenters.take(30).forEach {c->
+                        FilterChip(selected=selectedCenter==c.id,
+                            onClick={selectedCenter=if(selectedCenter==c.id)null else c.id},
+                            label={Text(c.code+" · "+c.name,fontSize=11.sp)})
+                    }
+                }
+                if(ui.businessSuppliers.isNotEmpty()) {
+                    Text("Fornitore da anagrafica (facoltativo)",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    ui.businessSuppliers.take(30).forEach{f->
+                        FilterChip(selected=selectedSupplier==f.id,onClick={
+                            selectedSupplier=if(selectedSupplier==f.id)null else f.id
+                            if(selectedSupplier!=null)supplier=f.name
+                        },label={Text(f.name,fontSize=11.sp)})
+                    }
+                }
+                Input(supplier,{supplier=it;selectedSupplier=null},"Fornitore (testo libero)")
                 Input(person,{person=it},"Responsabile")
             }
             if(kind=="count")Input(reason,{reason=it},"Motivo / riferimento inventario")
@@ -316,7 +341,7 @@ private fun statusLabel(status:String)=when(status) {
         }
     },confirmButton={TextButton(onClick={
         when(kind) {
-            "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person)
+            "purchase"->model.requestPurchase(selected!!,parsed!!,supplier,person,selectedCenter,selectedSupplier)
             "count"->model.requestCycleCount(selected!!,parsed!!,reason)
             "transfer"->model.requestTransfer(selected!!,target!!,parsed!!)
             "maintenance"->model.createWorkOrder(machine,reason,selected,parsed?:0.0)
