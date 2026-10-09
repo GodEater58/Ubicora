@@ -19,25 +19,25 @@ async function persist(next){
  if(busy||!canWrite)throw Error('Operazione non disponibile');if(pending)throw Error('Prima conferma o risolvi il salvataggio precedente');busy=true;renderHeader();
  try{if(shared){pending={mutation_id:uid(),expected_revision:revision,data:next};const result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});revision=result.revision;pending=null;}else await storagePut('local',next);
   state=next;status(shared?'Condiviso · revisione '+revision:'Salvato in questo browser');ensureWarehouse();render();
- }catch(e){if(e.code===409){pending={...pending,conflict:true};}status('Salvataggio non confermato');throw e;}finally{busy=false;renderHeader();}
+ }catch(e){if(e.code===409){pending={...pending,conflict:true};}status('Salvataggio non confermato');throw e;}finally{busy=false;render();}
 }
 async function commit(a){await persist(apply(state,a));toast('Operazione salvata');}
 async function refresh(){
  if(!shared){render();return;}if(busy)return;busy=true;
  try{if(pending&&!pending.conflict){const data=pending.data,result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});revision=result.revision;state=data;pending=null;toast('Salvataggio confermato');}
  else {if(pending&&!confirm('La tua modifica non è stata applicata. Vuoi esportarla come copia e poi caricare la versione del server?'))return;if(pending){download('Ubicora_Web_copia_non_confermata.json',JSON.stringify(pending.data,null,2),'application/json');pending=null;}const r=await api('/workspace/'+tenant.id);state=validate(r.data);revision=r.revision;canWrite=r.can_write;}
- ensureWarehouse();status('Condiviso · revisione '+revision);render();}catch(e){toast(e.message);status('Connessione non disponibile');}finally{busy=false;renderHeader();}
+ ensureWarehouse();status('Condiviso · revisione '+revision);render();}catch(e){toast(e.message);status('Connessione non disponibile');}finally{busy=false;render();}
 }
 function ensureWarehouse(){if(!state.warehouses.some(w=>w.id===wid))wid=state.warehouses[0]?.id??null;}
 function renderHeader(){const options=state.warehouses.map(w=>`<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');$('#warehouse').innerHTML=options||'<option value="">Nessun magazzino</option>';$('#warehouse').value=wid??'';
- $('#breadcrumb').textContent=warehouse()?.location||'IL TUO SPAZIO DI LAVORO';$('#pageTitle').textContent=titles[page];$('#primary').textContent=({items:'+ Articolo',map:'+ Struttura',orders:'+ Richiesta',reservations:'+ Prenotazione',works:'+ Intervento',settings:'Backup web',history:'Esporta CSV',home:'+ Articolo'})[page];$('#primary').disabled=busy||(!wid&&page!=='settings')||(!canWrite&&!['settings','history'].includes(page));$('#addWarehouse').disabled=!canWrite||busy;
+ $('#breadcrumb').textContent=warehouse()?.location||'IL TUO SPAZIO DI LAVORO';$('#pageTitle').textContent=titles[page];$('#primary').textContent=({items:'+ Articolo',map:'+ Struttura',orders:'+ Richiesta',reservations:'+ Prenotazione',works:'+ Intervento',settings:'Backup web',history:'Esporta CSV',home:'+ Articolo'})[page];$('#primary').disabled=busy||Boolean(pending&& !['settings','history'].includes(page))||(!wid&&page!=='settings')||(!canWrite&&!['settings','history'].includes(page));$('#addWarehouse').disabled=!canWrite||busy||Boolean(pending);
  $('#modeBadge').textContent=shared?'Condiviso · '+(tenant?.display_name??''):'Solo questo browser';$('#refresh').textContent=pending?'Risolvi salvataggio':'Aggiorna';
  const notice=$('#connectionNotice');notice.textContent=shared?(canWrite?'Archivio centrale: le modifiche confermate sono condivise. Gli aggiornamenti degli altri dispositivi vengono caricati automaticamente.':'Archivio condiviso in sola lettura. Il ruolo Manager è necessario per modificare questo spazio.'): 'Archivio locale di questo browser. Il CSV Android permette il trasferimento manuale degli articoli; non attiva una sincronizzazione automatica.';notice.classList.toggle('warning',Boolean(pending));
  if(pending)notice.textContent='Salvataggio non confermato. Non ripetere l’operazione: usa “Risolvi salvataggio” per verificare la conferma o gestire il conflitto.';
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
 }
 const badge=(status)=>`<span class="badge ${['CANCELLED','RELEASED'].includes(status)?'red':['DRAFT','ORDERED','OPEN','ACTIVE'].includes(status)?'amber':''}">${esc(labels[status]??status)}</span>`;
-const action=(title,op,id='',cls='secondary')=>`<button class="${cls}" data-action="${op}" data-id="${esc(id)}" ${!canWrite||busy?'disabled':''}>${esc(title)}</button>`;
+const action=(title,op,id='',cls='secondary')=>`<button class="${cls}" data-action="${op}" data-id="${esc(id)}" ${busy||(!['more','moreItems','exportCsv','backup','print'].includes(op)&&(!canWrite||pending))?'disabled':''}>${esc(title)}</button>`;
 const noRows=(title,body)=>`<div class="empty"><div class="empty-icon">◇</div><h2>${esc(title)}</h2><p>${esc(body)}</p></div>`;
 const bars=(pairs,money=false)=>{const max=Math.max(1,...pairs.map(x=>x[1]));return pairs.map(([name,value])=>`<div class="bar-row"><span>${esc(name)}</span><div class="track"><div class="fill" style="width:${Math.min(100,value/max*100)}%"></div></div><span>${money?eur(value):fmt(value)}</span></div>`).join('');};
 function render(){renderHeader();let html='';const w=warehouse();
@@ -113,4 +113,4 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>navigate(b.data
 window.addEventListener('beforeunload',e=>{if(pending){e.preventDefault();e.returnValue='';}});
 async function start(){try{db=await openDb();state=validate(await storageGet('local')||empty());ensureWarehouse();render();status('Archivio locale');if(location.protocol!=='file:'){try{apiConfig=await api('/config');}catch{}await callback();render();}}catch(e){toast(e.message);status('Archivio non disponibile');$('#primary').disabled=true;$('#content').innerHTML=noRows('Impossibile aprire l’archivio',e.message);}}
 await start();
-setInterval(async()=>{if(!shared||busy||pending||$('#editor').open||document.hidden)return;try{const r=await api('/workspace/'+tenant.id);if(r.revision!==revision){state=validate(r.data);revision=r.revision;canWrite=r.can_write;ensureWarehouse();render();status('Aggiornato · revisione '+revision);}}catch{status('Connessione interrotta · copia in memoria');}},15000);
+setInterval(async()=>{if(!shared||busy||pending||$('#editor').open||document.hidden)return;try{const r=await api('/workspace/'+tenant.id);if(r.revision!==revision||r.can_write!==canWrite){state=validate(r.data);revision=r.revision;canWrite=r.can_write;ensureWarehouse();render();status('Aggiornato · revisione '+revision);}}catch{status('Connessione interrotta · copia in memoria');}},15000);
