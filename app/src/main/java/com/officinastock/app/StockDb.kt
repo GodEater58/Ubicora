@@ -318,6 +318,14 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         // An open operation recorded its numeric quantity in the previous unit.
         // Changing pz -> kg in place would silently corrupt receipts, stock counts and parts usage.
         if(!original.unit.trim().equals(unit.trim(),ignoreCase=true)) {
+            require(readableDatabase.rawQuery(
+                """SELECT 1 FROM stock_lots WHERE item_id=? LIMIT 1""",
+                arrayOf(itemId.toString())).use{!it.moveToFirst()} &&
+                readableDatabase.rawQuery(
+                    """SELECT 1 FROM stock_serials WHERE item_id=? LIMIT 1""",
+                    arrayOf(itemId.toString())).use{!it.moveToFirst()}) {
+                "L'articolo ha una tracciabilità storica: crea un nuovo codice per cambiare unità."
+            }
             require(original.quantity==0.0) {
                 "Prima esaurisci o trasferisci la giacenza: cambiare l'unità a una quantità già presente la falserebbe."
             }
