@@ -205,6 +205,28 @@ class OperationsDb(private val stock:StockDb) {
             arrayOf(id.toString(),wid.toString(),current))==1){"Stato ordine cambiato"}
         audit(db,wid,"ORDINE_$next",actor,"Ordine #$id")
     }
+    /** Partial receipt. Stock changes only by delivered quantity, atomically with order status. */
+    fun receiveOrderQuantity(wid:Long,id:Long,delivered:Double,actor:String) = transaction { db ->
+        require(delivered.isFinite() && delivered>0.0){"Quantità ricevuta non valida"}
+        val order=db.rawQuery("SELECT item_id,quantity,received,status FROM ops_orders WHERE id=? AND warehouse_id=?",
+            arrayOf(id.toString(),wid.toString())).use {c->
+            require(c.moveToFirst()){"Ordine non trovato"}
+            listOf(c.getLong(0).toString(),c.getDouble(1).toString(),c.getDouble(2).toString(),c.getString(3))
+        }
+        require(order[3]=="ORDERED"){"Ordine non in consegna"}
+        val total=order[1].toDouble();val received=order[2].toDouble()
+        require(delivered<=total-received){"Quantità superiore al residuo dell'ordine"}
+        val nextReceived=received+delivered
+        require(nextReceived.isFinite() && nextReceived<=total){"Quantità ricevuta non valida"}
+        changeStock(db,order[0].toLong(),delivered,"Ricezione parziale ordine #$id")
+        val next=if(nextReceived==total)"RECEIVED" else "ORDERED"
+        require(db.update("ops_orders",ContentValues().apply{
+            put("received",nextReceived);put("status",next)
+        },"id=? AND warehouse_id=? AND status='ORDERED' AND received=?",
+            arrayOf(id.toString(),wid.toString(),received.toString()))==1){"Ordine modificato: ricarica i dati"}
+        audit(db,wid,"ORDINE_RICEZIONE",actor,
+            "Ordine #$id · ricevuti $delivered · totale $nextReceived / $total")
+    }
     fun orders(wid:Long):List<PurchaseRequest> = stock.readableDatabase.rawQuery(
         """SELECT o.id,o.warehouse_id,o.item_id,i.name,o.quantity,o.received,o.unit_price,o.supplier,o.owner,o.status,o.created_at,o.center_id,o.supplier_id
             FROM ops_orders o JOIN items i ON i.id=o.item_id
