@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 6) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 7) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -53,6 +53,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             source TEXT NOT NULL DEFAULT 'manual')""")
         createSkuSequences(db)
         createDemoAssets(db)
+        OperationsDb.createTables(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -98,6 +99,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         if (oldVersion < 6 && newVersion >= 6) {
             createDemoAssets(db)
             markLegacyDemo(db)
+        }
+        if (oldVersion < 7 && newVersion >= 7) {
+            OperationsDb.createTables(db)
         }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
