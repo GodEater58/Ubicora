@@ -23,7 +23,9 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         private val companyTables = listOf("org_centers","org_suppliers","org_assets","org_staff_directory","sync_outbox")
         private val enterpriseTables = legacyTables + companyTables + operationsTables
         private val planningTables = listOf("stock_reservations")
-        private val tables = enterpriseTables + planningTables
+        private val reservedTables = enterpriseTables + planningTables
+        private val traceTables = listOf("stock_lots","stock_serials")
+        private val tables = reservedTables + traceTables
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -186,13 +188,15 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 "Backup incompatibile con questa versione"
             }
             val archiveTableCount=manifest.optInt("tables",-1)
-            require(archiveTableCount in setOf(legacyTables.size,managerTables.size,enterpriseTables.size,tables.size)) {
+            require(archiveTableCount in setOf(legacyTables.size,managerTables.size,
+                enterpriseTables.size,reservedTables.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
             val mandatory=when(archiveTableCount){
                 legacyTables.size -> legacyTables
                 managerTables.size -> managerTables
                 enterpriseTables.size -> enterpriseTables
+                reservedTables.size -> reservedTables
                 else -> tables
             }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}

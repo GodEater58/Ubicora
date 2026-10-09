@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 9) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 10) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -57,6 +57,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         EnterpriseDb.createTables(db)
         EnterpriseDb.addOperationLinks(db)
         StockPlanningDb.createTables(db)
+        StockTraceDb.createTables(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -114,6 +115,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             StockPlanningDb.createTables(db)
             // StockPlanningDb.createTables also adds missing maintenance fields idempotently.
         }
+        if (oldVersion < 10 && newVersion >= 10) StockTraceDb.createTables(db)
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (
@@ -316,6 +318,14 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         // An open operation recorded its numeric quantity in the previous unit.
         // Changing pz -> kg in place would silently corrupt receipts, stock counts and parts usage.
         if(!original.unit.trim().equals(unit.trim(),ignoreCase=true)) {
+            require(readableDatabase.rawQuery(
+                """SELECT 1 FROM stock_lots WHERE item_id=? LIMIT 1""",
+                arrayOf(itemId.toString())).use{!it.moveToFirst()} &&
+                readableDatabase.rawQuery(
+                    """SELECT 1 FROM stock_serials WHERE item_id=? LIMIT 1""",
+                    arrayOf(itemId.toString())).use{!it.moveToFirst()}) {
+                "L'articolo ha una tracciabilità storica: crea un nuovo codice per cambiare unità."
+            }
             require(original.quantity==0.0) {
                 "Prima esaurisci o trasferisci la giacenza: cambiare l'unità a una quantità già presente la falserebbe."
             }
@@ -384,6 +394,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(cursor.moveToFirst()) { "Articolo non trovato" }
             val next = StockRules.applyDelta(cursor.getDouble(0),delta)
             StockPlanningDb.assertUnreservedStock(db,itemId,next)
+            StockTraceDb.assertPhysicalFloor(db,itemId,next)
             db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
             recordMovement(db,itemId,delta,note)
         }
@@ -816,6 +827,24 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             """SELECT 1 FROM ops_maintenance m JOIN org_assets a ON a.id=m.asset_id
                 WHERE a.warehouse_id<>m.warehouse_id LIMIT 1""" to "Intervento collegato ad altra macchina"
         )) db.rawQuery(query,null).use {c->require(!c.moveToFirst()){message}}
+        for((table,quantityFilter) in listOf(
+            "stock_lots" to "quantity > 0","stock_serials" to "state = 'IN_STOCK'"
+        )) db.rawQuery("""SELECT 1 FROM $table t JOIN items i ON i.id=t.item_id
+            WHERE t.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Tracciabilità associata a un altro magazzino"}
+        }
+        db.rawQuery("""SELECT 1 FROM items i WHERE
+            (SELECT COALESCE(SUM(l.quantity),0) FROM stock_lots l WHERE l.item_id=i.id)
+            +(SELECT COUNT(*) FROM stock_serials s WHERE s.item_id=i.id AND s.state='IN_STOCK')
+            >i.quantity+0.0000001 LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Tracciabilità superiore alla giacenza"}
+        }
+        db.rawQuery("""SELECT 1 FROM items i WHERE
+            EXISTS(SELECT 1 FROM stock_lots l WHERE l.item_id=i.id AND l.quantity>0)
+            AND EXISTS(SELECT 1 FROM stock_serials s WHERE s.item_id=i.id AND s.state='IN_STOCK')
+            LIMIT 1""",null).use {
+            require(!it.moveToFirst()){"Registrazioni lotto e seriale incompatibili"}
+        }
         db.rawQuery("""SELECT 1 FROM stock_reservations r JOIN items i ON i.id=r.item_id
             WHERE r.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
             require(!it.moveToFirst()){"Prenotazione collegata a un altro magazzino"}

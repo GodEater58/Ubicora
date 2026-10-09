@@ -1,4 +1,4 @@
-# Ubicora — Android nativo 4.4.0 (Enterprise Alpha)
+# Ubicora — Android nativo 4.6.0 (Planning + Traceability Alpha)
 
 App locale per inventario di più magazzini e profili, con codici automatici per categoria, etichette QR, scanner QR, fotografie, movimenti, prestiti, planimetria metrica, statistiche manageriali e backup completo cifrato. L'app non richiede un account cloud per il funzionamento dell'inventario. La scansione AR utilizza Google Play Services per AR su dispositivi compatibili.
 
@@ -6,6 +6,9 @@ App locale per inventario di più magazzini e profili, con codici automatici per
 
 ## Enterprise 4.4 (offline-first, server-ready)
 In modalità Aziendale: anagrafiche di centri di costo, fornitori, macchinari e rubrica ruoli informativa, acquisti collegati e ricevimento parziale. SQLite v8 e coda locale transazionale per le nuove anagrafiche. **Nessuna sincronizzazione automatica o autenticazione cloud è attiva.** Le predisposizioni per collegare un futuro servizio HTTPS e PostgreSQL sono descritte in [Enterprise 4.4 e server](docs/ENTERPRISE_4_4_SERVER.md). La rubrica ruoli non conferisce autorizzazioni senza server.
+
+## Gestione operativa 4.5 e tracciabilità 4.6
+Scorte riservate e quantità disponibili, prenotazioni con movimenti atomici, manutenzione per impianto e costi, lotti con scadenza, numeri di serie e scarichi tracciati. Schema SQLite v10, backup cifrato compatibile con versioni precedenti. Guida e limiti: [Pianificazione e tracciabilità 4.6](docs/PLANNING_4_6.md). La sincronizzazione multi-dispositivo e l'autenticazione centralizzata non sono ancora operative.
 
 ## Build
 

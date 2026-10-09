@@ -7,7 +7,7 @@ source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(enc
 photo=(root/'app/src/main/java/com/officinastock/app/PhotoFiles.kt').read_text(encoding='utf-8')
 ui=(root/'app/src/main/java/com/officinastock/app/ArticlePhotoField.kt').read_text(encoding='utf-8')
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
-assert 'null, 9)' in source, 'Versione DB non aggiornata'
+assert 'null, 10)' in source, 'Versione DB non aggiornata'
 assert 'ALTER TABLE items ADD COLUMN photo_file TEXT DEFAULT NULL' in source
 assert 'photo_file TEXT DEFAULT NULL' in source
 assert 'fun updatePhoto(itemId:' in source

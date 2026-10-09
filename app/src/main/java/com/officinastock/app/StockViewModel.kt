@@ -44,13 +44,16 @@ data class StockUiState(
     val businessAssets: List<BusinessAsset> = emptyList(),
     val staffDirectory: List<StaffDirectoryEntry> = emptyList(),
     val unsentCatalogEvents: Int = 0,
-    val reservations: List<StockReservation> = emptyList()
+    val reservations: List<StockReservation> = emptyList(),
+    val stockLots: List<StockLot> = emptyList(),
+    val stockSerials: List<StockSerial> = emptyList()
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
     private val operations = OperationsDb(db)
     private val enterprise = EnterpriseDb(db)
     private val planning = StockPlanningDb(db)
+    private val trace = StockTraceDb(db)
     var ui by mutableStateOf(StockUiState())
         private set
     init { refresh() }
@@ -133,7 +136,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     businessAssets=warehouse?.let {enterprise.assets(it.id)} ?: emptyList(),
                     staffDirectory=profile?.let {enterprise.staffDirectory(it.id)} ?: emptyList(),
                     unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0,
-                    reservations=warehouse?.let {planning.reservations(it.id)} ?: emptyList()
+                    reservations=warehouse?.let {planning.reservations(it.id)} ?: emptyList(),
+                    stockLots=warehouse?.let {trace.lots(it.id)} ?: emptyList(),
+                    stockSerials=warehouse?.let {trace.serials(it.id)} ?: emptyList()
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
@@ -232,6 +237,22 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
         enterprise.addStaffDirectoryEntry(pid,name,role)
+    }
+    fun createStockLot(itemId:Long,code:String,quantity:Double,expiresAt:Long?) = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        trace.registerLot(requireWarehouse(),itemId,code,quantity,expiresAt)
+    }
+    fun consumeStockLot(lotId:Long,quantity:Double,discard:Boolean=false) = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        trace.consumeLot(requireWarehouse(),lotId,quantity,managerActor(),discard)
+    }
+    fun createStockSerial(itemId:Long,serial:String) = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        trace.registerSerial(requireWarehouse(),itemId,serial)
+    }
+    fun issueStockSerial(serialId:Long) = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        trace.issueSerial(requireWarehouse(),serialId,managerActor())
     }
     fun reserveStock(itemId:Long,quantity:Double,reference:String) = execute {
         val actor=managerActor()

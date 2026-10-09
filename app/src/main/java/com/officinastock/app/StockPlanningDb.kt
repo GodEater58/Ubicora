@@ -112,6 +112,7 @@ class StockPlanningDb(private val stock:StockDb) {
                 }
                 val next=StockRules.applyDelta(current,-reservation.second)
                 assertUnreservedStock(db,reservation.first,next)
+                StockTraceDb.assertPhysicalFloor(db,reservation.first,next)
                 require(db.update("items",ContentValues().apply{put("quantity",next)},
                     "id=?",arrayOf(reservation.first.toString()))==1){"Scarico non applicato"}
                 db.insertOrThrow("movements",null,ContentValues().apply{

@@ -167,7 +167,7 @@ class DatabaseAuditTest {
         db.writableDatabase.execSQL("DROP TABLE demo_assets")
         db.writableDatabase.version=5
         db.close();db=StockDb(RuntimeEnvironment.getApplication())
-        assertEquals(9,db.readableDatabase.version)
+        assertEquals(10,db.readableDatabase.version)
         assertEquals(10.0,db.item(id)!!.quantity,0.0)
         assertTrue(db.authenticate(profile,"1234"))
         assertEquals(0,db.demoAssetCount(warehouse))
