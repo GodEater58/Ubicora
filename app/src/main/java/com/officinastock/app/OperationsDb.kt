@@ -405,13 +405,12 @@ class OperationsDb(private val stock:StockDb) {
         }
         val status=if(complete)"DONE" else "CANCELLED"
         require(db.update("ops_maintenance",ContentValues().apply{
+            put("status",status)
             if(complete && partsCost!=null)put("parts_cost",partsCost)
             if(complete)put("completed_at",System.currentTimeMillis())
         },"id=? AND warehouse_id=? AND status='OPEN'",arrayOf(id.toString(),wid.toString()))==1) {
-            "Intervento non aggiornabile"
+            "Intervento già gestito"
         }
-        require(db.update("ops_maintenance",ContentValues().apply{put("status",status)},
-            "id=? AND warehouse_id=? AND status='OPEN'",arrayOf(id.toString(),wid.toString()))==1){"Intervento già gestito"}
         audit(db,wid,"INTERVENTO_$status",actor,"Intervento #$id")
     }
     fun maintenance(wid:Long):List<MaintenanceWork> = stock.readableDatabase.rawQuery(
