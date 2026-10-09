@@ -46,7 +46,9 @@ data class StockUiState(
     val unsentCatalogEvents: Int = 0,
     val reservations: List<StockReservation> = emptyList(),
     val stockLots: List<StockLot> = emptyList(),
-    val stockSerials: List<StockSerial> = emptyList()
+    val stockSerials: List<StockSerial> = emptyList(),
+    val operationalReports: Map<Int,OperationalReport> = emptyMap(),
+    val reservedByItem: Map<Long,Double> = emptyMap()
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -138,7 +140,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0,
                     reservations=warehouse?.let {planning.reservations(it.id)} ?: emptyList(),
                     stockLots=warehouse?.let {trace.lots(it.id)} ?: emptyList(),
-                    stockSerials=warehouse?.let {trace.serials(it.id)} ?: emptyList()
+                    stockSerials=warehouse?.let {trace.serials(it.id)} ?: emptyList(),
+                    reservedByItem=warehouse?.let {planning.reservedByItem(it.id)} ?: emptyMap(),
+                    operationalReports=warehouse?.takeIf{profile!=null && operations.businessMode(profile.id)}?.let {w->
+                        val now=System.currentTimeMillis()
+                        listOf(7,30,90).associateWith{OperationalAnalytics(db).report(w.id,it,now)}
+                    } ?: emptyMap()
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
@@ -266,7 +273,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun availableStock(itemId:Long):StockAvailability {
         val item=ui.items.firstOrNull{it.id==itemId} ?: return StockAvailability(0.0,0.0)
-        val held=ui.reservations.filter{it.itemId==item.id && it.status=="ACTIVE"}.sumOf{it.quantity}
+        val held=ui.reservedByItem[item.id] ?: 0.0
         return StockAvailability(item.quantity,held)
     }
     fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String,
@@ -459,3 +466,4 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         reload(error)
     }
 }
+

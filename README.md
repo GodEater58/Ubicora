@@ -10,6 +10,12 @@ In modalità Aziendale: anagrafiche di centri di costo, fornitori, macchinari e 
 ## Gestione operativa 4.5 e tracciabilità 4.6
 Scorte riservate e quantità disponibili, prenotazioni con movimenti atomici, manutenzione per impianto e costi, lotti con scadenza, numeri di serie e scarichi tracciati. Schema SQLite v10, backup cifrato compatibile con versioni precedenti. Guida e limiti: [Pianificazione e tracciabilità 4.6](docs/PLANNING_4_6.md). La sincronizzazione multi-dispositivo e l'autenticazione centralizzata non sono ancora operative.
 
+## Indicatori operativi 4.6
+In Aziendale → Decisioni: stato completo degli acquisti, scorte disponibili dopo le prenotazioni, lotti scaduti/in scadenza, budget mensile su tutte le sedi del profilo, costi di manutenzione per impianto (7/30/90 giorni), quota dei conteggi confermati senza scostamenti. I grafici aprono la sezione corrispondente. I totali SQL non dipendono dalle ultime 250 righe delle liste. Prezzi mancanti sono segnalati, non sostituiti con costi inventati. Dettagli: [Indicatori manageriali](docs/MANAGER_INDICATORI_4_6.md).
+
+## Backend e limiti attuali
+Il codice FastAPI/PostgreSQL con OIDC è nel repository e ha test dedicati. Non è distribuito: login Android, sync bidirezionale dell'inventario, provisioning tenant e configurazione server restano da completare. Vedi [server](server/README.md). La firma release permanente e l'aggiornamento su telefono richiedono un keystore compatibile e una prova reale; nessun APK debug è presentato come aggiornamento sicuro.
+
 ## Build
 
 - Android Gradle Plugin 8.10.1, Kotlin 2.1.20, Java 17, target/compile SDK 36, min SDK 26.
@@ -44,3 +50,4 @@ Per gli aggiornamenti **non utilizzare** gli APK debug di GitHub Actions, perch�
 Il workflow manuale [Ubicora Stable Signed Update](.github/workflows/ubicora-signed-update.yml) produce APK release firmati con una chiave privata persistente custodita nei GitHub Actions Secrets e ne verifica certificato, identificativo e versionCode prima della pubblicazione. Occorre configurare i secrets prima del primo rilascio: il workflow **non genera nuove chiavi**. Una nuova chiave non può aggiornare in-place un APK già installato con una firma diversa.
 
 Leggi la [guida per firma permanente, verifica sul telefono e migrazione sicura](docs/AGGIORNAMENTI_APK_SENZA_DISINSTALLARE.md). Non disinstallare l'app attualmente in uso senza avere verificato un backup cifrato.
+

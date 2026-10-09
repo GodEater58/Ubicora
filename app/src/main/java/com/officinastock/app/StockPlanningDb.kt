@@ -72,6 +72,9 @@ class StockPlanningDb(private val stock:StockDb) {
             while(c.moveToNext())add(StockReservation(c.getLong(0),c.getLong(1),c.getLong(2),
                 c.getDouble(3),c.getString(4),c.getString(5),c.getString(6),c.getLong(7)))
         }}
+    fun reservedByItem(warehouseId:Long):Map<Long,Double> = stock.readableDatabase.rawQuery(
+        "SELECT item_id,SUM(quantity) FROM stock_reservations WHERE warehouse_id=? AND status='ACTIVE' GROUP BY item_id",
+        arrayOf(warehouseId.toString())).use {c->buildMap{while(c.moveToNext())put(c.getLong(0),c.getDouble(1))}}
     fun reserve(warehouseId:Long,itemId:Long,qty:Double,reference:String,actor:String):Long {
         require(qty.isFinite() && qty>0 && qty<=100000000){"Quantità non valida"}
         require(reference.trim().length in 3..160 && actor.trim().length in 2..100){"Indica attività e responsabile"}
@@ -131,3 +134,4 @@ class StockPlanningDb(private val stock:StockDb) {
         }
     }
 }
+
