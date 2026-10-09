@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 6) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 7) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -53,6 +53,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             source TEXT NOT NULL DEFAULT 'manual')""")
         createSkuSequences(db)
         createDemoAssets(db)
+        createManagerActions(db)
         db.execSQL("CREATE INDEX idx_items_warehouse ON items(warehouse_id,name)")
         db.execSQL("CREATE INDEX idx_placements_warehouse ON placements(warehouse_id)")
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
@@ -99,6 +100,51 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             createDemoAssets(db)
             markLegacyDemo(db)
         }
+        if (oldVersion < 7 && newVersion >= 7) createManagerActions(db)
+    }
+    private fun createManagerActions(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS manager_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+            item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('PURCHASE','COUNT','TASK')),
+            title TEXT NOT NULL, quantity REAL DEFAULT NULL,
+            assignee TEXT NOT NULL DEFAULT '',
+            details TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','DONE','CANCELLED')),
+            created_at INTEGER NOT NULL, completed_at INTEGER DEFAULT NULL
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_manager_actions_warehouse ON manager_actions(warehouse_id,status,created_at)")
+    }
+    fun managerActions(warehouseId:Long):List<ManagerAction> =
+        readableDatabase.rawQuery("""SELECT a.id,a.warehouse_id,a.item_id,a.kind,a.title,a.quantity,a.assignee,a.details,a.status,a.created_at,a.completed_at
+        FROM manager_actions a WHERE a.warehouse_id=? ORDER BY CASE a.status WHEN 'OPEN' THEN 0 ELSE 1 END,a.created_at DESC LIMIT 500""",
+            arrayOf(warehouseId.toString())).use { c -> buildList {
+                while(c.moveToNext()) add(ManagerAction(c.getLong(0),c.getLong(1),if(c.isNull(2))null else c.getLong(2),
+                    c.getString(3),c.getString(4),if(c.isNull(5))null else c.getDouble(5),c.getString(6),
+                    c.getString(7),c.getString(8),c.getLong(9),if(c.isNull(10))null else c.getLong(10)))
+            } }
+    fun createManagerAction(warehouseId:Long,kind:String,title:String,quantity:Double?,assignee:String,details:String,itemId:Long?=null):Long {
+        require(kind in setOf("PURCHASE","COUNT","TASK")) { "Tipo azione non valido" }
+        require(title.trim().length in 3..120 && assignee.length<=100 && details.length<=500) { "Descrizione o responsabile non validi" }
+        require(quantity==null || (quantity.isFinite() && quantity>0.0)) { "Quantità richiesta non valida" }
+        if(itemId!=null) require(readableDatabase.rawQuery(
+            "SELECT 1 FROM items WHERE id=? AND warehouse_id=?",arrayOf(itemId.toString(),warehouseId.toString())
+        ).use{it.moveToFirst()}) { "Articolo appartenente a un altro magazzino" }
+        return writableDatabase.insertOrThrow("manager_actions",null,ContentValues().apply {
+            put("warehouse_id",warehouseId)
+            if(itemId!=null)put("item_id",itemId)
+            put("kind",kind);put("title",title.trim())
+            if(quantity!=null)put("quantity",quantity)
+            put("assignee",assignee.trim());put("details",details.trim())
+            put("status","OPEN");put("created_at",System.currentTimeMillis())
+        })
+    }
+    fun closeManagerAction(warehouseId:Long,id:Long,cancel:Boolean=false) {
+        val changed=writableDatabase.update("manager_actions",ContentValues().apply {
+            put("status",if(cancel)"CANCELLED" else "DONE");put("completed_at",System.currentTimeMillis())
+        },"id=? AND warehouse_id=? AND status='OPEN'",arrayOf(id.toString(),warehouseId.toString()))
+        require(changed==1) { "Azione non aperta nel magazzino corrente" }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (
