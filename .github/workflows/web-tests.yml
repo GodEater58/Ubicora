@@ -27,7 +27,9 @@ jobs:
           npm install --no-save playwright@1.51.1
           npx playwright install --with-deps chromium
       - name: Actual browser - desktop, persistence, mobile and offline file
-        run: node web/tests/browser.cjs
+        run: |
+          node web/tests/browser.cjs
+          node web/tests/shared-browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
