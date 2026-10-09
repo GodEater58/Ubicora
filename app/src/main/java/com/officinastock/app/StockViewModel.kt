@@ -238,6 +238,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun advancePurchase(id:Long,action:String) = execute {
         operations.advanceOrder(requireWarehouse(),id,action,managerActor())
     }
+    fun receivePurchase(id:Long,quantity:Double) = execute {
+        operations.receiveOrderQuantity(requireWarehouse(),id,quantity,managerActor())
+    }
     fun requestCycleCount(itemId:Long,counted:Double,reason:String) = execute {
         operations.requestCount(requireWarehouse(),itemId,counted,reason,managerActor())
     }
