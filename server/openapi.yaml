@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: Ubicora Enterprise Sync (proposed server contract)
+  version: 1.0.0-draft
+  description: |
+    Server is NOT shipped or deployed by Ubicora 4.4.
+    Authenticate tokens (issuer, audience, signature, expiry) and authorize
+    each resource and tenant on the SERVER, never based on client-supplied roles.
+servers:
+  - url: https://inventory.example.org
+security:
+  - bearerAuth: []
+paths:
+  /v1/health:
+    get:
+      summary: Authenticated health and compatible protocol
+      responses:
+        '200':
+          description: Service ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protocol_version]
+                properties:
+                  protocol_version: {type: integer, enum: [1]}
+        '401': {description: Authentication required}
+  /v1/sync/events:
+    post:
+      summary: Accept idempotent outbox events (after authorization and durable commit)
+      description: |
+        200 acknowledges only events committed to the server storage.
+        A repeated event_id must produce the SAME result, not a duplicate row.
+        Do not accept unrecognized resources or cross-tenant references.
+        Conflicting versions require 409 and leave the event unacknowledged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [protocol_version, tenant_uuid, events]
+              properties:
+                protocol_version: {type: integer, enum: [1]}
+                tenant_uuid: {type: string, format: uuid}
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [event_id, entity_uuid, resource, operation, created_at_ms, data]
+                    properties:
+                      event_id: {type: string, format: uuid}
+                      entity_uuid: {type: string, format: uuid}
+                      resource:
+                        type: string
+                        enum: [cost_center, supplier, asset, staff_directory]
+                      operation:
+                        type: string
+                        enum: [CREATE, UPDATE, DELETE]
+                      created_at_ms: {type: integer, format: int64}
+                      data: {type: object, additionalProperties: true}
+      responses:
+        '200':
+          description: Committed and deduplicated events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protocol_version, accepted_event_ids]
+                properties:
+                  protocol_version: {type: integer, enum: [1]}
+                  accepted_event_ids:
+                    type: array
+                    items: {type: string, format: uuid}
+                    uniqueItems: true
+        '400': {description: Invalid payload}
+        '401': {description: Token missing or invalid}
+        '403': {description: Tenant or role denied}
+        '409': {description: Revision or semantic conflict}
+        '413': {description: Request too large}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
