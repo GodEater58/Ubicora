@@ -147,7 +147,7 @@ def validate_entity(event: Event) -> None:
 def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
     validate_entity(event)
     cur.execute("""SELECT resource,entity_id,operation,payload,actor_subject
-                   FROM accepted_events WHERE tenant_id=%s AND event_id=%s FOR UPDATE""",
+                   FROM accepted_events WHERE tenant_id=%s AND event_id=%s""",
                 (tenant, event.event_id))
     prior = cur.fetchone()
     if prior:
