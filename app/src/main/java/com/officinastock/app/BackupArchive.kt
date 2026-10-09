@@ -17,7 +17,11 @@ import java.util.zip.ZipOutputStream
 class BackupArchive(private val context: Context, private val stockDb: StockDb) {
     companion object {
         private val legacyTables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets")
-        private val tables = legacyTables + listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events", "ops_settings")
+        private val operationsTables = listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events", "ops_settings")
+        private val managerTables = legacyTables + operationsTables
+        // Restore catalogs before orders, because orders can reference center/supplier IDs.
+        private val companyTables = listOf("org_centers","org_suppliers","org_assets","org_staff_directory","sync_outbox")
+        private val tables = legacyTables + companyTables + operationsTables
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -180,10 +184,14 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 "Backup incompatibile con questa versione"
             }
             val archiveTableCount=manifest.optInt("tables",-1)
-            require(archiveTableCount==legacyTables.size || archiveTableCount==tables.size) {
+            require(archiveTableCount in setOf(legacyTables.size,managerTables.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
-            val mandatory=if(archiveTableCount==legacyTables.size)legacyTables else tables
+            val mandatory=when(archiveTableCount){
+                legacyTables.size -> legacyTables
+                managerTables.size -> managerTables
+                else -> tables
+            }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
             require(tables.filter{it !in mandatory}.none{names.contains("db/$it.ndjson")}) {
                 "Backup misto o non valido"
