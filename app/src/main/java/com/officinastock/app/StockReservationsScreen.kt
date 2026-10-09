@@ -84,7 +84,7 @@ import androidx.compose.ui.unit.sp
                 model.reserveStock(chosen!!,parsed!!,reference)
                 creating=false
             },enabled=chosen!=null && parsed!=null && parsed.isFinite() && parsed>0 &&
-                parsed<=available && reference.trim().length>=3 && !ui.busy){Text("Prenota")}},
+                parsed<=available+StockRules.QUANTITY_EPSILON && reference.trim().length>=3 && !ui.busy){Text("Prenota")}},
             dismissButton={TextButton(onClick={creating=false}){Text("Annulla")}}
         )
     }
@@ -98,4 +98,5 @@ import androidx.compose.ui.unit.sp
             dismissButton={TextButton(onClick={closing=null}){Text("Annulla")}})
     }
 }
+
 

@@ -140,7 +140,7 @@ import java.time.Instant
             confirmButton={TextButton(onClick={
                 model.consumeStockLot(lot.id,qty!!,discarding)
                 consumingLot=null
-            },enabled=qty!=null&&qty.isFinite()&&qty>0&&qty<=lot.quantity&&!ui.busy){Text("Scarica")}},
+            },enabled=qty!=null&&qty.isFinite()&&qty>0&&qty<=lot.quantity+StockRules.QUANTITY_EPSILON&&!ui.busy){Text("Scarica")}},
             dismissButton={TextButton(onClick={consumingLot=null}){Text("Annulla")}})
     }
     issuingSerial?.let{serial->
@@ -151,4 +151,5 @@ import java.time.Instant
             dismissButton={TextButton(onClick={issuingSerial=null}){Text("Annulla")}})
     }
 }
+
 

@@ -197,7 +197,7 @@ class OperationsDb(private val stock:StockDb) {
             else -> throw IllegalArgumentException("Azione non riconosciuta")
         }
         if(action=="RECEIVE") {
-            val qty=order[1].toDouble()-order[2].toDouble()
+            val qty=StockRules.difference(order[1].toDouble(),order[2].toDouble())
             require(qty>0 && qty.isFinite()){"Quantità già ricevuta"}
             changeStock(db,order[0].toLong(),qty,"Ricezione ordine #$id")
         }
@@ -219,17 +219,21 @@ class OperationsDb(private val stock:StockDb) {
         }
         require(order[3]=="ORDERED"){"Ordine non in consegna"}
         val total=order[1].toDouble();val received=order[2].toDouble()
-        require(delivered<=total-received){"Quantità superiore al residuo dell'ordine"}
-        val nextReceived=received+delivered
+        val residual=StockRules.difference(total,received)
+        require(delivered<=residual+StockRules.QUANTITY_EPSILON){"Quantità superiore al residuo dell'ordine"}
+        val applied=delivered.coerceAtMost(residual)
+        require(applied>0){"Quantità già ricevuta"}
+        val sum=StockRules.applyDelta(received,applied)
+        val nextReceived=if(applied==residual)total else sum
         require(nextReceived.isFinite() && nextReceived<=total){"Quantità ricevuta non valida"}
-        changeStock(db,order[0].toLong(),delivered,"Ricezione parziale ordine #$id")
+        changeStock(db,order[0].toLong(),applied,"Ricezione parziale ordine #$id")
         val next=if(nextReceived==total)"RECEIVED" else "ORDERED"
         require(db.update("ops_orders",ContentValues().apply{
             put("received",nextReceived);put("status",next)
         },"id=? AND warehouse_id=? AND status='ORDERED' AND received=?",
             arrayOf(id.toString(),wid.toString(),received.toString()))==1){"Ordine modificato: ricarica i dati"}
         audit(db,wid,"ORDINE_RICEZIONE",actor,
-            "Ordine #$id · ricevuti $delivered · totale $nextReceived / $total")
+            "Ordine #$id · ricevuti $applied · totale $nextReceived / $total")
     }
     fun orders(wid:Long,limit:Int=250):List<PurchaseRequest> = stock.readableDatabase.rawQuery(
         """SELECT o.id,o.warehouse_id,o.item_id,i.name,o.quantity,o.received,o.unit_price,o.supplier,o.owner,o.status,o.created_at,o.center_id,o.supplier_id
@@ -430,4 +434,5 @@ class OperationsDb(private val stock:StockDb) {
     ).use{c->buildList{while(c.moveToNext())add(OperationsEvent(c.getLong(0),c.getString(1),
         c.getString(2),c.getString(3),c.getLong(4)))}}
 }
+
 

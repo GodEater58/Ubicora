@@ -17,13 +17,19 @@ data class Loan(val id: Long, val itemId: Long, val borrower: String, val quanti
     val createdAt: Long, val returnedAt: Long?)
 
 object StockRules {
+    const val QUANTITY_EPSILON = 0.0000001
+    /** Decimal arithmetic avoids rejecting a valid 0.1 + 0.2 receipt. */
+    fun difference(a: Double, b: Double): Double {
+        require(a.isFinite() && b.isFinite()) { "Quantità non valida" }
+        return java.math.BigDecimal.valueOf(a).subtract(java.math.BigDecimal.valueOf(b)).toDouble()
+    }
     fun sku(value: String) = value.trim().uppercase(java.util.Locale.ROOT)
     fun validQuantity(value: Double): Boolean = value.isFinite() && value >= 0.0
     fun applyDelta(current: Double, delta: Double): Double {
         require(current.isFinite() && current >= 0.0 && delta.isFinite()) { "Quantità non valida" }
-        val next = current + delta
-        require(next.isFinite() && next >= 0.0) { "Giacenza insufficiente" }
-        return next
+        val next = java.math.BigDecimal.valueOf(current).add(java.math.BigDecimal.valueOf(delta)).toDouble()
+        require(next.isFinite() && next >= -QUANTITY_EPSILON) { "Giacenza insufficiente" }
+        return next.coerceAtLeast(0.0)
     }
     fun mapPosition(x: Float) = x.coerceIn(0f, 100f)
     fun normalizeWall(raw: FloatArray): FloatArray {
@@ -64,3 +70,4 @@ object ArticleCodes {
         return ScanTarget(null,input)
     }
 }
+

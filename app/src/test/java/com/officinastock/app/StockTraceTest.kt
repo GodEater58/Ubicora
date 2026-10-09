@@ -15,6 +15,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StockTraceTest {
+    @Test fun fractionalLotCanBeConsumedToZero() {
+        val lot=trace.registerLot(warehouse,item,"FRACTION",0.3,null)
+        trace.consumeLot(warehouse,lot,0.1,"Operatore")
+        trace.consumeLot(warehouse,lot,0.2,"Operatore")
+        assertEquals(0.0,trace.lots(warehouse).single().quantity,0.0)
+        assertEquals(11.7,db.item(item)!!.quantity,0.0)
+    }
     private val context get()=RuntimeEnvironment.getApplication()
     private lateinit var db:StockDb
     private lateinit var trace:StockTraceDb
@@ -118,3 +125,4 @@ class StockTraceTest {
         assertTrue(trace.lots(warehouse).isEmpty() && trace.serials(warehouse).isEmpty())
     }
 }
+

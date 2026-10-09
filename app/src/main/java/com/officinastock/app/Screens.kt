@@ -710,6 +710,7 @@ private fun EditItemDetailsDialog(
             PrimaryAction("Esporta inventario CSV",onCsv,modifier=Modifier.fillMaxWidth())
             OutlinedButton(onClick=onCsvImport,modifier=Modifier.fillMaxWidth()){Text("Importa articoli da CSV")}
             Text("I duplicati bloccano l’importazione. Occorre confermare l’anteprima.",fontSize=11.sp,color=TextSecondary)
+            Text("Importazione: se il CSV contiene ubicazioni, crea prima nella Planimetria le strutture con gli stessi nomi. Una sede nuova non ha scaffali già configurati.",fontSize=11.sp,color=TextSecondary)
             Text("Il CSV è solo un elenco in chiaro: NON permette di ripristinare l'app. Usa il backup cifrato per salvare tutti i dati.",fontSize=11.sp,color=TextSecondary)
         }}
         item {Panel(Modifier.fillMaxWidth()) {
@@ -796,3 +797,4 @@ private fun EditItemDetailsDialog(
     Text("L'operazione riguarda tutti i profili: verifica ciascun PIN locale.",fontSize=12.sp,color=TextSecondary)
     profiles.forEach { p -> Input(pins[p.id].orEmpty(),{onChange(p.id,it.filter(Char::isDigit).take(8))},"PIN ${p.name}",number=true,password=true) }
 }
+
