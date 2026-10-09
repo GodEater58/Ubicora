@@ -30,6 +30,13 @@ ROLE_RIGHTS = {
     "WAREHOUSE": {"asset"},
     "VIEWER": set(),
 }
+READ_RIGHTS = {
+    "MANAGER": set(RESOURCES),
+    "PURCHASING": {"cost_center", "supplier", "asset"},
+    "MAINTENANCE": {"cost_center", "supplier", "asset"},
+    "WAREHOUSE": {"cost_center", "supplier", "asset"},
+    "VIEWER": {"cost_center", "supplier", "asset"},
+}
 
 app = FastAPI(title="Ubicora Enterprise", version="1.0.0")
 
@@ -119,7 +126,11 @@ def validate_entity(event: Event) -> None:
         return
     if str(event.entity_uuid) != event.data.get("uuid"):
         raise HTTPException(400, "Payload entity UUID does not match event")
-    if len(json.dumps(event.data, separators=(",", ":"))) > 48_000:
+    try:
+        size = len(json.dumps(event.data, separators=(",", ":"), allow_nan=False))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid entity JSON")
+    if size > 48_000:
         raise HTTPException(413, "Entity payload too large")
     name = event.data.get("name") or event.data.get("display_name")
     if not isinstance(name, str) or not 2 <= len(name.strip()) <= 160:
@@ -147,6 +158,18 @@ def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
             raise HTTPException(409, "Event ID reused with different payload")
         return
 
+    if event.operation != "DELETE" and event.resource == "asset":
+        parent = event.data.get("center_uuid")
+        if parent is not None:
+            try:
+                center = uuid.UUID(str(parent))
+            except ValueError:
+                raise HTTPException(400, "Invalid asset center UUID")
+            cur.execute("""SELECT 1 FROM entity_versions
+                           WHERE tenant_id=%s AND resource='cost_center' AND entity_id=%s""",
+                        (tenant, center))
+            if cur.fetchone() is None:
+                raise HTTPException(409, "Asset center does not belong to tenant")
     cur.execute("""SELECT version FROM entity_versions
                    WHERE tenant_id=%s AND resource=%s AND entity_id=%s FOR UPDATE""",
                 (tenant, event.resource, event.entity_uuid))
@@ -211,6 +234,9 @@ async def push(request: Request, principal: Principal = Depends(authorize)):
         with connection.transaction():
             with connection.cursor() as cur:
                 role = role_for(cur, batch.tenant_uuid, principal.subject)
+                # Serialize writers per tenant until commit so change cursors cannot skip late commits.
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                            (str(batch.tenant_uuid),))
                 cur.execute("SELECT set_config('app.user_subject', %s, true)", (principal.subject,))
                 for event in batch.events:
                     if event.resource not in ROLE_RIGHTS.get(role, set()):
@@ -237,12 +263,14 @@ def changes(tenant_uuid: uuid.UUID, cursor: str | None = None,
     with connect() as connection:
         with connection.transaction():
             with connection.cursor() as cur:
-                role_for(cur, tenant_uuid, principal.subject)
+                role = role_for(cur, tenant_uuid, principal.subject)
+                allowed = sorted(READ_RIGHTS.get(role, set()))
                 cur.execute("""SELECT event_id,resource,entity_id,operation,payload,accepted_at
                                FROM accepted_events
-                               WHERE tenant_id=%s AND (accepted_at,event_id)>(%s,%s)
+                               WHERE tenant_id=%s AND resource=ANY(%s)
+                                 AND (accepted_at,event_id)>(%s,%s)
                                ORDER BY accepted_at,event_id LIMIT %s""",
-                            (tenant_uuid, start_time, start_id, limit))
+                            (tenant_uuid, allowed, start_time, start_id, limit))
                 rows = cur.fetchall()
     events = [{
         "event_id": str(x["event_id"]), "entity_uuid": str(x["entity_id"]),
