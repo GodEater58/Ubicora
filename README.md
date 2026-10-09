@@ -51,3 +51,7 @@ Il workflow manuale [Ubicora Stable Signed Update](.github/workflows/ubicora-sig
 
 Leggi la [guida per firma permanente, verifica sul telefono e migrazione sicura](docs/AGGIORNAMENTI_APK_SENZA_DISINSTALLARE.md). Non disinstallare l'app attualmente in uso senza avere verificato un backup cifrato.
 
+# Ubicora Web per PC
+
+È disponibile [Ubicora Web](web/README.md): aprire `web/Ubicora.html` in Edge/Chrome per lavorare in locale, oppure usare il portale servito dal backend per uno spazio condiviso autenticato tra browser PC e telefono. Import CSV Android, inventario, planimetria 2D, acquisti, prenotazioni, manutenzioni e indicatori. L'archivio SQLite dell'APK resta separato; attivazione HTTPS/OIDC e parità completa sono requisiti distinti.
+

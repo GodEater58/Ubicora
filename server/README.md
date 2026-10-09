@@ -1,5 +1,9 @@
 # Ubicora Enterprise Sync: server operativo (non distribuito)
 
+## Portale PC e browser mobile
+
+Il backend serve anche Ubicora Web alla radice. Eseguire `python web/build.py` dalla radice del repository prima dell'avvio/container. Configurazione OIDC del browser, migrazione additiva e diritti PostgreSQL sono descritti in [web/README.md](../web/README.md). Il portale ha un proprio spazio condiviso versionato; non sincronizza automaticamente il database SQLite Android.
+
 Server FastAPI / PostgreSQL con validazione JWT RS256 da provider OIDC, ruoli lato server e `event_id` idempotenti. Nessun account di amministratore di default; nessuna password hardcoded. L'app Android attuale non ha ancora una procedura di login OIDC e non avvia automaticamente la sincronizzazione.
 
 ## Configurazione server
@@ -24,3 +28,4 @@ python -m pytest tests -q
 ```
 
 I test API inclusi verificano contratti, token mancanti e payload; l'integrazione PostgreSQL richiede un database test segregato. Non utilizzare credenziali di produzione.
+
