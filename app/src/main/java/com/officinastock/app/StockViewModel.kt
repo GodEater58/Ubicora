@@ -31,10 +31,16 @@ data class StockUiState(
     val message: String? = null,
     val initialized: Boolean = false,
     val sessionLocked: Boolean = false,
-    val csvPreviewCount: Int? = null
+    val csvPreviewCount: Int? = null,
+    val orders: List<PurchaseRequest> = emptyList(),
+    val stockCounts: List<StockCount> = emptyList(),
+    val stockTransfers: List<StockTransfer> = emptyList(),
+    val maintenanceWork: List<MaintenanceWork> = emptyList(),
+    val operationsEvents: List<OperationsEvent> = emptyList()
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
+    private val operations = OperationsDb(db)
     var ui by mutableStateOf(StockUiState())
         private set
     init { refresh() }
@@ -104,7 +110,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 } ?: ManagerSnapshot(),
                 demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
-                busy=false,message=error)
+                busy=false,message=error).copy(
+                    orders=warehouse?.let {operations.orders(it.id)} ?: emptyList(),
+                    stockCounts=warehouse?.let {operations.counts(it.id)} ?: emptyList(),
+                    stockTransfers=warehouse?.let {operations.transfers(it.id)} ?: emptyList(),
+                    maintenanceWork=warehouse?.let {operations.maintenance(it.id)} ?: emptyList(),
+                    operationsEvents=warehouse?.let {operations.events(it.id)} ?: emptyList()
+                )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
         pendingNewItem = null
@@ -123,7 +135,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         pendingProfileId=profile.id
     }
     fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
-    fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),csvPreviewCount=null)} }
+    fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         ui=ui.copy(warehouse=w)
@@ -174,6 +186,37 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute { db.reconcileQuantity(itemId,counted,reason) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
+    /** Local managerial actions operate only on the currently authenticated warehouse. */
+    private fun managerActor():String = requireNotNull(ui.profile){"Profilo non selezionato"}.name
+    fun requestPurchase(itemId:Long,quantity:Double,supplier:String,owner:String) = execute {
+        operations.createOrder(requireWarehouse(),itemId,quantity,supplier,owner.ifBlank{managerActor()})
+    }
+    fun advancePurchase(id:Long,action:String) = execute {
+        operations.advanceOrder(requireWarehouse(),id,action,managerActor())
+    }
+    fun requestCycleCount(itemId:Long,counted:Double,reason:String) = execute {
+        operations.requestCount(requireWarehouse(),itemId,counted,reason,managerActor())
+    }
+    fun decideCycleCount(id:Long,approve:Boolean) = execute {
+        operations.finishCount(requireWarehouse(),id,approve,managerActor())
+    }
+    fun requestTransfer(itemId:Long,targetWarehouseId:Long,quantity:Double) = execute {
+        operations.requestTransfer(requireWarehouse(),targetWarehouseId,itemId,quantity,managerActor())
+    }
+    fun processTransfer(id:Long,action:String) = execute {
+        val transfer=ui.stockTransfers.firstOrNull{it.id==id}
+        requireNotNull(transfer){"Trasferimento non disponibile"}
+        require(ui.warehouse?.id==transfer.fromId || ui.warehouse?.id==transfer.toId){"Magazzino non autorizzato"}
+        if(action=="SHIP")require(ui.warehouse?.id==transfer.fromId){"Seleziona il magazzino di origine"}
+        if(action=="RECEIVE")require(ui.warehouse?.id==transfer.toId){"Seleziona il magazzino di destinazione"}
+        operations.progressTransfer(id,managerActor(),action)
+    }
+    fun createWorkOrder(machine:String,description:String,itemId:Long?,quantity:Double) = execute {
+        operations.createMaintenance(requireWarehouse(),machine,description,itemId,quantity,managerActor())
+    }
+    fun finishWorkOrder(id:Long,complete:Boolean) = execute {
+        operations.finishMaintenance(requireWarehouse(),id,complete,managerActor())
+    }
     fun addPlacement(kind:String,label:String) = execute {
         val wh=requireNotNull(ui.warehouse){"Seleziona un magazzino"}
         db.addPlacement(wh.id,kind,label,wh.mapWidth/2f,wh.mapHeight/2f)
