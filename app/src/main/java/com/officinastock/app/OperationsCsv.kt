@@ -7,7 +7,7 @@ object OperationsCsv {
         // Non permettere formule eseguibili quando si apre il report in un foglio di calcolo.
         if(value is String && (s.trimStart().startsWith("=") || s.trimStart().startsWith("+") ||
             s.trimStart().startsWith("-") || s.trimStart().startsWith("@") ||
-            s.startsWith("\t") || s.startsWith("\r")) s="'"+s
+            s.startsWith("\t") || s.startsWith("\r"))) s="'"+s
         return "\""+s.replace("\"","＂").replace("\r"," ").replace("\n"," ")+"\""
     }
     private fun row(vararg columns:Any?):String=columns.joinToString(";"){field(it)}
