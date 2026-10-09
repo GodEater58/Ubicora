@@ -64,11 +64,11 @@ class StockPlanningDb(private val stock:StockDb) {
             StockAvailability(c.getDouble(0),reserved(db,itemId))
         }
     }
-    fun reservations(warehouseId:Long):List<StockReservation> = stock.readableDatabase.rawQuery(
+    fun reservations(warehouseId:Long,limit:Int=250):List<StockReservation> = stock.readableDatabase.rawQuery(
         """SELECT r.id,r.warehouse_id,r.item_id,r.quantity,r.reference,r.requested_by,r.status,r.created_at
            FROM stock_reservations r WHERE r.warehouse_id=?
-           ORDER BY CASE r.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,r.created_at DESC,r.id DESC LIMIT 250""",
-        arrayOf(warehouseId.toString())).use {c->buildList{
+           ORDER BY CASE r.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,r.created_at DESC,r.id DESC LIMIT ?""",
+        arrayOf(warehouseId.toString(),limit.coerceIn(1,1000000).toString())).use {c->buildList{
             while(c.moveToNext())add(StockReservation(c.getLong(0),c.getLong(1),c.getLong(2),
                 c.getDouble(3),c.getString(4),c.getString(5),c.getString(6),c.getLong(7)))
         }}

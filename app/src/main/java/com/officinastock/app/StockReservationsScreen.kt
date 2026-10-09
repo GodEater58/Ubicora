@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.sp
             Text("+ Prenota materiale per attività")
         }
         if(active.isEmpty())Text("Nessuna prenotazione aperta.",color=TextSecondary,fontSize=12.sp)
-        active.take(50).forEach{r->
+        active.forEach{r->
             HorizontalDivider()
             Text(ui.items.firstOrNull{it.id==r.itemId}?.name ?: "Articolo #${r.itemId}",
                 fontWeight=FontWeight.SemiBold,fontSize=12.sp)
@@ -97,3 +97,4 @@ import androidx.compose.ui.unit.sp
             dismissButton={TextButton(onClick={closing=null}){Text("Annulla")}})
     }
 }
+

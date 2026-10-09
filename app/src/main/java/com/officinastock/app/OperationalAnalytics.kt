@@ -29,8 +29,9 @@ class OperationalAnalytics(private val stock:StockDb) {
         val start=today.minusDays(days.toLong()-1).atStartOfDay(zone).toInstant().toEpochMilli()
         val monthStart=today.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
         // Expiry dates are stored as UTC calendar dates by the traceability editor.
-        val expiryToday=today.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
-        val expirySoon=today.plusDays(30).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        val expiryDay=Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+        val expiryToday=expiryDay.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        val expirySoon=expiryDay.plusDays(30).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
         fun count(sql:String,args:Array<String>):Int=db.rawQuery(sql,args).use{c->c.moveToFirst();c.getInt(0)}
         val w=arrayOf(wid.toString())
         val stages=db.rawQuery("SELECT status,COUNT(*) FROM ops_orders WHERE warehouse_id=? GROUP BY status",w).use{c->

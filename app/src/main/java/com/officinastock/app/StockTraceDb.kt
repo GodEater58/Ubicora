@@ -62,18 +62,18 @@ class StockTraceDb(private val stock:StockDb) {
             require(c.moveToFirst()){"Articolo non trovato nel magazzino"}
             c.getDouble(0) to c.getString(1)
         }
-    fun lots(warehouseId:Long):List<StockLot> = stock.readableDatabase.rawQuery(
+    fun lots(warehouseId:Long,limit:Int=250):List<StockLot> = stock.readableDatabase.rawQuery(
         """SELECT id,item_id,warehouse_id,lot_code,quantity,expires_at,created_at
            FROM stock_lots WHERE warehouse_id=? ORDER BY
-           CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END,expires_at,id LIMIT 250""",
-        arrayOf(warehouseId.toString())).use{c->buildList {
+           CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END,expires_at,id LIMIT ?""",
+        arrayOf(warehouseId.toString(),limit.coerceIn(1,1000000).toString())).use{c->buildList {
             while(c.moveToNext())add(StockLot(c.getLong(0),c.getLong(1),c.getLong(2),c.getString(3),
                 c.getDouble(4),if(c.isNull(5))null else c.getLong(5),c.getLong(6)))
         }}
-    fun serials(warehouseId:Long):List<StockSerial> = stock.readableDatabase.rawQuery(
+    fun serials(warehouseId:Long,limit:Int=250):List<StockSerial> = stock.readableDatabase.rawQuery(
         """SELECT id,item_id,warehouse_id,serial_code,state,created_at,issued_at
-           FROM stock_serials WHERE warehouse_id=? ORDER BY CASE state WHEN 'IN_STOCK' THEN 0 ELSE 1 END,id DESC LIMIT 250""",
-        arrayOf(warehouseId.toString())).use{c->buildList {
+           FROM stock_serials WHERE warehouse_id=? ORDER BY CASE state WHEN 'IN_STOCK' THEN 0 ELSE 1 END,id DESC LIMIT ?""",
+        arrayOf(warehouseId.toString(),limit.coerceIn(1,1000000).toString())).use{c->buildList {
             while(c.moveToNext())add(StockSerial(c.getLong(0),c.getLong(1),c.getLong(2),c.getString(3),
                 c.getString(4),c.getLong(5),if(c.isNull(6))null else c.getLong(6)))
         }}
@@ -167,3 +167,4 @@ class StockTraceDb(private val stock:StockDb) {
         }
     }
 }
+

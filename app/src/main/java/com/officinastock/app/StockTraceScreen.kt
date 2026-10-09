@@ -44,7 +44,7 @@ import java.time.Instant
         }
         if(ui.stockLots.isEmpty() && ui.stockSerials.isEmpty())
             Text("Nessun materiale tracciato.",color=TextSecondary,fontSize=12.sp)
-        ui.stockLots.filter{it.quantity>0}.take(40).forEach{lot->
+        ui.stockLots.filter{it.quantity>0}.forEach{lot->
             HorizontalDivider()
             Text(lot.code+" · "+(ui.items.firstOrNull{it.id==lot.itemId}?.name ?: "Articolo #${lot.itemId}"),
                 fontWeight=FontWeight.SemiBold,fontSize=12.sp)
@@ -61,7 +61,7 @@ import java.time.Instant
                 }
             }
         }
-        ui.stockSerials.filter{it.state=="IN_STOCK"}.take(40).forEach{serial->
+        ui.stockSerials.filter{it.state=="IN_STOCK"}.forEach{serial->
             HorizontalDivider()
             Text(serial.code+" · "+(ui.items.firstOrNull{it.id==serial.itemId}?.name ?: "Articolo #${serial.itemId}"),
                 fontSize=12.sp,fontWeight=FontWeight.SemiBold)
@@ -73,11 +73,11 @@ import java.time.Instant
             Text((if(showHistory)"Nascondi" else "Mostra")+" storico · "+(usedLots.size+issued.size)+" riferimenti")
         }
         if(showHistory) {
-            usedLots.take(35).forEach{l->
+            usedLots.forEach{l->
                 Text("Lotto esaurito: "+l.code+" · "+(ui.items.firstOrNull{it.id==l.itemId}?.name ?: "Articolo"),
                     color=TextSecondary,fontSize=11.sp)
             }
-            issued.take(35).forEach{serial->
+            issued.forEach{serial->
                 Text("Seriale assegnato: "+serial.code+" · "+(ui.items.firstOrNull{it.id==serial.itemId}?.name ?: "Articolo"),
                     color=TextSecondary,fontSize=11.sp)
             }
@@ -151,3 +151,4 @@ import java.time.Instant
             dismissButton={TextButton(onClick={issuingSerial=null}){Text("Annulla")}})
     }
 }
+

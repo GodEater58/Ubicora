@@ -48,7 +48,8 @@ data class StockUiState(
     val stockLots: List<StockLot> = emptyList(),
     val stockSerials: List<StockSerial> = emptyList(),
     val operationalReports: Map<Int,OperationalReport> = emptyMap(),
-    val reservedByItem: Map<Long,Double> = emptyMap()
+    val reservedByItem: Map<Long,Double> = emptyMap(),
+    val operationsLimit:Int=250
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -59,6 +60,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     var ui by mutableStateOf(StockUiState())
         private set
     init { refresh() }
+    private var operationalRowLimit=250
     private var backgroundGeneration=0L
     private var archiveAuthorization:Set<Long>?=null
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
@@ -126,11 +128,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=false,message=error).copy(
-                    orders=warehouse?.let {operations.orders(it.id)} ?: emptyList(),
-                    stockCounts=warehouse?.let {operations.counts(it.id)} ?: emptyList(),
-                    stockTransfers=warehouse?.let {operations.transfers(it.id)} ?: emptyList(),
-                    maintenanceWork=warehouse?.let {operations.maintenance(it.id)} ?: emptyList(),
-                    operationsEvents=warehouse?.let {operations.events(it.id)} ?: emptyList(),
+                    orders=warehouse?.let {operations.orders(it.id,operationalRowLimit)} ?: emptyList(),
+                    stockCounts=warehouse?.let {operations.counts(it.id,operationalRowLimit)} ?: emptyList(),
+                    stockTransfers=warehouse?.let {operations.transfers(it.id,operationalRowLimit)} ?: emptyList(),
+                    maintenanceWork=warehouse?.let {operations.maintenance(it.id,operationalRowLimit)} ?: emptyList(),
+                    operationsEvents=warehouse?.let {operations.events(it.id,operationalRowLimit)} ?: emptyList(),
                     businessMode=profile?.let {operations.businessMode(it.id)} ?: false,
                     monthlyBudget=profile?.let {operations.monthlyBudget(it.id)},
                     costCenters=profile?.let {enterprise.centers(it.id)} ?: emptyList(),
@@ -138,9 +140,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     businessAssets=warehouse?.let {enterprise.assets(it.id)} ?: emptyList(),
                     staffDirectory=profile?.let {enterprise.staffDirectory(it.id)} ?: emptyList(),
                     unsentCatalogEvents=profile?.let {enterprise.pendingEvents(it.id).size} ?: 0,
-                    reservations=warehouse?.let {planning.reservations(it.id)} ?: emptyList(),
-                    stockLots=warehouse?.let {trace.lots(it.id)} ?: emptyList(),
-                    stockSerials=warehouse?.let {trace.serials(it.id)} ?: emptyList(),
+                    reservations=warehouse?.let {planning.reservations(it.id,operationalRowLimit)} ?: emptyList(),
+                    stockLots=warehouse?.let {trace.lots(it.id,operationalRowLimit)} ?: emptyList(),
+                    stockSerials=warehouse?.let {trace.serials(it.id,operationalRowLimit)} ?: emptyList(),
+                    operationsLimit=operationalRowLimit,
                     reservedByItem=warehouse?.let {planning.reservedByItem(it.id)} ?: emptyMap(),
                     operationalReports=warehouse?.takeIf{profile!=null && operations.businessMode(profile.id)}?.let {w->
                         val now=System.currentTimeMillis()
@@ -168,6 +171,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
+        operationalRowLimit=250
         ui=ui.copy(warehouse=w)
         execute {} // ricarica tutte le liste per il magazzino scelto
     }
@@ -447,6 +451,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         pendingCsvImport=null
     }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
+    fun loadMoreOperations() = execute {
+        require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
+        operationalRowLimit=(operationalRowLimit+250).coerceAtMost(1000000)
+    }
     fun refresh()=execute{}
     private fun requireWarehouse():Long=requireNotNull(ui.warehouse?.id){"Seleziona un magazzino"}
 
@@ -460,7 +468,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
         if(selectedWarehouse!=null) {
             val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}
-            ui=ui.copy(warehouse=w)
+            operationalRowLimit=250
+        ui=ui.copy(warehouse=w)
         }
         pendingProfileId=null;pendingWarehouseId=null
         reload(error)

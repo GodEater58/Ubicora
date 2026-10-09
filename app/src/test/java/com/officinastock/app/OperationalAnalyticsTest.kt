@@ -43,6 +43,8 @@ class OperationalAnalyticsTest {
         assertEquals(2440.0,r.monthlyCommitments,0.001)
         assertEquals(1,r.unpricedOrders)
         assertEquals(1,r.orderStages["CANCELLED"])
+        assertEquals(250,OperationsDb(stock).orders(wid).size)
+        assertEquals(302,OperationsDb(stock).orders(wid,500).size)
     }
     @Test fun availabilityUsesEveryActiveReservationAndExpiryCountsOnlyRemainingMaterial() {
         val planning=StockPlanningDb(stock)
@@ -56,6 +58,8 @@ class OperationalAnalyticsTest {
         assertEquals(1,r.reservedReferences)
         assertEquals(1,r.expiredLots)
         assertEquals(0,r.expiringLots)
+        assertEquals(250,planning.reservations(wid).size)
+        assertEquals(300,planning.reservations(wid,500).size)
     }
     @Test fun costsUseCompletionDateExcludeUnknownTotalsAndTreatZeroLaborAsKnownZero() {
         val db=stock.writableDatabase
@@ -75,5 +79,19 @@ class OperationalAnalyticsTest {
         assertEquals(1,r.unpricedWork)
         assertEquals(55.0,r.maintenanceCost,0.001)
         assertNull(r.countAccuracy)
+    }
+    @Test fun inventoryIndicatorMeasuresOnlyConfirmedCountsInTheSelectedWindow() {
+        fun count(expected:Double,counted:Double,status:String,created:Long) {
+            stock.writableDatabase.execSQL("INSERT INTO ops_counts(warehouse_id,item_id,expected,counted,reason,status,created_at) VALUES(?,?,?,?,'Verifica',?,?)",
+                arrayOf(wid,item,expected,counted,status,created))
+        }
+        count(10.0,10.0,"APPLIED",now)
+        count(10.0,9.0,"APPLIED",now)
+        count(10.0,10.0,"PENDING",now)
+        count(10.0,10.0,"APPLIED",now-100L*86400000)
+        val r=OperationalAnalytics(stock).report(wid,7)
+        assertEquals(2,r.confirmedCounts)
+        assertEquals(1,r.exactCounts)
+        assertEquals(50.0,r.countAccuracy!!,0.001)
     }
 }

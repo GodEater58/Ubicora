@@ -231,6 +231,16 @@ private fun statusLabel(status:String)=when(status) {
             if(section==6) item {EnterpriseDirectoryPanel(model)}
             if(section==7) item {StockReservationsPanel(model)}
             if(section==8) item {StockTracePanel(model)}
+            val loaded=when(section) {
+                1->ui.orders.size;2->ui.stockCounts.size;3->ui.stockTransfers.size
+                4->ui.maintenanceWork.size;5->ui.operationsEvents.size;7->ui.reservations.size
+                8->maxOf(ui.stockLots.size,ui.stockSerials.size);else->0
+            }
+            if(section!=0 && loaded>=ui.operationsLimit && ui.operationsLimit<1000000) item {
+                OutlinedButton(onClick={model.loadMoreOperations()},enabled=!ui.busy,modifier=Modifier.fillMaxWidth()) {
+                    Text("Carica altre 250 operazioni")
+                }
+            }
             item{Spacer(Modifier.height(14.dp))}
         }
     }
