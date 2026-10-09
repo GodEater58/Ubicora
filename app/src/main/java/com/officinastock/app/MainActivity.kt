@@ -169,7 +169,7 @@ enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("M
 enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90 }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
-@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
+@Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var stockFocus by rememberSaveable { mutableStateOf(StockFocus.ALL) }
     var activityFocus by rememberSaveable { mutableStateOf(ActivityFocus.ALL) }
