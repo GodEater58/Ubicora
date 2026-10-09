@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream
 class BackupArchive(private val context: Context, private val stockDb: StockDb) {
     companion object {
         private val legacyTables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets")
-        private val tables = legacyTables + listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events")
+        private val tables = legacyTables + listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events", "ops_settings")
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
