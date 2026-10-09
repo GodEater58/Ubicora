@@ -128,19 +128,26 @@ class StockTraceDb(private val stock:StockDb) {
             put("created_at",System.currentTimeMillis())
         })
     }
-    fun consumeLot(wid:Long,lotId:Long,amount:Double,actor:String){
+    fun consumeLot(wid:Long,lotId:Long,amount:Double,actor:String,discard:Boolean=false){
         require(amount.isFinite() && amount>0 && actor.trim().length in 2..100){"Quantità o operatore non validi"}
         transaction{db->
-            val row=db.rawQuery("""SELECT item_id,quantity,lot_code FROM stock_lots
+            val (row,expiresAt)=db.rawQuery("""SELECT item_id,quantity,lot_code,expires_at FROM stock_lots
                 WHERE id=? AND warehouse_id=?""",arrayOf(lotId.toString(),wid.toString())).use{c->
                 require(c.moveToFirst()){"Lotto non trovato"}
-                Triple(c.getLong(0),c.getDouble(1),c.getString(2))
+                Triple(c.getLong(0),c.getDouble(1),c.getString(2)) to
+                    (if(c.isNull(3))null else c.getLong(3))
+            }
+            val startOfToday=java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+                .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+            require(discard || expiresAt==null || expiresAt>=startOfToday){
+                "Lotto scaduto: registra uno scarto, non un consumo."
             }
             require(amount<=row.second){"Quantità lotto insufficiente"}
             require(db.update("stock_lots",ContentValues().apply{
                 put("quantity",row.second-amount)
             },"id=? AND warehouse_id=?",arrayOf(lotId.toString(),wid.toString()))==1){"Lotto non aggiornato"}
-            adjustStock(db,row.first,-amount,"Consumo lotto ${row.third} · ${actor.trim()}")
+            adjustStock(db,row.first,-amount,
+                (if(discard)"Scarto lotto " else "Consumo lotto ")+row.third+" · "+actor.trim())
         }
     }
     fun issueSerial(wid:Long,serialId:Long,actor:String) {

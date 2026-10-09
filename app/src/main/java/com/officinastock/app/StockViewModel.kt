@@ -242,9 +242,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
         trace.registerLot(requireWarehouse(),itemId,code,quantity,expiresAt)
     }
-    fun consumeStockLot(lotId:Long,quantity:Double) = execute {
+    fun consumeStockLot(lotId:Long,quantity:Double,discard:Boolean=false) = execute {
         require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}
-        trace.consumeLot(requireWarehouse(),lotId,quantity,managerActor())
+        trace.consumeLot(requireWarehouse(),lotId,quantity,managerActor(),discard)
     }
     fun createStockSerial(itemId:Long,serial:String) = execute {
         require(ui.businessMode && !ui.sessionLocked){"Attiva la modalità aziendale"}

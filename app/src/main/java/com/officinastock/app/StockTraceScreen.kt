@@ -25,6 +25,7 @@ import java.time.Instant
     var quantity by remember{mutableStateOf("")}
     var expiry by remember{mutableStateOf("")}
     var consumingLot by remember{mutableStateOf<StockLot?>(null)}
+    var discarding by remember{mutableStateOf(false)}
     var issuingSerial by remember{mutableStateOf<StockSerial?>(null)}
     fun open(kind:String){selected=null;search="";code="";quantity="";expiry="";dialog=kind}
     val today=LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant().toEpochMilli()
@@ -50,7 +51,14 @@ import java.time.Instant
             Text("In stock: "+amount(lot.quantity)+
                 (lot.expiresAt?.let{" · scadenza "+Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()} ?: "")+
                 if(expired)" · SCADUTO" else "",color=if(expired)Danger else TextSecondary,fontSize=11.sp)
-            TextButton(onClick={consumingLot=lot},enabled=!ui.busy){Text("Registra consumo del lotto")}
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                if(!expired) TextButton(onClick={discarding=false;consumingLot=lot},enabled=!ui.busy){
+                    Text("Consuma")
+                }
+                TextButton(onClick={discarding=true;consumingLot=lot},enabled=!ui.busy){
+                    Text(if(expired)"Scarta scaduto" else "Scarta")
+                }
+            }
         }
         ui.stockSerials.filter{it.state=="IN_STOCK"}.take(40).forEach{serial->
             HorizontalDivider()
@@ -106,14 +114,15 @@ import java.time.Instant
     consumingLot?.let{lot->
         var amountInput by remember(lot.id){mutableStateOf("")}
         val qty=amountInput.replace(',','.').trim().toDoubleOrNull()
-        AlertDialog(onDismissRequest={consumingLot=null},title={Text("Consuma lotto "+lot.code)},
+        AlertDialog(onDismissRequest={consumingLot=null},
+            title={Text((if(discarding)"Scarta lotto " else "Consuma lotto ")+lot.code)},
             text={Column {
                 Text("Disponibile sul lotto: "+amount(lot.quantity),fontSize=12.sp)
                 OutlinedTextField(amountInput,{amountInput=it},label={Text("Quantità da consumare")},
                     modifier=Modifier.fillMaxWidth(),singleLine=true)
             }},
             confirmButton={TextButton(onClick={
-                model.consumeStockLot(lot.id,qty!!)
+                model.consumeStockLot(lot.id,qty!!,discarding)
                 consumingLot=null
             },enabled=qty!=null&&qty.isFinite()&&qty>0&&qty<=lot.quantity&&!ui.busy){Text("Scarica")}},
             dismissButton={TextButton(onClick={consumingLot=null}){Text("Annulla")}})
