@@ -216,6 +216,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         }
         item { ManagerAnalyticsPanel(u.items,u.manager,
             onStockFocus=onStockFocus,onActivityFocus=onActivityFocus,onItemFocus=onItemFocus) }
+        item { ManagerOperationsPanel(model) }
         item { SectionTitle("Accesso rapido","Azioni frequenti, senza menu inutili") }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
