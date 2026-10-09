@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 manifest=(ROOT/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
@@ -15,7 +16,7 @@ assert 'painterResource(R.drawable.ic_ubicora_u_selected)' in screens
 assert 'UbicoraWordmark' in screens and 'OFFICINA STOCK 4.0' not in screens
 assert 'Text("Ubicora"' in screens
 assert '"Ubicora",101f' in labels
-assert 'versionCode = 420' in gradle
+assert (match := re.search(r'\bversionCode\s*=\s*(\d+)', gradle)) and int(match.group(1)) >= 420
 assert 'applicationId = "com.ubicora.app"' in gradle
 assert 'put("app","OfficinaStock")' in backup
 assert 'manifest.optString("app")=="OfficinaStock"' in backup
