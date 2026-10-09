@@ -76,9 +76,22 @@ class EnterpriseDb(private val stock:StockDb) {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_profile ON sync_outbox(profile_id,ack_at,created_at)")
         }
         fun addOperationLinks(db:SQLiteDatabase) {
-            db.execSQL("ALTER TABLE ops_orders ADD COLUMN center_id INTEGER REFERENCES org_centers(id) ON DELETE SET NULL")
-            db.execSQL("ALTER TABLE ops_orders ADD COLUMN supplier_id INTEGER REFERENCES org_suppliers(id) ON DELETE SET NULL")
-            db.execSQL("ALTER TABLE ops_maintenance ADD COLUMN asset_id INTEGER REFERENCES org_assets(id) ON DELETE SET NULL")
+            // Support upgrades and legacy test fixtures that already contain a subset of columns.
+            fun addIfMissing(table:String,column:String,sql:String) {
+                val exists=db.rawQuery("PRAGMA table_info($table)",null).use{c->
+                    val col=c.getColumnIndexOrThrow("name")
+                    var found=false
+                    while(c.moveToNext()) if(c.getString(col)==column)found=true
+                    found
+                }
+                if(!exists)db.execSQL(sql)
+            }
+            addIfMissing("ops_orders","center_id",
+                "ALTER TABLE ops_orders ADD COLUMN center_id INTEGER REFERENCES org_centers(id) ON DELETE SET NULL")
+            addIfMissing("ops_orders","supplier_id",
+                "ALTER TABLE ops_orders ADD COLUMN supplier_id INTEGER REFERENCES org_suppliers(id) ON DELETE SET NULL")
+            addIfMissing("ops_maintenance","asset_id",
+                "ALTER TABLE ops_maintenance ADD COLUMN asset_id INTEGER REFERENCES org_assets(id) ON DELETE SET NULL")
         }
     }
     private fun profileExists(id:Long)=stock.readableDatabase.rawQuery("SELECT 1 FROM profiles WHERE id=?",
