@@ -15,16 +15,17 @@ async function openDb(){return await new Promise((resolve,reject)=>{const r=inde
 async function storageGet(key){return await new Promise((resolve,reject)=>{const r=db.transaction('archives').objectStore('archives').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
 async function storagePut(key,data){await new Promise((resolve,reject)=>{const t=db.transaction('archives','readwrite');t.objectStore('archives').put(data,key);t.oncomplete=resolve;t.onerror=()=>reject(Error('Salvataggio non riuscito: spazio del browser insufficiente'));t.onabort=()=>reject(Error('Salvataggio annullato'));});}
 async function api(path,opts={}){const response=await fetch('/v1/web'+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...opts.headers},cache:'no-store'});let data;try{data=await response.json();}catch{throw Error('Risposta server non valida');}if(!response.ok){const e=Error(response.status===409?'L’archivio è cambiato su un altro dispositivo. Esporta la copia di lavoro, poi aggiorna e ripeti l’operazione.':response.status===401?'Sessione scaduta: accedi di nuovo.':response.status===403?'Il tuo account non può eseguire questa operazione.':data.detail||'Server non disponibile');e.code=response.status;throw e;}return data;}
+function verifyReceipt(command,result){if(!Number.isSafeInteger(result.revision)||result.revision!==command.expected_revision+1||result.mutation_id!==command.mutation_id)throw Error('Conferma server non valida: usa Risolvi salvataggio');}
 async function persist(next){
  if(busy||!canWrite)throw Error('Operazione non disponibile');if(pending)throw Error('Prima conferma o risolvi il salvataggio precedente');busy=true;renderHeader();
- try{if(shared){pending={mutation_id:uid(),expected_revision:revision,data:next};const result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});revision=result.revision;pending=null;}else await storagePut('local',next);
+ try{if(shared){pending={mutation_id:uid(),expected_revision:revision,data:next};const result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});verifyReceipt(pending,result);revision=result.revision;pending=null;}else await storagePut('local',next);
   state=next;status(shared?'Condiviso · revisione '+revision:'Salvato in questo browser');ensureWarehouse();render();
  }catch(e){if(e.code===409){pending={...pending,conflict:true};}status('Salvataggio non confermato');throw e;}finally{busy=false;render();}
 }
 async function commit(a){await persist(apply(state,a));toast('Operazione salvata');}
 async function refresh(){
  if(!shared){render();return;}if(busy)return;busy=true;
- try{if(pending&&!pending.conflict){const data=pending.data,result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});revision=result.revision;state=data;pending=null;toast('Salvataggio confermato');}
+ try{if(pending&&!pending.conflict){const data=pending.data,result=await api('/workspace/'+tenant.id,{method:'PUT',body:JSON.stringify(pending)});verifyReceipt(pending,result);revision=result.revision;state=data;pending=null;toast('Salvataggio confermato');}
  else {if(pending&&!confirm('La tua modifica non è stata applicata. Vuoi esportarla come copia e poi caricare la versione del server?'))return;if(pending){download('Ubicora_Web_copia_non_confermata.json',JSON.stringify(pending.data,null,2),'application/json');pending=null;}const r=await api('/workspace/'+tenant.id);state=validate(r.data);revision=r.revision;canWrite=r.can_write;}
  ensureWarehouse();status('Condiviso · revisione '+revision);render();}catch(e){toast(e.message);status('Connessione non disponibile');}finally{busy=false;render();}
 }
