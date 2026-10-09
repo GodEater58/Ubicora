@@ -1,5 +1,8 @@
 package com.officinastock.app
 
+import android.net.Uri
+import java.io.File
+import java.util.UUID
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -69,6 +72,26 @@ class StockTraceTest {
         trace.consumeLot(warehouse,lot,3.0,"Operatore")
         assertEquals(9.0,db.item(item)!!.quantity,0.0)
         assertEquals(9.0,trace.lots(warehouse).single().quantity,0.0)
+    }
+    @Test fun encryptedBackupRestoresLotSerialAndPhysicalQuantities(){
+        val second=db.addItem(warehouse,"Multimetro","Utensili",2.0,0.0,"pz","")
+        val lot=trace.registerLot(warehouse,item,"BATCH-2026",5.0,1_850_000_000_000L)
+        val serial=trace.registerSerial(warehouse,second,"MM-000001")
+        val file=File(context.cacheDir,"trace-backup-"+UUID.randomUUID()+".osbackup")
+        try {
+            BackupArchive(context,db).export(Uri.fromFile(file),"trace-protected-backup")
+            assertTrue(file.length()>100)
+            trace.consumeLot(warehouse,lot,2.0,"Tecnico")
+            trace.issueSerial(warehouse,serial,"Tecnico")
+            assertEquals(10.0,db.item(item)!!.quantity,0.0)
+            assertEquals(1.0,db.item(second)!!.quantity,0.0)
+            BackupArchive(context,db).restore(Uri.fromFile(file),"trace-protected-backup")
+            assertEquals(12.0,db.item(item)!!.quantity,0.0)
+            assertEquals(2.0,db.item(second)!!.quantity,0.0)
+            assertEquals(5.0,trace.lots(warehouse).single().quantity,0.0)
+            assertEquals("IN_STOCK",trace.serials(warehouse).single().state)
+            db.validateRestoredData()
+        } finally {file.delete()}
     }
     @Test fun historicalTraceBlocksUnitChangeAndV9MigrationIsAdditive(){
         val serial=trace.registerSerial(warehouse,item,"SN0000012")
