@@ -23,15 +23,16 @@ function Get-ApkIdentity([string]$apk) {
     $details = & $aapt dump badging $apk
     if ($LASTEXITCODE -ne 0) { throw "Impossibile leggere il manifest: $apk" }
     $first = [string]($details | Select-Object -First 1)
-    if ($first -notmatch "package: name='([^']+)' versionCode='([0-9]+)'") {
-        throw "Identificativo/versionCode non leggibile nel file APK"
-    }
-    $id = $Matches[1]; $code = [long]$Matches[2]
+    if ($first -match "package: name='([^']+)' versionCode='([0-9]+)'") {
+        $id = $Matches[1]; $code = [long]$Matches[2]
+    } else { throw "Identificativo/versionCode non leggibile nel file APK" }
     $signature = & $apksigner verify --print-certs $apk
     if ($LASTEXITCODE -ne 0) { throw "Firma APK non valida: $apk" }
     $line = [string]($signature | Where-Object { $_ -match "Signer #1 certificate SHA-256 digest:" } | Select-Object -First 1)
-    if ($line -notmatch "SHA-256 digest: ([a-fA-F0-9:]+)") { throw "Fingerprint firma non trovata" }
-    return [PSCustomObject]@{ Id=$id; Code=$code; Cert=$Matches[1].Replace(":","").ToLowerInvariant() }
+    if ($line -match "SHA-256 digest: ([a-fA-F0-9:]+)") {
+        $cert = $Matches[1].Replace(":","").ToLowerInvariant()
+    } else { throw "Fingerprint firma non trovata" }
+    return [PSCustomObject]@{ Id=$id; Code=$code; Cert=$cert }
 }
 $devices = & $adb devices
 if ($LASTEXITCODE -ne 0) { throw "ADB non risponde" }
