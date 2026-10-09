@@ -261,7 +261,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     fun addItem(warehouseId: Long, name: String, category: String,
                 quantity: Double, minimum: Double, unit: String, note: String, photoFile: String? = null,
                 unitCost: Double? = null, supplier: String = "", leadDays: Int? = null): Long {
-        require(name.trim().isNotEmpty()) { "Inserisci il nome dell'articolo" }
+        require(name.trim().length in 1..180) { "Nome articolo: massimo 180 caratteri" }
+        require(unit.trim().length<=24) { "Unità di misura: massimo 24 caratteri" }
+        require(note.length<=3000 && supplier.length<=160) { "Descrizione o fornitore troppo lunghi" }
         ArticleCodes.prefix(category) // Verifica prima di aprire la transazione.
         require(StockRules.validQuantity(quantity) && StockRules.validQuantity(minimum)) { "Quantità non valide" }
         validatePurchase(unitCost, leadDays)

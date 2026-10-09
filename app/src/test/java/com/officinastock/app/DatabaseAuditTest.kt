@@ -23,6 +23,15 @@ class DatabaseAuditTest {
     @After fun close(){db.close()}
     private fun item(q:Double=10.0)=db.addItem(warehouse,"Vite","Ricambi",q,1.0,"pz","")
     private fun rejects(block:()->Unit){try{block();fail("Invalid operation accepted")}catch(expected:IllegalArgumentException){}}
+    @Test fun creationCannotStoreTextThatEditingAndCsvCannotAccept() {
+        rejects{db.addItem(warehouse,"A".repeat(181),"Ricambi",1.0,0.0,"pz","")}
+        rejects{db.addItem(warehouse,"Valido","Ricambi",1.0,0.0,"u".repeat(25),"")}
+        rejects{db.addItem(warehouse,"Valido","Ricambi",1.0,0.0,"pz","N".repeat(3001))}
+        assertTrue(db.items(warehouse).isEmpty())
+        val id=db.addItem(warehouse,"A".repeat(180),"Ricambi",1.0,0.0,"","N".repeat(3000))
+        assertEquals("pz",db.item(id)!!.unit)
+        assertEquals(3000,CsvImport.parse(db.csv(warehouse)).single().note.length)
+    }
     @Test fun overdrawRollsBackAndLoanReturnsExactlyOnce(){
         val id=item();val before=db.movements(warehouse).size
         rejects{db.movement(id,-11.0,"")}

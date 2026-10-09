@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.sp
 /** Offline catalog CRUD. Staff roles are informational, never authentication. */
 @Composable fun EnterpriseDirectoryPanel(model:StockViewModel) {
     val ui=model.ui
+    var directorySearch by remember{mutableStateOf("")}
+    var centerSearch by remember{mutableStateOf("")}
     var dialog by remember {mutableStateOf<String?>(null)}
     var title by remember {mutableStateOf("")}
     var code by remember {mutableStateOf("")}
@@ -31,9 +33,10 @@ import androidx.compose.ui.unit.sp
             color=TextSecondary,fontSize=12.sp)
         Text("Le attività restano locali. ${ui.unsentCatalogEvents} eventi anagrafici pronti per un futuro server.",
             color=TextSecondary,fontSize=11.sp)
+        OutlinedTextField(directorySearch,{directorySearch=it},label={Text("Cerca nelle anagrafiche: nome o codice")},singleLine=true,modifier=Modifier.fillMaxWidth())
         HorizontalDivider()
         Text("Centri di costo · ${ui.costCenters.size}",fontWeight=FontWeight.SemiBold)
-        ui.costCenters.take(25).forEach{ c ->
+        ui.costCenters.filter{it.name.contains(directorySearch,true)||it.code.contains(directorySearch,true)}.take(25).forEach{ c ->
             Text("${c.code} · ${c.name} · budget ${c.monthlyBudget?.let{amount(it)+" €"} ?: "non assegnato"}",
                 fontSize=12.sp,color=TextSecondary)
             val requests=ui.orders.filter{it.centerId==c.id &&
@@ -46,7 +49,7 @@ import androidx.compose.ui.unit.sp
             enabled=!ui.busy){Text("Aggiungi centro di costo")}
         HorizontalDivider()
         Text("Fornitori · ${ui.businessSuppliers.size}",fontWeight=FontWeight.SemiBold)
-        ui.businessSuppliers.take(30).forEach{
+        ui.businessSuppliers.filter{it.name.contains(directorySearch,true)}.take(30).forEach{
             Text(it.name+" · "+(it.leadDays?.let{d->"$d giorni"} ?: "consegna non definita"),
                 fontSize=12.sp,color=TextSecondary)
         }
@@ -54,14 +57,14 @@ import androidx.compose.ui.unit.sp
             enabled=!ui.busy){Text("Aggiungi fornitore")}
         HorizontalDivider()
         Text("Macchine e impianti · ${ui.businessAssets.size}",fontWeight=FontWeight.SemiBold)
-        ui.businessAssets.take(30).forEach{
+        ui.businessAssets.filter{it.name.contains(directorySearch,true)||it.code.contains(directorySearch,true)}.take(30).forEach{
             Text(it.code+" · "+it.name,fontSize=12.sp,color=TextSecondary)
         }
         OutlinedButton(onClick={resetAndOpen("asset")},modifier=Modifier.fillMaxWidth(),
             enabled=!ui.busy){Text("Registra macchina / impianto")}
         HorizontalDivider()
         Text("Rubrica persone · ${ui.staffDirectory.size}",fontWeight=FontWeight.SemiBold)
-        ui.staffDirectory.take(25).forEach{
+        ui.staffDirectory.filter{it.displayName.contains(directorySearch,true)}.take(25).forEach{
             Text(it.displayName+" · "+it.proposedRole,fontSize=12.sp,color=TextSecondary)
         }
         OutlinedButton(onClick={resetAndOpen("staff")},modifier=Modifier.fillMaxWidth(),
@@ -109,7 +112,8 @@ import androidx.compose.ui.unit.sp
                 }
                 if(current=="asset") {
                     Text("Collega a un centro di costo (facoltativo)",fontSize=12.sp)
-                    ui.costCenters.take(30).forEach{c->
+                    OutlinedTextField(centerSearch,{centerSearch=it},label={Text("Cerca centro di costo / codice")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                    ui.costCenters.filter{it.name.contains(centerSearch,true)||it.code.contains(centerSearch,true)}.take(30).forEach{c->
                         FilterChip(selected=center==c.id,onClick={center=if(center==c.id)null else c.id},
                             label={Text(c.code+" · "+c.name,fontSize=11.sp)})
                     }
@@ -135,3 +139,4 @@ import androidx.compose.ui.unit.sp
         )
     }
 }
+
