@@ -56,6 +56,27 @@ object PlanGeometry {
         "Area" -> 2.6f to 1.8f
         else -> 1.5f to 1f
     }
+    /** Restrict the whole rotated footprint to the room, not just its center.
+     * Oversize structures are centered: they cannot fully fit without resizing. */
+    fun boundedPlacementCenter(x:Float,y:Float,width:Float,depth:Float,rotation:Float,
+                               roomWidth:Float,roomHeight:Float):PointMetres {
+        require(listOf(x,y,width,depth,rotation,roomWidth,roomHeight).all{it.isFinite()} &&
+            width>0f && depth>0f && roomWidth>0f && roomHeight>0f) { "Dimensioni struttura non valide" }
+        val angle=Math.toRadians(rotation.toDouble())
+        val extentX=((abs(cos(angle))*width+abs(sin(angle))*depth)/2).toFloat()
+        val extentY=((abs(sin(angle))*width+abs(cos(angle))*depth)/2).toFloat()
+        fun clamp(v:Float,room:Float,extent:Float):Float =
+            if(extent*2>room) room/2f else v.coerceIn(extent,room-extent)
+        return PointMetres(clamp(x,roomWidth,extentX),clamp(y,roomHeight,extentY))
+    }
+    fun placementFitsRoom(p:Placement,roomWidth:Float,roomHeight:Float):Boolean {
+        val angle=Math.toRadians(p.rotation.toDouble())
+        val extentX=((abs(cos(angle))*p.width+abs(sin(angle))*p.depth)/2).toFloat()
+        val extentY=((abs(sin(angle))*p.width+abs(cos(angle))*p.depth)/2).toFloat()
+        return extentX*2<=roomWidth && extentY*2<=roomHeight &&
+            p.x>=extentX-0.0001f && p.x<=roomWidth-extentX+0.0001f &&
+            p.y>=extentY-0.0001f && p.y<=roomHeight-extentY+0.0001f
+    }
     /** Rotated rectangle hit test in world metres. */
     fun contains(point:PointMetres,p:Placement,padding:Float=.16f):Boolean {
         val dx=point.x-p.x;val dy=point.y-p.y
