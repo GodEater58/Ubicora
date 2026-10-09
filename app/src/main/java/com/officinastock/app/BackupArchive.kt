@@ -133,7 +133,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         }
         return total
     }
-    private fun readDbFile(file:File, allowed:Set<String>): List<ContentValues> {
+    private fun readDbFile(file:File, allowed:Map<String,String>): List<ContentValues> {
         val values=ArrayList<ContentValues>()
         file.bufferedReader(Charsets.UTF_8).useLines {lines ->
             for(line in lines) {
@@ -146,6 +146,12 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                     val col=names.next()
                     require(col in allowed) { "Colonna sconosciuta: $col" }
                     val value=obj.get(col)
+                    if(value!=JSONObject.NULL) when(allowed.getValue(col).uppercase(java.util.Locale.ROOT)) {
+                        "INTEGER" -> require(value is Int || value is Long) { "Intero non valido nel backup: $col" }
+                        "REAL" -> require(value is Number && value.toDouble().isFinite()) { "Numero non valido nel backup: $col" }
+                        "TEXT" -> require(value is String) { "Testo non valido nel backup: $col" }
+                        else -> throw IOException("Tipo colonna non supportato: $col")
+                    }
                     when(value) {
                         JSONObject.NULL -> row.putNull(col)
                         is Int -> row.put(col,value)
@@ -216,8 +222,8 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             val db=stockDb.writableDatabase
             val snapshots=linkedMapOf<String,List<ContentValues>>()
             for(table in tables) {
-                val columns=mutableSetOf<String>()
-                db.rawQuery("PRAGMA table_info($table)",null).use {c-> while(c.moveToNext())columns.add(c.getString(1))}
+                val columns=mutableMapOf<String,String>()
+                db.rawQuery("PRAGMA table_info($table)",null).use {c-> while(c.moveToNext())columns[c.getString(1)]=c.getString(2)}
                 snapshots[table]=if(names.contains("db/$table.ndjson")) {
                     readDbFile(File(parts,"$table.ndjson"),columns)
                 } else emptyList()
