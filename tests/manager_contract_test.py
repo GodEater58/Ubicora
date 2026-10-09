@@ -15,13 +15,20 @@ INSERT INTO movements VALUES(2,1,-5,'Assegnato a Persona',200000001);
 INSERT INTO movements VALUES(3,1,5,'Restituito da Persona',200000002);
 INSERT INTO movements VALUES(4,1,10,'Carico',200000003);
 INSERT INTO movements VALUES(5,2,-4,'Prelievo',200000004);
+INSERT INTO movements VALUES(6,1,-2,'Spedizione trasferimento #7',200000005);
+INSERT INTO movements VALUES(7,1,-1,'Inventario ciclico #8',200000006);
+INSERT INTO movements VALUES(8,1,-1,'Rettifica inventario: conteggio',200000007);
 """)
 result=db.execute("""SELECT m.item_id,SUM(CASE WHEN m.created_at>=? THEN -m.delta ELSE 0 END),
 SUM(CASE WHEN m.created_at>=? THEN -m.delta ELSE 0 END),SUM(-m.delta)
 FROM movements m JOIN items i ON i.id=m.item_id
-WHERE i.warehouse_id=? AND m.created_at>=? AND m.delta<0 AND m.note NOT LIKE 'Assegnato a %'
+WHERE i.warehouse_id=? AND m.created_at>=? AND m.delta<0
+ AND m.note NOT LIKE 'Assegnato a %'
+ AND m.note NOT LIKE 'Spedizione trasferimento %'
+ AND m.note NOT LIKE 'Inventario ciclico %'
+ AND m.note NOT LIKE 'Rettifica inventario:%'
 GROUP BY m.item_id""",(0,0,4,0)).fetchall()
 assert result==[(1,3.0,3.0,3.0)],result
 assert db.execute('SELECT quantity*unit_cost FROM items WHERE id=1').fetchone()[0]==20.0
 assert db.execute('SELECT unit_cost FROM items WHERE id=2').fetchone()[0] is None
-print('PASS: warehouse filter, no loans in consumption, no invented cost')
+print('PASS: warehouse filter, no loans/transfers/inventory adjustments in consumption, no invented cost')
