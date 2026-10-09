@@ -148,6 +148,7 @@ class OperationsDb(private val stock:StockDb) {
         }
         val next=StockRules.applyDelta(old,delta)
         StockPlanningDb.assertUnreservedStock(db,itemId,next)
+        StockTraceDb.assertPhysicalFloor(db,itemId,next)
         require(delta.isFinite() && delta!=0.0){"Movimento nullo"}
         require(db.update("items",ContentValues().apply{put("quantity",next)},"id=?",arrayOf(itemId.toString()))==1){"Movimento non applicato"}
         db.insertOrThrow("movements",null,ContentValues().apply {
