@@ -80,6 +80,11 @@ class OperationsDb(private val stock:StockDb) {
                 action TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             )""")
+            db.execSQL("""CREATE TABLE IF NOT EXISTS ops_settings (
+                profile_id INTEGER PRIMARY KEY NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                business_mode INTEGER NOT NULL DEFAULT 0 CHECK(business_mode IN (0,1)),
+                monthly_budget REAL DEFAULT NULL CHECK(monthly_budget >= 0)
+            )""")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_ops_orders_wh ON ops_orders(warehouse_id,status)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_ops_counts_wh ON ops_counts(warehouse_id,status)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_ops_transfers_wh ON ops_transfers(from_id,to_id,status)")
@@ -88,6 +93,32 @@ class OperationsDb(private val stock:StockDb) {
         }
     }
 
+    fun businessMode(profileId:Long):Boolean=stock.readableDatabase.rawQuery(
+        "SELECT business_mode FROM ops_settings WHERE profile_id=?",arrayOf(profileId.toString())
+    ).use{c->c.moveToFirst() && c.getInt(0)==1}
+    fun setBusinessMode(profileId:Long,enabled:Boolean) {
+        require(stock.profiles().any{it.id==profileId}){"Profilo non trovato"}
+        stock.writableDatabase.insertWithOnConflict("ops_settings",null,ContentValues().apply {
+            put("profile_id",profileId);put("business_mode",if(enabled)1 else 0)
+            putNull("monthly_budget")
+        },SQLiteDatabase.CONFLICT_IGNORE)
+        stock.writableDatabase.update("ops_settings",ContentValues().apply {
+            put("business_mode",if(enabled)1 else 0)
+        },"profile_id=?",arrayOf(profileId.toString()))
+    }
+    fun monthlyBudget(profileId:Long):Double?=stock.readableDatabase.rawQuery(
+        "SELECT monthly_budget FROM ops_settings WHERE profile_id=?",arrayOf(profileId.toString())
+    ).use{c->if(!c.moveToFirst()||c.isNull(0))null else c.getDouble(0)}
+    fun setMonthlyBudget(profileId:Long,budget:Double?) {
+        require(budget==null || (budget.isFinite() && budget>=0.0 && budget<=1e12)){"Budget non valido"}
+        require(stock.profiles().any{it.id==profileId}){"Profilo non trovato"}
+        stock.writableDatabase.insertWithOnConflict("ops_settings",null,ContentValues().apply {
+            put("profile_id",profileId);put("business_mode",if(businessMode(profileId))1 else 0)
+        },SQLiteDatabase.CONFLICT_IGNORE)
+        stock.writableDatabase.update("ops_settings",ContentValues().apply {
+            if(budget==null)putNull("monthly_budget") else put("monthly_budget",budget)
+        },"profile_id=?",arrayOf(profileId.toString()))
+    }
     private fun requireItem(warehouseId:Long,itemId:Long):StockItem {
         val item=requireNotNull(stock.item(itemId)){"Articolo non trovato"}
         require(item.warehouseId==warehouseId){"Articolo di un altro magazzino"}
