@@ -66,6 +66,16 @@ In **Variables**, crea la variabile `UBICORA_SIGNING_CERT_SHA256`, con l'impront
 
 **Importante:** se disponi della chiave privata originale, inserisci *quella* e il suo certificato, non una chiave nuova.
 
+### Configurazione guidata sul PC (alternativa ai passaggi manuali GitHub)
+
+Dopo aver installato Java JDK e [GitHub CLI](https://cli.github.com/) e aver effettuato `gh auth login`, usa il seguente comando PowerShell per caricare **la chiave che già possiedi** nei Secrets senza copiare password in chat:
+
+```powershell
+.\\scripts\\configure-signing-github.ps1 -KeystorePath "C:\\Percorso\\ubicora-stable.p12" -Alias "ubicora"
+```
+
+Lo script chiede le password in modo riservato, legge il certificato dal keystore e configura quattro segreti più la variabile con la fingerprint pubblica. **Non crea chiavi e non modifica l'app installata.** Usa la chiave originale se intendi conservare la possibilità di aggiornare una vecchia installazione già firmata.
+
 ## Compilare ogni nuova versione senza reinstallare
 
 1. Aggiorna il codice mantenendo `applicationId = "com.ubicora.app"`.
