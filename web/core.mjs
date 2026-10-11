@@ -1,6 +1,26 @@
 // Shared browser domain logic. No network, DOM or implicit side effects.
 export const uid=()=>crypto.randomUUID();
-export const empty=()=>({format:'ubicora-web-1',warehouses:[],items:[],movements:[],placements:[],orders:[],reservations:[],works:[],budget:null});
+export const empty=()=>({format:'ubicora-web-1',warehouses:[],items:[],movements:[],placements:[],orders:[],reservations:[],works:[],walls:[],budget:null});
+const GRID=.25;
+export const snap=v=>Math.round(v/GRID)*GRID;
+const clamp=(v,min,max)=>Math.min(Math.max(v,min),Math.max(min,max));
+/**
+ * 1.0.4: items link to structures by ID (renaming a structure no longer breaks the link) and the
+ * plan stores walls. Older archives are upgraded in place: walls start empty, and items are linked
+ * to the structure whose name matches their location text (only when the match is unique).
+ */
+export function upgrade(s){
+ if(!s||s.format!=='ubicora-web-1')return s;
+ if(s.walls===undefined)s.walls=[];
+ if(Array.isArray(s.items)&&Array.isArray(s.placements))for(const i of s.items){
+  if(i&&typeof i==='object'&&i.placementId===undefined){
+   const matches=s.placements.filter(p=>p&&p.warehouseId===i.warehouseId&&p.name===i.location);
+   i.placementId=matches.length===1?matches[0].id:null;
+  }
+ }
+ return s;
+}
+const placementByName=(s,wid,location)=>{const m=s.placements.filter(p=>p.warehouseId===wid&&p.name===String(location??'').trim());return m.length===1?m[0].id:null;};
 export const number=(v,min=0)=>{const n=Number(String(v).replace(',','.'));if(String(v).trim()===''||!Number.isFinite(n)||n<min||n>1e12)throw Error('Inserisci un numero valido');return n;};
 export const optional=v=>String(v??'').trim()===''?null:number(v);
 export const reserved=(s,id)=>s.reservations.filter(r=>r.itemId===id&&r.status==='ACTIVE').reduce((a,r)=>a+r.quantity,0);
@@ -15,8 +35,9 @@ const deliveryDays=v=>{if(v!==null&&(!Number.isInteger(v)||v<0||v>3650))throw Er
 const stamp=v=>{if(!Number.isSafeInteger(v)||v<0||v>8640000000000000)throw Error('Data non valida');};
 export function validate(s){
  if(!s||s.format!=='ubicora-web-1')throw Error('Formato non compatibile: usa un backup Ubicora Web');
- for(const key of ['warehouses','items','movements','placements','orders','reservations','works']){
-  if(!Array.isArray(s[key])||s[key].length>(key==='movements'?100000:key==='warehouses'?100:20000))throw Error('Archivio troppo grande o non valido');
+ upgrade(s);
+ for(const key of ['warehouses','items','movements','placements','orders','reservations','works','walls']){
+  if(!Array.isArray(s[key])||s[key].length>(key==='movements'?100000:key==='warehouses'?100:key==='walls'?5000:20000))throw Error('Archivio troppo grande o non valido');
   for(const x of s[key])if(!x||typeof x!=='object'||typeof x.id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x.id))throw Error('Identificativo non valido');
   if(new Set(s[key].map(x=>x.id.toLowerCase())).size!==s[key].length)throw Error('Identificativi duplicati');
  }
@@ -32,7 +53,11 @@ export function validate(s){
  for(const o of s.orders){storedNumber(o.quantity);positive(o.quantity);storedNumber(o.received);if(o.price!==null)storedNumber(o.price);stamp(o.at);storedText(o.supplier,160);if(o.received>o.quantity||!['DRAFT','APPROVED','ORDERED','RECEIVED','CANCELLED'].includes(o.status)||(o.status==='RECEIVED'&&o.received!==o.quantity))throw Error('Ordine non valido');}
  for(const w of s.warehouses){name(storedText(w.name,160));storedText(w.location,300);if(storedNumber(w.width)<2||w.width>150||storedNumber(w.depth)<2||w.depth>150)throw Error('Dimensioni: da 2 a 150 metri');}
  for(const m of s.movements){storedNumber(m.delta,-1e12);stamp(m.at);storedText(m.note,2000);if(!m.note.trim())throw Error('Motivo movimento mancante');}
- for(const p of s.placements){name(storedText(p.name,160));storedNumber(p.x);storedNumber(p.y);storedNumber(p.width);storedNumber(p.depth);positive(p.width);positive(p.depth);const w=warehouses.get(p.warehouseId);if(p.x+p.width>w.width||p.y+p.depth>w.depth)throw Error('La struttura esce dalla pianta');}
+ for(const p of s.placements){name(storedText(p.name,160));storedNumber(p.x);storedNumber(p.y);storedNumber(p.width);storedNumber(p.depth);positive(p.width);positive(p.depth);const w=warehouses.get(p.warehouseId);if(p.x+p.width>w.width+1e-6||p.y+p.depth>w.depth+1e-6)throw Error('La struttura esce dalla pianta');}
+ const placements=new Map(s.placements.map(p=>[p.id,p]));
+ for(const i of s.items)if(i.placementId!==null&&(typeof i.placementId!=='string'||placements.get(i.placementId)?.warehouseId!==i.warehouseId))throw Error('Ubicazione dell’articolo non valida');
+ for(const w of s.walls){const room=warehouses.get(w.warehouseId);if(!room)throw Error('Magazzino non valido');for(const k of ['x1','y1','x2','y2'])storedNumber(w[k]);
+  if(w.x1>room.width+1e-6||w.x2>room.width+1e-6||w.y1>room.depth+1e-6||w.y2>room.depth+1e-6||Math.hypot(w.x2-w.x1,w.y2-w.y1)<.2)throw Error('Parete non valida');}
  for(const w of s.works){name(storedText(w.machine,160));if(!storedText(w.description,2000).trim())throw Error('Descrivi il lavoro');storedNumber(w.quantity);if(storedNumber(w.hours)>100000)throw Error('Ore lavorate non valide');if(w.rate!==null&&storedNumber(w.rate)>1e9)throw Error('Tariffa non valida');if(w.partsCost!==null)storedNumber(w.partsCost);stamp(w.at);if(w.completedAt!==null)stamp(w.completedAt);if(!['OPEN','DONE','CANCELLED'].includes(w.status)||(w.status==='DONE'&&w.completedAt===null))throw Error('Intervento non valido');}
  if(s.budget!==null)storedNumber(s.budget);return s;
 }

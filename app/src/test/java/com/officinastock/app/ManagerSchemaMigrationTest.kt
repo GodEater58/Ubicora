@@ -44,7 +44,7 @@ class ManagerSchemaMigrationTest {
 
         db = StockDb(context)
         val upgraded = db.writableDatabase
-        assertEquals(10, upgraded.version)
+        assertEquals(11, upgraded.version)
         assertEquals("Privato", db.profiles().single().name)
         assertTrue(db.authenticate(profile, "1234"))
         assertEquals("Garage", db.warehouses(profile).single().name)

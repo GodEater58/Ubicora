@@ -136,7 +136,7 @@ class MainActivity: ComponentActivity() {
                     qrLauncher.launch(ScanOptions()
                         .setCaptureActivity(StockQrCaptureActivity::class.java)
                         .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                        .setPrompt("Inquadra il codice QR dell'articolo")
+                        .setPrompt("Inquadra il QR di un articolo o di una struttura")
                         .setBeepEnabled(false)
                         .setOrientationLocked(false))
                 })
@@ -189,6 +189,10 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     fun openActivity(focus:ActivityFocus,days:Int=0) { activityFocus=focus; activityDays=days; tab=Tab.MOVES }
     LaunchedEffect(data.scannedItemId) {
         if(data.scannedItemId!=null) tab=Tab.STOCK
+    }
+    // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
+    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
+        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) tab=Tab.MAP
     }
     Scaffold(containerColor=Ink, floatingActionButton={
         if(tab==Tab.HOME || tab==Tab.STOCK) {

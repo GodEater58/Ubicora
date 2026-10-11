@@ -6,10 +6,43 @@ data class StockItem(
     val id: Long, val warehouseId: Long, val sku: String, val name: String, val category: String,
     val quantity: Double, val minimum: Double, val unit: String, val placementId: Long?, val note: String,
     val photoFile: String? = null,
-    val unitCost: Double? = null, val supplier: String = "", val leadDays: Int? = null
+    val unitCost: Double? = null, val supplier: String = "", val leadDays: Int? = null,
+    val shelfLevel: Int? = null, val shelfSlot: Int? = null
 ) { val lowStock get() = quantity <= minimum }
 data class Placement(val id: Long, val warehouseId: Long, val kind: String, val label: String,
-    val x: Float, val y: Float, val locked: Boolean, val width: Float = 1.6f, val depth: Float = 0.75f, val rotation: Float = 0f)
+    val x: Float, val y: Float, val locked: Boolean, val width: Float = 1.6f, val depth: Float = 0.75f, val rotation: Float = 0f,
+    val levels: Int = 1, val slots: Int = 1) {
+    /** Doors, columns and corridors orient people on the plan but never hold stock. */
+    val holdsStock get() = PlacementKinds.holdsStock(kind)
+    val hasPositions get() = levels > 1 || slots > 1
+}
+
+object PlacementKinds {
+    val storage = listOf("Scaffale","Armadio","Cassetto","Banco","Area")
+    val landmarks = listOf("Porta","Colonna","Corridoio")
+    val all = storage + landmarks
+    fun holdsStock(kind: String) = kind !in landmarks
+    const val MAX_LEVELS = 20
+    const val MAX_SLOTS = 50
+}
+
+/** Human-readable precise location, e.g. "Scaffale A · R2 P3". */
+object Locations {
+    fun code(level: Int?, slot: Int?): String = buildString {
+        if(level != null) append("R").append(level)
+        if(slot != null) { if(isNotEmpty()) append(' '); append("P").append(slot) }
+    }
+    fun describe(placement: Placement?, item: StockItem): String {
+        if(placement == null) return "Da assegnare"
+        val suffix = code(item.shelfLevel, item.shelfSlot)
+        return if(suffix.isEmpty()) placement.label else "${placement.label} · $suffix"
+    }
+    fun validate(placement: Placement, level: Int?, slot: Int?) {
+        require(placement.holdsStock) { "${placement.kind}: non può contenere articoli" }
+        require(level == null || level in 1..placement.levels) { "Ripiano fuori dalla struttura (1–${placement.levels})" }
+        require(slot == null || slot in 1..placement.slots) { "Posizione fuori dalla struttura (1–${placement.slots})" }
+    }
+}
 data class Wall(val id: Long, val warehouseId: Long, val x1: Float, val y1: Float, val x2: Float, val y2: Float, val source: String)
 data class Movement(val id: Long, val itemId: Long, val sku: String, val itemName: String,
     val delta: Double, val note: String, val createdAt: Long)
@@ -56,6 +89,16 @@ object ArticleCodes {
         "OFFICINA-STOCK:1:W$warehouseId:$sku"
 
     data class ScanTarget(val warehouseId: Long?, val sku: String)
+    /** QR stuck on a shelf: opens the structure and its contents, never moves stock. */
+    fun locationPayload(warehouseId: Long, placementId: Long): String =
+        "UBICORA-LOC:1:W$warehouseId:P$placementId"
+    data class LocationTarget(val warehouseId: Long, val placementId: Long)
+    fun parseLocationScan(raw: String): LocationTarget? {
+        val match=Regex("^UBICORA-LOC:1:W([0-9]{1,18}):P([0-9]{1,18})$").matchEntire(raw.trim().uppercase(java.util.Locale.ROOT)) ?: return null
+        val warehouseId=match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        val placementId=match.groupValues[2].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        return LocationTarget(warehouseId,placementId)
+    }
     /** Accetta i QR generati dall'app e, per compatibilità, i vecchi QR con solo codice. */
     fun parseScan(raw: String): ScanTarget? {
         val input=raw.trim().uppercase(java.util.Locale.ROOT)

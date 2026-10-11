@@ -49,7 +49,15 @@ data class StockUiState(
     val stockSerials: List<StockSerial> = emptyList(),
     val operationalReports: Map<Int,OperationalReport> = emptyMap(),
     val reservedByItem: Map<Long,Double> = emptyMap(),
-    val operationsLimit:Int=250
+    val operationsLimit:Int=250,
+    /** Structure to center and highlight when the map opens ("Mostra in pianta", shelf QR). */
+    val mapFocusPlacementId: Long? = null,
+    /** Movements per structure in the last 30 days, for the "most used" map view. */
+    val placementActivity: Map<Long,Int> = emptyMap(),
+    /** Items waiting for the user to tap a structure on the map ("Scegli sulla mappa"). */
+    val locationPickItemIds: List<Long>? = null,
+    val mapUndoLabel: String? = null,
+    val mapRedoLabel: String? = null
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -65,7 +73,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { clearMapHistory();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -77,6 +85,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Lookup locale. Nessuna movimentazione viene mai eseguita automaticamente da una scansione. */
     fun handleScannedCode(raw: String) {
         val warehouse=ui.warehouse ?: return
+        ArticleCodes.parseLocationScan(raw)?.let { location ->
+            ui=when {
+                location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
+                ui.placements.none { it.id==location.placementId } -> ui.copy(scannedItemId=null,message="Struttura non trovata: potrebbe essere stata eliminata.")
+                else -> ui.copy(scannedItemId=null,mapFocusPlacementId=location.placementId,message=null)
+            }
+            return
+        }
         val target=ArticleCodes.parseScan(raw)
         if(target == null) {
             ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Ubicora o Officina Stock.")
@@ -144,14 +160,89 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     stockSerials=warehouse?.let {trace.serials(it.id,operationalRowLimit)} ?: emptyList(),
                     operationsLimit=operationalRowLimit,
                     reservedByItem=warehouse?.let {planning.reservedByItem(it.id)} ?: emptyMap(),
+                    placementActivity=warehouse?.let {db.placementActivity(it.id,System.currentTimeMillis()-30*86_400_000L)} ?: emptyMap(),
                     operationalReports=warehouse?.takeIf{profile!=null && operations.businessMode(profile.id)}?.let {w->
                         val now=System.currentTimeMillis()
                         listOf(7,30,90).associateWith{OperationalAnalytics(db).report(w.id,it,now)}
                     } ?: emptyMap()
                 )
         }
-        ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked)
+        ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked,mapFocusPlacementId=ui.mapFocusPlacementId,
+            locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},
+            mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
         pendingNewItem = null
+    }
+
+    // ---- Map: targeted reload, undo/redo, focus, camera ----
+    private val mapUndo=ArrayDeque<MapEdit>()
+    private val mapRedo=ArrayDeque<MapEdit>()
+    private fun clearMapHistory() { mapUndo.clear();mapRedo.clear() }
+    private val mapCameras=mutableMapOf<Long,Triple<Float,Float,Float>>()
+    /** Zoom/pan survive tab switches; reset when the room is resized. */
+    fun mapCamera(warehouseId:Long):Triple<Float,Float,Float> = mapCameras[warehouseId] ?: Triple(1f,0f,0f)
+    fun saveMapCamera(warehouseId:Long,zoom:Float,panX:Float,panY:Float) { mapCameras[warehouseId]=Triple(zoom,panX,panY) }
+    fun showOnMap(placementId:Long) { if(ui.placements.any{it.id==placementId}) ui=ui.copy(mapFocusPlacementId=placementId,scannedItemId=null) }
+    fun acknowledgeMapFocus() { ui=ui.copy(mapFocusPlacementId=null) }
+    fun startLocationPick(itemIds:List<Long>) {
+        val ids=itemIds.filter{id->ui.items.any{it.id==id}}.distinct()
+        if(ids.isNotEmpty()) ui=ui.copy(locationPickItemIds=ids,scannedItemId=null,message=null)
+    }
+    fun cancelLocationPick() { ui=ui.copy(locationPickItemIds=null) }
+    fun completeLocationPick(placementId:Long,level:Int?,slot:Int?) {
+        val ids=ui.locationPickItemIds ?: return
+        if(ui.busy) return
+        ui=ui.copy(locationPickItemIds=null)
+        assignItems(ids,placementId,level,slot)
+    }
+
+    /**
+     * Map edits reload only rooms, structures, walls and items instead of the whole archive
+     * (orders, analytics, lots…), so dragging and assigning stay fast with large inventories.
+     */
+    private fun executeMap(record:Boolean=true,action:()->MapEdit?) = runMap(action) { edit ->
+        if(record) { mapUndo.addLast(edit);while(mapUndo.size>50)mapUndo.removeFirst();mapRedo.clear() }
+    }
+    private fun runMap(action:()->MapEdit?,onSuccess:(MapEdit)->Unit) {
+        if(ui.busy) return
+        val generation=backgroundGeneration
+        val warehouseId=ui.warehouse?.id ?: return
+        ui=ui.copy(busy=true,message=null)
+        viewModelScope.launch {
+            try {
+                var failure:String?=null
+                val edit=withContext(Dispatchers.IO) {
+                    try { action() } catch(e:CancellationException) { throw e }
+                    catch(e:Exception) { failure=e.message ?: "Operazione non riuscita"; null }
+                }
+                if(edit!=null && generation==backgroundGeneration && ui.warehouse?.id==warehouseId) onSuccess(edit)
+                reloadMap(failure)
+            } catch(e:CancellationException) { throw e }
+            catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
+            finally { ui=ui.copy(busy=false,mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label) }
+        }
+    }
+    private suspend fun reloadMap(error:String?) {
+        val profileId=ui.profile?.id
+        val warehouseId=ui.warehouse?.id
+        if(profileId==null || warehouseId==null) { reload(error);return }
+        val fresh=withContext(Dispatchers.IO) {
+            val warehouses=db.warehouses(profileId)
+            val warehouse=warehouses.firstOrNull{it.id==warehouseId}
+            if(warehouse==null) null else listOf(warehouses,warehouse,db.items(warehouseId),db.placements(warehouseId),
+                db.walls(warehouseId),db.placementActivity(warehouseId,System.currentTimeMillis()-30*86_400_000L))
+        }
+        if(fresh==null) { reload(error);return }
+        @Suppress("UNCHECKED_CAST")
+        ui=ui.copy(warehouses=fresh[0] as List<Warehouse>,warehouse=fresh[1] as Warehouse,items=fresh[2] as List<StockItem>,
+            placements=fresh[3] as List<Placement>,walls=fresh[4] as List<Wall>,placementActivity=fresh[5] as Map<Long,Int>,message=error)
+    }
+    fun undoMap() {
+        val edit=mapUndo.removeLastOrNull() ?: return
+        runMap({edit.revert(db)}) { inverse -> mapRedo.addLast(inverse) }
+    }
+    fun redoMap() {
+        val edit=mapRedo.removeLastOrNull() ?: return
+        runMap({edit.revert(db)}) { inverse -> mapUndo.addLast(inverse) }
     }
     fun dismissMessage(){ui=ui.copy(message=null)}
     fun createProfile(name: String,pin: String) = execute {
@@ -169,10 +260,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         pendingProfileId=profile.id
     }
     fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
-    fun leaveWarehouse() { if(!ui.busy) {pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
+    fun leaveWarehouse() { if(!ui.busy) {clearMapHistory();pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         operationalRowLimit=250
+        clearMapHistory()
         ui=ui.copy(warehouse=w)
         execute {} // ricarica tutte le liste per il magazzino scelto
     }
@@ -317,13 +409,27 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun finishWorkOrder(id:Long,complete:Boolean) = execute {
         operations.finishMaintenance(requireWarehouse(),id,complete,managerActor())
     }
-    fun addPlacement(kind:String,label:String) = execute {
+    fun addPlacement(kind:String,label:String,x:Float?=null,y:Float?=null) = executeMap {
         val wh=requireNotNull(ui.warehouse){"Seleziona un magazzino"}
-        db.addPlacement(wh.id,kind,label,wh.mapWidth/2f,wh.mapHeight/2f)
+        MapEdit.Created(listOf(db.addPlacement(wh.id,kind,label,x ?: wh.mapWidth/2f,y ?: wh.mapHeight/2f)))
     }
-    fun resizeMap(width:Float,height:Float)=execute { db.updateMapSize(requireWarehouse(),width,height) }
-    fun resizePlacement(id:Long,width:Float,depth:Float,rotation:Float)=execute {
+    fun duplicatePlacement(id:Long) = executeMap {
+        val src=requireNotNull(ui.placements.firstOrNull{it.id==id}){"Struttura non trovata"}
+        val e=PlanGeometry.extents(src)
+        MapEdit.Created(listOf(db.duplicatePlacement(id,src.x+e.x*2+.3f,src.y)))
+    }
+    fun createPlacementRow(id:Long,count:Int,gap:Float,vertical:Boolean) = executeMap {
+        MapEdit.Created(db.createPlacementRow(id,count,gap,vertical))
+    }
+    fun resizeMap(width:Float,height:Float) {
+        val warehouseId=ui.warehouse?.id ?: return
+        mapCameras.remove(warehouseId)
+        executeMap(record=false) { db.updateMapSize(warehouseId,width,height);null }
+    }
+    fun resizePlacement(id:Long,width:Float,depth:Float,rotation:Float)=executeMap {
+        val before=requireNotNull(db.placement(id)){"Struttura non trovata"}
         db.updatePlacementGeometry(id,width,depth,rotation)
+        MapEdit.Reshaped(before)
     }
     // Durante il drag aggiorniamo l'UI immediatamente; il commit avviene solo al rilascio.
     fun previewMove(id:Long,x:Float,y:Float) {
@@ -336,13 +442,36 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             }
         })
     }
-    fun commitMove(id:Long,x:Float,y:Float) = execute { db.movePlacement(id,x,y) }
-    fun lockPlacement(id:Long,locked:Boolean)=execute{db.lockPlacement(id,locked)}
-    fun deletePlacement(id:Long)=execute{db.deletePlacement(id)}
-    fun assignItem(itemId:Long,placementId:Long?)=execute{db.assignItem(itemId,placementId)}
-    fun addWall(coords:FloatArray)=execute{db.addWall(requireWarehouse(),coords)}
-    fun deleteWall(id:Long)=execute{db.deleteWall(id)}
-    fun importAr(json:String)=execute{db.importArScan(requireWarehouse(),json)}
+    fun commitMove(id:Long,fromX:Float,fromY:Float,x:Float,y:Float) = executeMap {
+        require(db.movePlacement(id,x,y)){"Struttura bloccata o non trovata"}
+        val after=requireNotNull(db.placement(id))
+        MapEdit.Moved(id,fromX,fromY,after.x,after.y)
+    }
+    fun lockPlacement(id:Long,locked:Boolean)=executeMap(record=false){db.lockPlacement(id,locked);null}
+    fun renamePlacement(id:Long,label:String)=executeMap(record=false){db.renamePlacement(id,label);null}
+    fun updatePlacementLayout(id:Long,levels:Int,slots:Int)=executeMap(record=false){db.updatePlacementLayout(id,levels,slots);null}
+    fun deletePlacement(id:Long)=executeMap {
+        val snapshot=requireNotNull(db.placement(id)){"Struttura non trovata"}
+        val spots=db.itemSpots(id)
+        db.deletePlacement(id)
+        MapEdit.Deleted(listOf(snapshot to spots))
+    }
+    fun assignItem(itemId:Long,placementId:Long?,level:Int?=null,slot:Int?=null)=
+        executeMap(record=false){db.assignItems(listOf(itemId),placementId,level,slot);null}
+    fun assignItems(itemIds:List<Long>,placementId:Long?,level:Int?=null,slot:Int?=null)=
+        executeMap(record=false){db.assignItems(itemIds,placementId,level,slot);null}
+    fun addWall(coords:FloatArray)=executeMap{MapEdit.WallsAdded(listOf(db.addWall(requireWarehouse(),coords)))}
+    fun deleteWall(id:Long)=executeMap{
+        val wall=requireNotNull(db.wall(id)){"Parete non trovata"}
+        db.deleteWall(id)
+        MapEdit.WallsDeleted(listOf(wall))
+    }
+    fun setWallLength(id:Long,length:Float)=executeMap{
+        val wall=requireNotNull(db.wall(id)){"Parete non trovata"}
+        db.updateWall(id,PlanGeometry.withLength(wall,length))
+        MapEdit.WallChanged(id,floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
+    }
+    fun importAr(json:String)=execute{clearMapHistory();db.importArScan(requireWarehouse(),json)}
     fun seedDemo() = execute { db.seedDemo(requireWarehouse()) }
     fun refreshDemo() = execute {
         val names=db.removeDemo(requireWarehouse())

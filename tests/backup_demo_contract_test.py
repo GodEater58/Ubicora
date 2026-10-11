@@ -6,7 +6,7 @@ source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(enc
 backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf-8')
 ui=(root/'app/src/main/java/com/officinastock/app/Screens.kt').read_text(encoding='utf-8')
 main=(root/'app/src/main/java/com/officinastock/app/MainActivity.kt').read_text(encoding='utf-8')
-assert 'null, 10)' in source and 'oldVersion < 6' in source
+assert 'null, 11)' in source and 'oldVersion < 6' in source
 assert 'CREATE TABLE IF NOT EXISTS demo_assets' in source
 assert 'demoTag(db,warehouseId,"items",id)' in source
 assert 'demoTag(db,warehouseId,"walls",id)' in source
