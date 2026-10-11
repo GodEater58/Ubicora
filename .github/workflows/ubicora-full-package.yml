@@ -1,0 +1,70 @@
+name: Ubicora 4.6.2 Complete Package
+on:
+  push:
+    branches: [release/ubicora-complete-package-20261011]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble full reproducible source and verified build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=dist/Ubicora_4.6.2
+          mkdir -p "$ROOT"/{Android,PC,Server,Documentazione,Sorgenti,Test}
+          # The binaries below belong to the tested production source commit, not a newly invented build.
+          gh run download 37989257111 --repo "${{ github.repository }}" --name ubicora-DEBUG-do-not-use-for-updates --dir "$ROOT/Android"
+          test -s "$ROOT/Android/app-debug.apk"
+          mv "$ROOT/Android/app-debug.apk" "$ROOT/Android/Ubicora_4.6.2.apk"
+          gh run download 37989257111 --repo "${{ github.repository }}" --name android-verification-reports --dir "$ROOT/Test/Android"
+          gh run download 37989257128 --repo "${{ github.repository }}" --name ubicora-web-browser-screenshots --dir "$ROOT/Test/Web"
+          cp web/Ubicora.html "$ROOT/PC/Ubicora.html"
+          cp web/README.md "$ROOT/PC/LEGGIMI_Web.md"
+          cp -a server/. "$ROOT/Server/"
+          cp -a docs/. "$ROOT/Documentazione/"
+          cp README.md "$ROOT/Documentazione/LEGGIMI_Progetto.md"
+          cp THIRD_PARTY_NOTICES.md "$ROOT/Documentazione/"
+          git archive --format=zip --prefix=Ubicora_sorgenti_4.6.2/ HEAD -o "$ROOT/Sorgenti/Ubicora_4.6.2_Sorgenti.zip"
+          cat > "$ROOT/LEGGIMI_PRIMA.txt" <<'EOF'
+          UBICORA 4.6.2 / WEB 1.0.2 - PACCHETTO COMPLETO
+          Origine: GodEater58/OfficinaStock-Android
+          Commit prodotto: 7574f1924602d5948b8a0a71ca6f81d11507cef4
+          Data commit: 09/10/2026
+
+          Android/Ubicora_4.6.2.apk e' un APK DEBUG per test.
+          NON usarlo per aggiornare un'installazione esistente con dati.
+          La firma debug generata nelle Actions non e' garantita compatibile.
+          Non disinstallare l'app attuale prima di avere backup .osbackup verificato.
+
+          PC/Ubicora.html e' la versione Web 1.0.2 offline per Edge/Chrome.
+          L'archivio Web locale e' separato dal database SQLite dell'APK.
+          Server/ contiene il backend FastAPI/PostgreSQL e i test.
+          Sorgenti/ contiene il repository completo, inclusi app, web, server e script.
+          Documentazione/ contiene guide, limiti e istruzioni di firma.
+          Test/ contiene report Android e schermate test Web del commit originale.
+
+          Per un APK che aggiorni conservando i dati servono la chiave di
+          firma originale e il workflow "Ubicora Stable Signed Update".
+          Consulta Documentazione/AGGIORNAMENTI_APK_SENZA_DISINSTALLARE.md.
+          EOF
+          (
+            cd "$ROOT"
+            sha256sum Android/Ubicora_4.6.2.apk PC/Ubicora.html Sorgenti/Ubicora_4.6.2_Sorgenti.zip > SHA256SUMS.txt
+          )
+          (cd dist && zip -qr Ubicora_4.6.2_Pacchetto_Completo.zip Ubicora_4.6.2)
+          unzip -tq dist/Ubicora_4.6.2_Pacchetto_Completo.zip | tail -n 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ubicora-4.6.2-Pacchetto-Completo
+          path: dist/Ubicora_4.6.2_Pacchetto_Completo.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
