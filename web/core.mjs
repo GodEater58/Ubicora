@@ -90,10 +90,12 @@ export function parseCsv(text){
  if(rows[0]?.length!==11||!rows[0].every((x,i)=>x===CSV_HEADER[i]))throw Error('Usa il CSV inventario esportato da Ubicora Android (11 colonne, separatore ;)');
  return rows.slice(1).map(r=>{if(r.length!==11)throw Error('Numero colonne non valido');return {sku:r[0],name:r[1],category:r[2],quantity:r[3],minimum:r[4],unit:r[5],location:r[6],note:r[7],cost:r[8],supplier:r[9],leadDays:r[10]};});
 }
+// Undo the apostrophe added by exportCsv / Android csv() to neutralise spreadsheet formulas.
+const unformula=v=>{v=String(v??'');return /^'[\s]*[=+@-]/.test(v)||/^'[\t\r]/.test(v)?v.slice(1):v;};
 export function importCsv(state,text,wid){
  find(state.warehouses,wid);const s=structuredClone(state),at=Date.now();
  for(const a of parseCsv(text)){
-  const i={id:uid(),warehouseId:wid,sku:name(a.sku),name:String(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:a.supplier,leadDays:optional(a.leadDays),location:a.location,note:a.note};
+  const i={id:uid(),warehouseId:wid,sku:name(unformula(a.sku)),name:unformula(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:unformula(a.supplier),leadDays:optional(a.leadDays),location:unformula(a.location),note:unformula(a.note)};
   if(i.leadDays!==null&&(!Number.isInteger(i.leadDays)||i.leadDays>3650))throw Error('Giorni di consegna non validi');
   s.items.push(i);if(i.quantity)s.movements.push({id:uid(),itemId:i.id,delta:i.quantity,note:'Importazione inventario CSV Android',at});
  }return validate(s);

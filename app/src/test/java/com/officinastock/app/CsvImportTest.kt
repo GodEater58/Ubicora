@@ -30,5 +30,15 @@ class CsvImportTest {
         rejects(header+"\n"+row().dropLast(1))
         rejects(header+"\n"+row().replace("3.5","-9"))
     }
+    @Test fun formulaApostropheAddedOnExportIsRemovedOnImport() {
+        val values=listOf("RIC-000321","'=Vite","Ricambi","3","1","pz","'@Scaffale","'-10% sconto","2","'+Fornitore","5")
+        val csv=header+"\n"+values.joinToString(";"){"\""+it+"\""}+"\n"
+        val parsed=CsvImport.parse(csv).single()
+        assertEquals("=Vite",parsed.name)
+        assertEquals("@Scaffale",parsed.location)
+        assertEquals("-10% sconto",parsed.note)
+        assertEquals("+Fornitore",parsed.supplier)
+        assertEquals("'normale",CsvImport.unformula("'normale"))
+        assertEquals("'",CsvImport.unformula("'"))
+    }
 }
-

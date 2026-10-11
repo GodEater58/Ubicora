@@ -209,14 +209,18 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         val key="profile_$profileId"
         val now=System.currentTimeMillis()
         val retry=attempts.getLong("${key}_retry",0L)
-        require(retry<=now || retry-now>60_000L) { "Troppi tentativi. Attendi un minuto e riprova." }
+        require(!PinThrottle.isLocked(retry,now)) { PinThrottle.message(retry,now) }
         readableDatabase.rawQuery("SELECT salt,verifier FROM profiles WHERE id=?", arrayOf(profileId.toString())).use { c ->
             if(!c.moveToFirst()) return false
             val current = proof(pin,Base64.getDecoder().decode(c.getString(0)))
             val valid=java.security.MessageDigest.isEqual(current.toByteArray(),c.getString(1).toByteArray())
             val failures=if(valid)0 else attempts.getInt(key,0)+1
-            attempts.edit().putInt(key,if(failures>=5)0 else failures)
-                .putLong("${key}_retry",if(failures>=5)now+60_000L else 0L).commit()
+            val locked=failures>=PinThrottle.MAX_FAILURES
+            // Consecutive lockouts escalate the wait; a correct PIN resets the escalation.
+            val lockouts=if(valid)0 else attempts.getInt("${key}_locks",0)+(if(locked)1 else 0)
+            attempts.edit().putInt(key,if(locked)0 else failures)
+                .putInt("${key}_locks",lockouts)
+                .putLong("${key}_retry",if(locked)now+PinThrottle.lockMillis(lockouts) else 0L).commit()
             return valid
         }
     }

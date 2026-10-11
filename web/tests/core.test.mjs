@@ -156,3 +156,13 @@ test('A delayed background response cannot roll back a newer confirmed save',asy
  return {budget:state.budget,revision};})()`,c);
  assert.equal(result.budget,29);assert.equal(result.revision,2);
 });
+test('CSV round trip does not accumulate the anti-formula apostrophe (1.0.3)',()=>{
+ let s=stock();const wid=s.warehouses[0].id;s.items[0].note='-10% sconto';s.items[0].supplier='=Fornitore';s.items[0].location='@Scaffale';
+ const csv=exportCsv(s,wid);assert.match(csv,/"'-10% sconto"/,'export must still neutralise formulas');
+ let dest=apply(empty(),{type:'warehouse',name:'Importazione'});dest=importCsv(dest,csv,dest.warehouses[0].id);
+ const i=dest.items.find(x=>x.sku===s.items[0].sku);assert.equal(i.note,'-10% sconto');assert.equal(i.supplier,'=Fornitore');assert.equal(i.location,'@Scaffale');
+ assert.equal(exportCsv(dest,dest.warehouses[0].id),csv.replace(wid,dest.warehouses[0].id));
+ // A genuine leading apostrophe not followed by a formula character is preserved.
+ s.items[0].note="'normale";let other=apply(empty(),{type:'warehouse',name:'X'});other=importCsv(other,exportCsv(s,wid),other.warehouses[0].id);
+ assert.equal(other.items.find(x=>x.sku===s.items[0].sku).note,"'normale");
+});

@@ -14,6 +14,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_BYTES = 8 * 1024 * 1024
@@ -209,6 +210,9 @@ def router(authorize, connect, role_for):
     @api.put("/workspace/{tenant}")
     async def write(tenant: uuid.UUID, request: Request, principal=Depends(authorize)):
         data = bytearray()
+        length = request.headers.get("content-length")
+        if length and (not length.isdigit() or int(length) > MAX_BYTES):
+            raise HTTPException(413, "Workspace too large")
         async for chunk in request.stream():
             data.extend(chunk)
             if len(data) > MAX_BYTES:
@@ -221,7 +225,11 @@ def router(authorize, connect, role_for):
         canonical = json.dumps({"expected_revision": command.expected_revision, "data": payload},
                                sort_keys=True, separators=(",", ":"), allow_nan=False)
         digest = hashlib.sha256(canonical.encode()).hexdigest()
-        with transaction(tenant, principal.subject) as (cur, role):
+        # Blocking psycopg work runs off the event loop.
+        return await run_in_threadpool(store, tenant, principal.subject, command, payload, digest)
+
+    def store(tenant, subject, command, payload, digest):
+        with transaction(tenant, subject) as (cur, role):
             if role != "MANAGER":
                 raise HTTPException(403, "Only authenticated managers may edit this workspace")
             cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("web:"+str(tenant),))
@@ -229,7 +237,7 @@ def router(authorize, connect, role_for):
                            WHERE tenant_id=%s AND mutation_id=%s""", (tenant, command.mutation_id))
             prior = cur.fetchone()
             if prior:
-                if prior["request_hash"] != digest or prior["actor_subject"] != principal.subject:
+                if prior["request_hash"] != digest or prior["actor_subject"] != subject:
                     raise HTTPException(409, "Mutation ID reused with different data")
                 return {"revision": prior["revision"], "mutation_id": str(command.mutation_id)}
             cur.execute("SELECT revision FROM web_workspaces WHERE tenant_id=%s FOR UPDATE", (tenant,))
@@ -244,7 +252,7 @@ def router(authorize, connect, role_for):
                         (tenant, next_revision, json.dumps(payload, allow_nan=False)))
             cur.execute("""INSERT INTO web_receipts(tenant_id,mutation_id,request_hash,actor_subject,revision)
                     VALUES(%s,%s,%s,%s,%s)""",
-                        (tenant, command.mutation_id, digest, principal.subject, next_revision))
+                        (tenant, command.mutation_id, digest, subject, next_revision))
         return {"revision": next_revision, "mutation_id": str(command.mutation_id)}
     return api
 

@@ -10,8 +10,15 @@ data class CsvImportRow(
 object CsvImport {
     const val MAX_BYTES = 8 * 1024 * 1024
     const val MAX_ITEMS = 20000
+    private val textColumns=setOf(1,6,7,9) // descrizione, ubicazione, note, fornitore
     private val header=listOf("Codice","Descrizione","Categoria","Quantità","Minimo",
         "Unità","Ubicazione","Note","Costo unitario EUR","Fornitore","Consegna giorni")
+
+    /** Undo the apostrophe that StockDb.csv() / the web export prepend to neutralise spreadsheet formulas. */
+    internal fun unformula(value: String): String =
+        if(value.length>1 && value[0]=='\'' &&
+            (value.substring(1).trimStart().firstOrNull() in listOf('=','+','-','@') || value[1]=='\t' || value[1]=='\r'))
+            value.substring(1) else value
 
     /** The importer accepts only the known export layout. No silent guesses or partial data. */
     fun parse(source: String): List<CsvImportRow> {
@@ -70,7 +77,8 @@ object CsvImport {
         }
         require(records.size>1) { "Il CSV non contiene articoli" }
         val seen=HashSet<String>()
-        return records.drop(1).mapIndexed { index, v ->
+        return records.drop(1).mapIndexed { index, raw ->
+            val v=raw.mapIndexed { column, text -> if(column in textColumns) unformula(text) else text }
             require(v.size==header.size) { "Riga ${index+2}: colonne CSV non valide" }
             val sku=v[0].trim().uppercase(java.util.Locale.ROOT)
             val prefix=sku.substringBefore('-')

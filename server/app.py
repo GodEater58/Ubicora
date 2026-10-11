@@ -9,13 +9,14 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Literal
 
 import jwt
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -50,6 +51,11 @@ async def response_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Cache-Control"] = "no-store"
+    # The service is HTTPS-only (see module docstring); the page never needs plugins or framing.
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -201,8 +207,14 @@ def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
             raise HTTPException(409, "Entity not found")
         if event.expected_version is None or existing["version"] != event.expected_version:
             raise HTTPException(409, "Entity version conflict")
+        if event.operation == "DELETE" and event.resource == "cost_center":
+            cur.execute("""SELECT 1 FROM entity_versions
+                           WHERE tenant_id=%s AND resource='asset' AND data->>'center_uuid'=%s
+                           LIMIT 1""", (tenant, str(event.entity_uuid)))
+            if cur.fetchone() is not None:
+                raise HTTPException(409, "Cost center still referenced by assets")
         if event.operation == "UPDATE":
-            cur.execute("""UPDATE entity_versions SET data=%s::jsonb, version=version+1, updated_at=now()
+            cur.execute("""UPDATE entity_versions SET data=%s::jsonb, version=version+1, updated_at=clock_timestamp()
                            WHERE tenant_id=%s AND resource=%s AND entity_id=%s""",
                         (json.dumps(event.data), tenant, event.resource, event.entity_uuid))
         else:
@@ -210,8 +222,8 @@ def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
                            WHERE tenant_id=%s AND resource=%s AND entity_id=%s""",
                         (tenant, event.resource, event.entity_uuid))
     cur.execute("""INSERT INTO accepted_events(
-                    tenant_id,event_id,resource,entity_id,operation,payload,actor_subject)
-                   VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s)""",
+                    tenant_id,event_id,resource,entity_id,operation,payload,actor_subject,accepted_at)
+                   VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,clock_timestamp())""",
                 (tenant, event.event_id, event.resource, event.entity_uuid,
                  event.operation, json.dumps(event.data), subject))
 
@@ -244,34 +256,56 @@ async def push(request: Request, principal: Principal = Depends(authorize)):
     event_ids = [e.event_id for e in batch.events]
     if len(event_ids) != len(set(event_ids)):
         raise HTTPException(400, "Duplicate event IDs within batch")
+    # psycopg is synchronous: never run it on the event loop, or one slow query stalls every request.
+    await run_in_threadpool(_store_batch_tx, batch, principal.subject)
+    return {"protocol_version": 1, "accepted_event_ids": [str(e) for e in event_ids]}
+
+
+def store_batch(cur, batch: EventBatch, subject: str) -> None:
+    role = role_for(cur, batch.tenant_uuid, subject)
+    # Serialize writers per tenant until commit; accepted_at is taken after this lock
+    # (clock_timestamp), so commit order equals cursor order and no late commit is skipped.
+    cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (str(batch.tenant_uuid),))
+    cur.execute("SELECT set_config('app.user_subject', %s, true)", (subject,))
+    for event in batch.events:
+        if event.resource not in ROLE_RIGHTS.get(role, set()):
+            raise HTTPException(403, "Role is not authorized for resource")
+        apply_event(cur, batch.tenant_uuid, event, subject)
+
+
+def _store_batch_tx(batch: EventBatch, subject: str) -> None:
     with connect() as connection:
         with connection.transaction():
             with connection.cursor() as cur:
-                role = role_for(cur, batch.tenant_uuid, principal.subject)
-                # Serialize writers per tenant until commit so change cursors cannot skip late commits.
-                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                            (str(batch.tenant_uuid),))
-                cur.execute("SELECT set_config('app.user_subject', %s, true)", (principal.subject,))
-                for event in batch.events:
-                    if event.resource not in ROLE_RIGHTS.get(role, set()):
-                        raise HTTPException(403, "Role is not authorized for resource")
-                    apply_event(cur, batch.tenant_uuid, event, principal.subject)
-    return {"protocol_version": 1, "accepted_event_ids": [str(e) for e in event_ids]}
+                store_batch(cur, batch, subject)
+
+
+def parse_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    """Parse '<ISO timestamp with offset>|<event uuid>'.
+
+    Tolerates a '+' offset sign decoded as a space by clients that forgot URL-encoding.
+    """
+    time_part, uuid_part = cursor.split("|", 1)
+    time_part = time_part.strip()
+    if len(time_part) > 6 and time_part[-6] == " " and time_part[-3] == ":":
+        time_part = time_part[:-6] + "+" + time_part[-5:]
+    start_time = datetime.fromisoformat(time_part)
+    if start_time.tzinfo is None:
+        raise ValueError("Timezone missing")
+    return start_time, uuid.UUID(uuid_part)
 
 
 @app.get("/v1/sync/changes")
 def changes(tenant_uuid: uuid.UUID, cursor: str | None = None,
             limit: int = Query(default=100, ge=1, le=250),
             principal: Principal = Depends(authorize)):
-    start_time = datetime.min.replace(tzinfo=__import__("datetime").timezone.utc)
+    start_time = datetime.min.replace(tzinfo=timezone.utc)
     start_id = uuid.UUID(int=0)
     if cursor:
+        if len(cursor) > 128:
+            raise HTTPException(400, "Invalid sync cursor")
         try:
-            time_part, uuid_part = cursor.split("|", 1)
-            start_time = datetime.fromisoformat(time_part)
-            if start_time.tzinfo is None:
-                raise ValueError("Timezone missing")
-            start_id = uuid.UUID(uuid_part)
+            start_time, start_id = parse_cursor(cursor)
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid sync cursor")
     with connect() as connection:
