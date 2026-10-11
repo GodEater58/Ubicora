@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate} from '../core.mjs';
+import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate,upgrade,nextLabel} from '../core.mjs';
 const stock=()=>demo();
 test('Reservations release without stock change and consumption is exactly once',()=>{
  let s=stock(),i=s.items[0],r=s.reservations[0];assert.equal(available(s,i),20);
@@ -165,4 +165,46 @@ test('CSV round trip does not accumulate the anti-formula apostrophe (1.0.3)',()
  // A genuine leading apostrophe not followed by a formula character is preserved.
  s.items[0].note="'normale";let other=apply(empty(),{type:'warehouse',name:'X'});other=importCsv(other,exportCsv(s,wid),other.warehouses[0].id);
  assert.equal(other.items.find(x=>x.sku===s.items[0].sku).note,"'normale");
+});
+
+test('1.0.4 map: items link to structures by ID and survive renames',()=>{
+ let s=demo();const wid=s.warehouses[0].id,shelf=s.placements.find(p=>p.name==='Scaffale A');
+ const linked=s.items.filter(i=>i.placementId===shelf.id);assert.equal(linked.length,2);
+ s=apply(s,{type:'renamePlacement',id:shelf.id,name:'Scaffale Z'});
+ assert.ok(s.items.filter(i=>i.placementId===shelf.id).every(i=>i.location==='Scaffale Z'));
+ assert.throws(()=>apply(s,{type:'renamePlacement',id:shelf.id,name:'Banco 1'}),/già/);
+ s=apply(s,{type:'removePlacement',id:shelf.id});
+ assert.ok(s.items.every(i=>i.placementId!==shelf.id));assert.equal(s.items.filter(i=>i.location==='Scaffale Z').length,0);
+ const free=s.items.filter(i=>!i.placementId).map(i=>i.id),bench=s.placements.find(p=>p.name==='Banco 1');
+ s=apply(s,{type:'assignPlacement',ids:free,placementId:bench.id});
+ assert.ok(free.every(id=>s.items.find(i=>i.id===id).placementId===bench.id));
+ const other=apply(s,{type:'warehouse',name:'Altra'});
+ assert.throws(()=>apply(other,{type:'assignPlacement',ids:[s.items[0].id],placementId:apply(other,{type:'placement',warehouseId:other.warehouses[1].id,name:'X',x:0,y:0,width:1,depth:1}).placements.at(-1).id}));
+});
+test('1.0.4 map: drag snaps to 25 cm and stays inside, rotate and resize keep the footprint in the room',()=>{
+ let s=demo();const p=s.placements[0],w=s.warehouses[0];
+ s=apply(s,{type:'movePlacement',id:p.id,x:4.13,y:2.9});let q=s.placements[0];assert.equal(q.x,4.25);assert.equal(q.y,3);
+ s=apply(s,{type:'movePlacement',id:p.id,x:99,y:-5});q=s.placements[0];assert.equal(q.x,w.width-q.width);assert.equal(q.y,0);
+ s=apply(s,{type:'rotatePlacement',id:p.id});q=s.placements[0];assert.equal(q.width,.8);assert.equal(q.depth,3);
+ assert.ok(q.x>=0&&q.y>=0&&q.x+q.width<=w.width&&q.y+q.depth<=w.depth);
+ assert.throws(()=>apply(s,{type:'resizePlacement',id:p.id,width:40,depth:1}));
+ s=apply(s,{type:'resizePlacement',id:p.id,width:2,depth:1});assert.equal(s.placements[0].width,2);
+ s=apply(s,{type:'duplicatePlacement',id:p.id});assert.equal(s.placements.at(-1).name,'Scaffale B');
+ s=apply(s,{type:'duplicatePlacement',id:p.id});assert.equal(s.placements.at(-1).name,'Scaffale C');
+ assert.equal(nextLabel('S09'),'S10');assert.equal(nextLabel('Banco'),'Banco 2');
+});
+test('1.0.4 map: walls are validated, snapped and removable',()=>{
+ let s=demo();const wid=s.warehouses[0].id;
+ s=apply(s,{type:'wall',warehouseId:wid,x1:0,y1:0,x2:5.06,y2:0});assert.equal(s.walls[0].x2,5);
+ assert.throws(()=>apply(s,{type:'wall',warehouseId:wid,x1:1,y1:1,x2:1.05,y2:1}),/corta/);
+ s=apply(s,{type:'wall',warehouseId:wid,x1:0,y1:0,x2:50,y2:0});assert.equal(s.walls[1].x2,12);
+ s=apply(s,{type:'removeWall',id:s.walls[0].id});assert.equal(s.walls.length,1);
+ const bad=structuredClone(s);bad.walls[0].x2=99;assert.throws(()=>validate(bad),/Parete/);
+});
+test('1.0.4 map: 1.0.3 archives upgrade in place, linking only unique names',()=>{
+ const s=demo();const old=structuredClone(s);delete old.walls;for(const i of old.items)delete i.placementId;
+ old.placements.push({...old.placements[0],id:crypto.randomUUID(),x:6,y:5});// duplicate name: ambiguous
+ const up=validate(upgrade(old));assert.deepEqual(up.walls,[]);
+ assert.equal(up.items.find(i=>i.location==='Scaffale A').placementId,null);
+ assert.equal(up.items.find(i=>i.location==='Banco 1').placementId,up.placements.find(p=>p.name==='Banco 1').id);
 });

@@ -42,6 +42,8 @@ class Item(Strict):
     leadDays: int | None = Field(default=None, ge=0, le=3650)
     location: str = Field(default="", max_length=160)
     note: str = Field(default="", max_length=3000)
+    # Web 1.0.4: stable link to a structure; absent in older clients.
+    placementId: uuid.UUID | None = None
 
 class Movement(Strict):
     id: uuid.UUID
@@ -58,6 +60,14 @@ class Placement(Strict):
     y: float = Field(ge=0, le=150)
     width: float = Field(gt=0, le=150)
     depth: float = Field(gt=0, le=150)
+
+class Wall(Strict):
+    id: uuid.UUID
+    warehouseId: uuid.UUID
+    x1: float = Field(ge=0, le=150)
+    y1: float = Field(ge=0, le=150)
+    x2: float = Field(ge=0, le=150)
+    y2: float = Field(ge=0, le=150)
 
 class Order(Strict):
     id: uuid.UUID
@@ -105,11 +115,12 @@ class Document(Strict):
     orders: list[Order] = Field(max_length=20000)
     reservations: list[Reservation] = Field(max_length=20000)
     works: list[Work] = Field(max_length=20000)
+    walls: list[Wall] = Field(default_factory=list, max_length=5000)
     budget: float | None = Field(default=None, ge=0, le=1e12)
     @model_validator(mode="after")
     def references(self):
         for rows in (self.warehouses, self.items, self.movements, self.placements,
-                     self.orders, self.reservations, self.works):
+                     self.orders, self.reservations, self.works, self.walls):
             if len({x.id for x in rows}) != len(rows):
                 raise ValueError("Duplicate IDs")
         warehouses = {x.id: x for x in self.warehouses}
@@ -136,8 +147,21 @@ class Document(Strict):
                 raise ValueError("Invalid warehouse reference")
         for placement in self.placements:
             room = warehouses[placement.warehouseId]
-            if placement.x + placement.width > room.width or placement.y + placement.depth > room.depth:
+            if placement.x + placement.width > room.width + 1e-6 or placement.y + placement.depth > room.depth + 1e-6:
                 raise ValueError("Placement outside warehouse")
+        placements = {x.id: x for x in self.placements}
+        for item in self.items:
+            if item.placementId is not None and (
+                    item.placementId not in placements
+                    or placements[item.placementId].warehouseId != item.warehouseId):
+                raise ValueError("Invalid item placement")
+        for wall in self.walls:
+            room = warehouses.get(wall.warehouseId)
+            if room is None:
+                raise ValueError("Invalid warehouse reference")
+            if (max(wall.x1, wall.x2) > room.width + 1e-6 or max(wall.y1, wall.y2) > room.depth + 1e-6
+                    or math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) < 0.2):
+                raise ValueError("Invalid wall")
         reserved = {}
         for r in self.reservations:
             if r.status == "ACTIVE":
@@ -156,7 +180,7 @@ class Document(Strict):
 def empty():
     return {"format": "ubicora-web-1", "warehouses": [], "items": [],
             "movements": [], "placements": [], "orders": [],
-            "reservations": [], "works": [], "budget": None}
+            "reservations": [], "works": [], "walls": [], "budget": None}
 
 class Write(Strict):
     mutation_id: uuid.UUID

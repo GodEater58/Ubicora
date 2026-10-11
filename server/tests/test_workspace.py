@@ -97,3 +97,20 @@ def test_workspace_preserves_android_csv_text_lengths():
 def test_workspace_rejects_blank_required_text(field):
     d=document();d['items'][0][field]='   '
     with pytest.raises(ValidationError):Document.model_validate(d)
+
+def test_workspace_map_walls_and_placement_links():
+    # 1.0.3 documents (no walls, no placementId) stay valid.
+    legacy=document(); legacy.pop("walls")
+    assert Document.model_validate(legacy).walls==[]
+    d=document(); wid=d["warehouses"][0]["id"]; pid=str(uuid.uuid4())
+    d["placements"]=[{"id":pid,"warehouseId":wid,"name":"Scaffale A","x":1,"y":1,"width":3,"depth":.8}]
+    d["items"][0]["placementId"]=pid
+    d["walls"]=[{"id":str(uuid.uuid4()),"warehouseId":wid,"x1":0,"y1":0,"x2":12,"y2":0}]
+    doc=Document.model_validate(d)
+    assert str(doc.items[0].placementId)==pid and len(doc.walls)==1
+    bad=document(); bad["items"][0]["placementId"]=str(uuid.uuid4())
+    with pytest.raises(ValidationError): Document.model_validate(bad)
+    for wall in ({"x1":0,"y1":0,"x2":13,"y2":0}, {"x1":1,"y1":1,"x2":1.1,"y2":1}):
+        bad=document(); bad["walls"]=[{"id":str(uuid.uuid4()),"warehouseId":wid,**wall}]
+        bad["warehouses"][0]["id"]=wid
+        with pytest.raises(ValidationError): Document.model_validate(bad)
