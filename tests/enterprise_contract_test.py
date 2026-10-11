@@ -14,7 +14,7 @@ view=(root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_tex
 screen=(root/'app/src/main/java/com/officinastock/app/EnterpriseScreen.kt').read_text(encoding='utf8')
 transport=(root/'app/src/main/java/com/officinastock/app/EnterpriseServerClient.kt').read_text(encoding='utf8')
 gradle=(root/'app/build.gradle.kts').read_text(encoding='utf8')
-assert 'null, 10)' in base and 'oldVersion < 10' in base
+assert 'null, 11)' in base and 'oldVersion < 10' in base and 'oldVersion < 11' in base
 assert 'EnterpriseDb.createTables(db)' in base and 'EnterpriseDb.addOperationLinks(db)' in base
 assert int(re.search(r'versionCode\s*=\s*(\d+)',gradle).group(1))>=460
 assert 'managerTables.size' in backup and 'legacyTables.size' in backup and 'companyTables' in backup

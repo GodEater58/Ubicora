@@ -2,6 +2,14 @@ package com.officinastock.app
 
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Typeface
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -26,29 +34,47 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.ceil
-import kotlin.math.min
 import java.util.Locale
 
 private enum class EditorTool { VIEW, WALL, FURNITURE }
+/** Colour layers answering warehouse questions at a glance. */
+private enum class MapLayer(val label: String, val legend: String) {
+    NORMAL("Normale", ""),
+    CRITICAL("Critici", "Articoli sotto scorta minima per struttura"),
+    VALUE("Valore", "Valore delle scorte (quantità × costo)"),
+    ACTIVITY("Più usati", "Movimenti negli ultimi 30 giorni"),
+    EMPTY("Vuote", "Strutture senza articoli assegnati")
+}
 private val FloorBackground = Color(0xFF0C1B2A)
 private val FloorFill = Color(0xFF152C3A)
 private val ShelfTeal = Color(0xFF267C80)
 private val CabinetBlue = Color(0xFF48668D)
 private val BenchGold = Color(0xFFA47745)
 private val DrawingCyan = Color(0xFF7DE8E3)
+private val DoorBrown = Color(0xFF8B6B4A)
+private val ColumnGrey = Color(0xFF59646E)
+private val Idle = Color(0xFF2B3A47)
 
 private fun numberM(value: Float):String = String.format(Locale.ITALY,"%.2f m", value)
 private fun floorColor(kind: String): Color = when(kind) {
@@ -56,39 +82,123 @@ private fun floorColor(kind: String): Color = when(kind) {
     "Banco" -> BenchGold
     "Cassetto" -> Color(0xFF66719F)
     "Area" -> Color(0xFF456D67)
+    "Porta" -> DoorBrown
+    "Colonna" -> ColumnGrey
+    "Corridoio" -> Mint.copy(alpha=.12f)
     else -> ShelfTeal
+}
+/** 0 = calm (mint), 0.5 = attention (amber), 1 = hot (red). */
+private fun heat(t: Float): Color {
+    val v=t.coerceIn(0f,1f)
+    return if(v<.5f) lerp(Mint,Amber,v*2f) else lerp(Amber,Danger,(v-.5f)*2f)
 }
 
 @Composable
 fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     val state=model.ui
     val warehouse=state.warehouse ?: return
+    val context=LocalContext.current
+    val haptics=LocalHapticFeedback.current
+    val scope=rememberCoroutineScope()
     var mode by remember(warehouse.id){mutableStateOf(EditorTool.VIEW)}
+    var layer by remember(warehouse.id){mutableStateOf(MapLayer.NORMAL)}
     var selectedId by remember(warehouse.id){mutableStateOf<Long?>(null)}
+    var selectedWallId by remember(warehouse.id){mutableStateOf<Long?>(null)}
+    var highlightId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var wallAnchor by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftEnd by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var showNewObject by remember {mutableStateOf(false)}
     var showDimensions by remember {mutableStateOf(false)}
+    var showRowFor by remember {mutableStateOf<Long?>(null)}
+    var wallLengthFor by remember {mutableStateOf<Long?>(null)}
+    var pickPositionFor by remember {mutableStateOf<Long?>(null)}
+    var qrFor by remember {mutableStateOf<Long?>(null)}
     var showGrid by remember {mutableStateOf(true)}
     var snapGrid by remember {mutableStateOf(true)}
+    var magnet by remember {mutableStateOf(true)}
     var orthogonal by remember {mutableStateOf(false)}
     var showLabels by remember {mutableStateOf(true)}
-    var zoom by remember(warehouse.id){mutableFloatStateOf(1f)}
-    var panX by remember(warehouse.id){mutableFloatStateOf(0f)}
-    var panY by remember(warehouse.id){mutableFloatStateOf(0f)}
+    val savedCamera=remember(warehouse.id){model.mapCamera(warehouse.id)}
+    var zoom by remember(warehouse.id){mutableFloatStateOf(savedCamera.first)}
+    var panX by remember(warehouse.id){mutableFloatStateOf(savedCamera.second)}
+    var panY by remember(warehouse.id){mutableFloatStateOf(savedCamera.third)}
+    var canvasW by remember{mutableFloatStateOf(0f)}
+    var canvasH by remember{mutableFloatStateOf(0f)}
     var detailsId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     val placement=state.placements.firstOrNull{it.id==selectedId}
+    val selectedWall=state.walls.firstOrNull{it.id==selectedWallId}
     val walls=state.walls
     val livePlacements by rememberUpdatedState(state.placements)
     val liveWalls by rememberUpdatedState(state.walls)
+    val pickIds by rememberUpdatedState(state.locationPickItemIds)
     val manualWalls=walls.filter{it.source=="manual"}
     val roomWidth=warehouse.mapWidth
     val roomHeight=warehouse.mapHeight
+    val marginPx=with(LocalDensity.current){34.dp.toPx()}
     val mapItems=remember(state.items){state.items.groupBy { it.placementId }}
+    val colliding=remember(state.placements){
+        state.placements.filter{PlanGeometry.collisions(it,state.placements).isNotEmpty()}.map{it.id}.toSet()
+    }
+    val layerValues=remember(layer,state.items,state.placements,state.placementActivity){
+        state.placements.filter{it.holdsStock}.associate { p ->
+            val inside=mapItems[p.id].orEmpty()
+            p.id to when(layer) {
+                MapLayer.NORMAL -> 0f
+                MapLayer.CRITICAL -> inside.count{it.lowStock}.toFloat()
+                MapLayer.VALUE -> inside.sumOf{it.quantity*(it.unitCost ?: 0.0)}.toFloat()
+                MapLayer.ACTIVITY -> (state.placementActivity[p.id] ?: 0).toFloat()
+                MapLayer.EMPTY -> if(inside.isEmpty()) 1f else 0f
+            }
+        }
+    }
+    val layerMax=layerValues.values.maxOrNull()?.takeIf{it>0f} ?: 1f
+
+    LaunchedEffect(warehouse.id,zoom,panX,panY) { model.saveMapCamera(warehouse.id,zoom,panX,panY) }
+    // "Mostra in pianta" and shelf QR: center, zoom and pulse the structure.
+    LaunchedEffect(state.mapFocusPlacementId,canvasW,canvasH) {
+        val focus=state.mapFocusPlacementId ?: return@LaunchedEffect
+        if(canvasW<=0f||canvasH<=0f) return@LaunchedEffect
+        val p=state.placements.firstOrNull{it.id==focus}
+        if(p!=null) {
+            mode=EditorTool.VIEW;selectedWallId=null;selectedId=p.id;highlightId=p.id
+            val z=2f
+            val cam=PlanViewport(canvasW,canvasH,roomWidth,roomHeight,z,0f,0f,marginPx)
+            val at=cam.toScreen(PointMetres(p.x,p.y))
+            val pan=cam.clampedPan(canvasW/2f-at.x,canvasH/2f-at.y)
+            zoom=z;panX=pan.x;panY=pan.y
+        }
+        model.acknowledgeMapFocus()
+    }
+    LaunchedEffect(highlightId) { if(highlightId!=null) { delay(5000);highlightId=null } }
+    // Animate only while a structure is highlighted: no continuous redraw otherwise.
+    val pulse=if(highlightId!=null) {
+        val value by rememberInfiniteTransition(label="focus").animateFloat(0f,1f,
+            infiniteRepeatable(tween(900),RepeatMode.Reverse),label="pulse")
+        value
+    } else 0f
+    val pdfLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if(uri!=null) scope.launch {
+            val failure=withContext(Dispatchers.IO) { runCatching {
+                val out=context.contentResolver.openOutputStream(uri) ?: error("Impossibile aprire il file")
+                out.use { MapPdf.write(model.ui,it) }
+            }.exceptionOrNull()?.message }
+            Toast.makeText(context,if(failure==null)"Pianta esportata in PDF" else "Esportazione non riuscita: $failure",Toast.LENGTH_LONG).show()
+        }
+    }
+    fun pick(p:Placement) {
+        if(!p.holdsStock) { Toast.makeText(context,"${p.kind}: scegli uno scaffale, armadio o area",Toast.LENGTH_SHORT).show();return }
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if(p.hasPositions) pickPositionFor=p.id else model.completeLocationPick(p.id,null,null)
+    }
+    fun viewCentre():PointMetres {
+        if(canvasW<=0f) return PointMetres(roomWidth/2f,roomHeight/2f)
+        val cam=PlanViewport(canvasW,canvasH,roomWidth,roomHeight,zoom,panX,panY,marginPx)
+        return cam.bounded(cam.toWorld(PointMetres(canvasW/2f,canvasH/2f)))
+    }
 
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 Surface(shape=RoundedCornerShape(12.dp),color=Mint.copy(alpha=.11f)) {
                     Icon(Icons.Outlined.Architecture,"Progettazione",tint=Mint,modifier=Modifier.padding(10.dp).size(23.dp))
                 }
@@ -96,6 +206,12 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                     Text("STUDIO PLANIMETRICO",fontSize=9.sp,letterSpacing=1.7.sp,fontWeight=FontWeight.Bold,color=Mint)
                     Text("${warehouse.name} · Piano 2D",fontSize=20.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
+                IconButton(onClick={pdfLauncher.launch("Ubicora_pianta_${warehouse.id}.pdf")}) {Icon(Icons.Outlined.PictureAsPdf,"Esporta pianta in PDF",tint=Sky)}
+                IconButton(onClick={
+                    val labels=state.placements.filter{it.holdsStock}.map{LabelSpec.placement(it)}
+                    try { QrLabels.printSheet(context,"Ubicazioni ${warehouse.name}",labels) }
+                    catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
+                },enabled=state.placements.any{it.holdsStock}) {Icon(Icons.Outlined.QrCode2,"Etichette QR di tutte le strutture",tint=Sky)}
                 FilledTonalIconButton(onClick={showDimensions=true}) {Icon(Icons.Outlined.Straighten,"Dimensioni ambiente")}
             }
             Row(horizontalArrangement=Arrangement.spacedBy(5.dp),modifier=Modifier.fillMaxWidth()) {
@@ -106,7 +222,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 ).forEach { (tool,title,icon) ->
                     val active=mode==tool
                     Surface(
-                        modifier=Modifier.weight(1f).clickable {mode=tool;wallAnchor=null;draftEnd=null},
+                        modifier=Modifier.weight(1f).clickable {mode=tool;wallAnchor=null;draftEnd=null;selectedWallId=null},
                         shape=RoundedCornerShape(14.dp),
                         color=if(active) Mint.copy(alpha=.15f) else Surface2,
                         border=BorderStroke(1.dp,if(active) Mint.copy(alpha=.66f) else Color.White.copy(alpha=.07f))
@@ -120,12 +236,24 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 }
             }
         }
+        state.locationPickItemIds?.let { ids ->
+            Surface(Modifier.fillMaxWidth().padding(horizontal=12.dp),shape=RoundedCornerShape(14.dp),color=Amber.copy(alpha=.16f),border=BorderStroke(1.dp,Amber.copy(alpha=.6f))) {
+                Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.TouchApp,null,tint=Amber)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if(ids.size==1) "Tocca la struttura dove mettere l'articolo" else "Tocca la struttura per ${ids.size} articoli",
+                        fontSize=12.sp,modifier=Modifier.weight(1f))
+                    TextButton(onClick=model::cancelLocationPick){Text("Annulla")}
+                }
+            }
+        }
         Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal=12.dp).clipToBounds()) {
             BoxWithConstraints(Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp)).border(BorderStroke(1.dp,Color.White.copy(alpha=.13f)),RoundedCornerShape(24.dp)).background(FloorBackground,RoundedCornerShape(24.dp))) {
                 val density=LocalDensity.current
                 val w=with(density){maxWidth.toPx()}
                 val h=with(density){maxHeight.toPx()}
-                val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
+                SideEffect { canvasW=w;canvasH=h }
+                val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,marginPx)
                 // Screen-space typography: never shrink text with the map camera.
                 val labelPx=with(density){14.sp.toPx()}
                 val selectedLabelPx=with(density){16.sp.toPx()}
@@ -134,8 +262,24 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 val labelGapPx=with(density){7.dp.toPx()}
                 val badgePx=with(density){12.dp.toPx()}
                 val badgeTextPx=with(density){11.sp.toPx()}
+                val rulerPx=with(density){11.sp.toPx()}
+                val measurePx=with(density){13.sp.toPx()}
+                val wallTapPx=with(density){18.dp.toPx()}
+                // Paints are allocated once per composition, not once per structure per frame.
+                val labelPaint=remember(labelPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                    color=android.graphics.Color.WHITE;typeface=Typeface.create("sans-serif-medium",Typeface.BOLD);textAlign=AndroidPaint.Align.CENTER
+                }}
+                val badgePaint=remember(badgeTextPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                    color=android.graphics.Color.BLACK;textSize=badgeTextPx;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER
+                }}
+                val rulerPaint=remember(rulerPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                    color=android.graphics.Color.rgb(155,184,201);textSize=rulerPx;textAlign=AndroidPaint.Align.CENTER
+                }}
+                val measurePaint=remember(measurePx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                    color=android.graphics.Color.rgb(255,201,120);textSize=measurePx;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER
+                }}
                 LaunchedEffect(zoom,w,h,roomWidth,roomHeight) {
-                    val adjusted=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,with(density){34.dp.toPx()})
+                    val adjusted=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,marginPx)
                         .clampedPan(panX,panY)
                     panX=adjusted.x;panY=adjusted.y
                 }
@@ -147,7 +291,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         val initial=PointMetres(down.position.x,down.position.y)
                         val startWorld=cameraNow.bounded(cameraNow.toWorld(initial))
                         val hit=livePlacements.lastOrNull { PlanGeometry.contains(startWorld,it) }
-                        val target=if(mode==EditorTool.FURNITURE) hit else null
+                        val picking=pickIds!=null
+                        val target=if(mode==EditorTool.FURNITURE && !picking) hit else null
                         val initialFurniture=target?.let{PointMetres(it.x,it.y)}
                         val originalPanX=panX
                         val originalPanY=panY
@@ -179,17 +324,18 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             last=PointMetres(change.position.x,change.position.y)
                             if(!dragged && PlanGeometry.distance(initial,last)>minDrag) dragged=true
                             if(dragged && change.pressed){
-                                if(mode==EditorTool.WALL){
+                                if(mode==EditorTool.WALL && !picking){
                                     val snap=cameraNow.bounded(cameraNow.toWorld(last))
                                     val endpoint=if(snapGrid) PlanGeometry.snap(snap) else snap
                                     draftEnd=if(orthogonal) PlanGeometry.orthogonal(wallAnchor?:startWorld,endpoint) else endpoint
-                                }else if(mode==EditorTool.FURNITURE && target!=null && !target.locked && initialFurniture!=null){
+                                    if(wallAnchor==null) wallAnchor=PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
+                                }else if(target!=null && !target.locked && initialFurniture!=null){
                                     val dx=(last.x-initial.x)/cameraNow.scale
                                     val dy=(last.y-initial.y)/cameraNow.scale
                                     val pos=cameraNow.bounded(PointMetres(initialFurniture.x+dx,initialFurniture.y+dy))
                                     val mapped=if(snapGrid)PlanGeometry.snap(pos) else pos
                                     model.previewMove(target.id,mapped.x,mapped.y)
-                                }else if(mode!=EditorTool.WALL){
+                                }else if(mode!=EditorTool.WALL || picking){
                                     val bounded=cameraNow.clampedPan(originalPanX+last.x-initial.x,originalPanY+last.y-initial.y)
                                     panX=bounded.x; panY=bounded.y
                                 }
@@ -198,34 +344,47 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             if(!change.pressed){break}
                         }
                         if(transforming && target!=null && initialFurniture!=null) model.previewMove(target.id,initialFurniture.x,initialFurniture.y)
-                        if(!cancelled && !transforming){
-                            if(mode==EditorTool.WALL){
-                                val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
-                                val point=cameraNow.bounded(cameraNow.toWorld(last))
-                                val clean=if(snapGrid) PlanGeometry.snap(point) else point
-                                val finish=PlanGeometry.snapToWallEndpoint(if(orthogonal) PlanGeometry.orthogonal(from,clean) else clean,liveWalls)
-                                if(dragged){
-                                    if(PlanGeometry.validWall(from,finish))model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
-                                    wallAnchor=finish
-                                }else if(wallAnchor==null){
-                                    wallAnchor=finish
-                                }else if(PlanGeometry.validWall(from,finish)){
-                                    model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
-                                    wallAnchor=finish
-                                }
-                                draftEnd=null
-                            }else if(mode==EditorTool.FURNITURE){
-                                if(target!=null){
-                                    selectedId=target.id
-                                    if(dragged && !target.locked){
-                                        val updated=model.ui.placements.firstOrNull{it.id==target.id}
-                                        if(updated!=null)model.commitMove(updated.id,updated.x,updated.y)
-                                    }
-                                }else if(!dragged)selectedId=null
-                            }else if(!dragged){
-                                selectedId=hit?.id
-                                if(hit!=null)detailsId=hit.id
+                        if(cancelled || transforming) return@awaitEachGesture
+                        if(picking) {
+                            if(!dragged && hit!=null) pick(hit)
+                            return@awaitEachGesture
+                        }
+                        val tappedWall=if(!dragged && hit==null && mode!=EditorTool.WALL)
+                            liveWalls.minByOrNull{PlanGeometry.distanceToWall(startWorld,it)}
+                                ?.takeIf{PlanGeometry.distanceToWall(startWorld,it)*cameraNow.scale<=wallTapPx} else null
+                        if(mode==EditorTool.WALL){
+                            val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
+                            val point=cameraNow.bounded(cameraNow.toWorld(last))
+                            val clean=if(snapGrid) PlanGeometry.snap(point) else point
+                            val finish=PlanGeometry.snapToWallEndpoint(if(orthogonal) PlanGeometry.orthogonal(from,clean) else clean,liveWalls)
+                            if(dragged){
+                                if(PlanGeometry.validWall(from,finish))model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
+                                wallAnchor=finish
+                            }else if(wallAnchor==null){
+                                wallAnchor=finish
+                            }else if(PlanGeometry.validWall(from,finish)){
+                                model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
+                                wallAnchor=finish
                             }
+                            draftEnd=null
+                        }else if(tappedWall!=null){
+                            selectedWallId=tappedWall.id;selectedId=null
+                        }else if(mode==EditorTool.FURNITURE){
+                            selectedWallId=null
+                            if(target!=null){
+                                selectedId=target.id
+                                if(dragged && !target.locked && initialFurniture!=null){
+                                    val updated=livePlacements.firstOrNull{it.id==target.id}
+                                    if(updated!=null){
+                                        val snapped=if(magnet) PlanGeometry.snapToNeighbors(updated,livePlacements,liveWalls) else PointMetres(updated.x,updated.y)
+                                        model.commitMove(updated.id,initialFurniture.x,initialFurniture.y,snapped.x,snapped.y)
+                                    }
+                                }
+                            }else if(!dragged)selectedId=null
+                        }else if(!dragged){
+                            selectedWallId=null
+                            selectedId=hit?.id
+                            if(hit!=null)detailsId=hit.id
                         }
                     }
                 }) {
@@ -250,9 +409,13 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                     for(wall in walls){
                         val a=camera.toScreen(PointMetres(wall.x1,wall.y1));val b=camera.toScreen(PointMetres(wall.x2,wall.y2))
                         val start=Offset(a.x,a.y);val end=Offset(b.x,b.y)
-                        drawLine(if(wall.source=="ar")DrawingCyan.copy(alpha=.17f) else Sky.copy(alpha=.2f),start,end,strokeWidth=15f,cap=StrokeCap.Round)
-                        drawLine(if(wall.source=="ar") DrawingCyan else Color(0xFFDCE8F1),start,end,strokeWidth=5.3f,cap=StrokeCap.Round)
+                        val chosen=wall.id==selectedWallId
+                        drawLine(if(chosen)Amber.copy(alpha=.3f) else if(wall.source=="ar")DrawingCyan.copy(alpha=.17f) else Sky.copy(alpha=.2f),start,end,strokeWidth=if(chosen)22f else 15f,cap=StrokeCap.Round)
+                        drawLine(if(chosen)Amber else if(wall.source=="ar") DrawingCyan else Color(0xFFDCE8F1),start,end,strokeWidth=5.3f,cap=StrokeCap.Round)
                         drawCircle(Color(0xFFDCE8F1),2.8f,start);drawCircle(Color(0xFFDCE8F1),2.8f,end)
+                        if(chosen) drawIntoCanvas { cv ->
+                            cv.nativeCanvas.drawText(numberM(PlanGeometry.wallLength(wall)),(a.x+b.x)/2f,(a.y+b.y)/2f-12f,measurePaint)
+                        }
                     }
                     if(wallAnchor!=null){
                         val start=camera.toScreen(wallAnchor!!)
@@ -262,24 +425,47 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             val a=Offset(start.x,start.y);val end=camera.toScreen(finish);val b=Offset(end.x,end.y)
                             drawLine(Amber,a,b,strokeWidth=3.8f,cap=StrokeCap.Round)
                             drawCircle(Amber,5f,b)
+                            // Live measurement while drawing.
+                            drawIntoCanvas { cv ->
+                                cv.nativeCanvas.drawText(numberM(PlanGeometry.distance(wallAnchor!!,finish)),(a.x+b.x)/2f,(a.y+b.y)/2f-14f,measurePaint)
+                            }
                         }
                     }
                     val occupiedLabelBoxes=mutableListOf<android.graphics.RectF>()
-                    for(f in state.placements.sortedBy { if(it.id==selectedId) 1 else 0 }){
+                    for(f in state.placements.sortedBy { if(it.id==selectedId) 2 else if(it.kind=="Corridoio") 0 else 1 }){
                         val pos=camera.toScreen(PointMetres(f.x,f.y));val center=Offset(pos.x,pos.y)
                         val fw=f.width*camera.scale;val fh=f.depth*camera.scale
                         val selected=f.id==selectedId
-                        rotate(f.rotation,pivot=center){
-                            drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(center.x-fw/2+3f,center.y-fh/2+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
-                            drawRoundRect(floorColor(f.kind),topLeft=Offset(center.x-fw/2,center.y-fh/2),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
-                            if(f.kind=="Scaffale") for(i in 1..3){
-                                val x=center.x-fw/2+fw*i/4f
-                                drawLine(Color.White.copy(alpha=.32f),Offset(x,center.y-fh/2+2f),Offset(x,center.y+fh/2-2f),strokeWidth=1f)
-                            }
-                            drawRoundRect(if(selected)Amber else Color.White.copy(alpha=if(f.locked).35f else .68f),topLeft=Offset(center.x-fw/2,center.y-fh/2),size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=if(selected)3f else 1.5f))
-                            if(selected)drawRoundRect(Amber.copy(alpha=.17f),topLeft=Offset(center.x-fw/2-6f,center.y-fh/2-6f),size=Size(fw+12,fh+12),cornerRadius=CornerRadius(10f),style=Stroke(width=1.3f))
-                        }
                         val items=mapItems[f.id].orEmpty()
+                        val fill=when {
+                            !f.holdsStock || layer==MapLayer.NORMAL -> floorColor(f.kind)
+                            layer==MapLayer.EMPTY -> if(items.isEmpty()) Amber.copy(alpha=.85f) else Idle
+                            else -> (layerValues[f.id] ?: 0f).let { v -> if(v<=0f) Idle else heat(v/layerMax) }
+                        }
+                        rotate(f.rotation,pivot=center){
+                            val box=Offset(center.x-fw/2,center.y-fh/2)
+                            if(f.kind!="Corridoio")drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            drawRoundRect(fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            when(f.kind) {
+                                "Porta" -> drawArc(Color.White.copy(alpha=.5f),270f,90f,false,topLeft=Offset(box.x-fw,box.y+fh-fw),size=Size(fw*2,fw*2),
+                                    style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f))))
+                                "Colonna" -> { drawLine(Color.White.copy(alpha=.4f),box,Offset(box.x+fw,box.y+fh),1.2f);drawLine(Color.White.copy(alpha=.4f),Offset(box.x+fw,box.y),Offset(box.x,box.y+fh),1.2f) }
+                                else -> if(f.holdsStock) {
+                                    val dividers=if(f.slots>1) f.slots else if(f.kind=="Scaffale") 4 else 1
+                                    for(i in 1 until dividers){
+                                        val x=box.x+fw*i/dividers
+                                        drawLine(Color.White.copy(alpha=.32f),Offset(x,box.y+2f),Offset(x,box.y+fh-2f),strokeWidth=1f)
+                                    }
+                                }
+                            }
+                            val outline=when { selected -> Amber; f.id in colliding -> Danger; else -> Color.White.copy(alpha=if(f.locked).35f else .68f) }
+                            drawRoundRect(outline,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),
+                                style=Stroke(width=if(selected||f.id in colliding)3f else 1.5f,
+                                    pathEffect=if(f.kind=="Corridoio") PathEffect.dashPathEffect(floatArrayOf(10f,7f)) else null))
+                            if(selected)drawRoundRect(Amber.copy(alpha=.17f),topLeft=Offset(box.x-6f,box.y-6f),size=Size(fw+12,fh+12),cornerRadius=CornerRadius(10f),style=Stroke(width=1.3f))
+                            if(f.id==highlightId) drawRoundRect(Amber.copy(alpha=.25f+.5f*pulse),topLeft=Offset(box.x-10f-8f*pulse,box.y-10f-8f*pulse),
+                                size=Size(fw+20f+16f*pulse,fh+20f+16f*pulse),cornerRadius=CornerRadius(14f),style=Stroke(width=3f))
+                        }
                         val count=items.size
                         if(count>0){
                             val bubble=Offset(
@@ -288,24 +474,13 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             )
                             drawCircle(if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
                             drawIntoCanvas { cv ->
-                                val paint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-                                    color=android.graphics.Color.BLACK
-                                    textSize=badgeTextPx
-                                    typeface=Typeface.DEFAULT_BOLD
-                                    textAlign=AndroidPaint.Align.CENTER
-                                }
                                 cv.nativeCanvas.drawText(count.toString(),bubble.x,
-                                    bubble.y-(paint.ascent()+paint.descent())/2f,paint)
+                                    bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)
                             }
                         }
                         if(showLabels && size.width>60f && size.height>60f){
-                            val labelPaint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-                                color=android.graphics.Color.WHITE
-                                textSize=if(selected)selectedLabelPx else labelPx
-                                typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)
-                                textAlign=AndroidPaint.Align.CENTER
-                            }
-                            val original=f.label.ifBlank { f.kind }
+                            labelPaint.textSize=if(selected)selectedLabelPx else labelPx
+                            val original=f.label.ifBlank { f.kind }+(if(f.levels>1)" · ${f.levels}R" else "")
                             val maxTextWidth=(size.width-2f*labelPadPx-18f).coerceAtLeast(24f)
                             var cut=original.length
                             while(cut>1 && labelPaint.measureText(
@@ -323,7 +498,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                                     centerX+bubbleW/2f,cy+labelHeightPx/2f)
                                 occupiedLabelBoxes.none { android.graphics.RectF.intersects(it,rect) }
                             }
-                            if(clearY!=null || selected) {
+                            if(clearY!=null || selected || f.id==highlightId) {
                             val centerY=clearY ?: labelY.first()
                             val origin=Offset(centerX-bubbleW/2f,centerY-labelHeightPx/2f)
                             occupiedLabelBoxes.add(android.graphics.RectF(origin.x,origin.y,origin.x+bubbleW,origin.y+labelHeightPx))
@@ -344,11 +519,10 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         }
                     }
                     drawIntoCanvas { cv ->
-                        val paint=AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {color=android.graphics.Color.rgb(155,184,201);textSize=12f;textAlign=AndroidPaint.Align.CENTER}
-                        cv.nativeCanvas.drawText(numberM(roomWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,paint)
+                        cv.nativeCanvas.drawText(numberM(roomWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
                         cv.nativeCanvas.save()
                         cv.nativeCanvas.rotate(-90f,topLeft.x-15f,topLeft.y+sizeFloor.height/2f)
-                        cv.nativeCanvas.drawText(numberM(roomHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,paint)
+                        cv.nativeCanvas.drawText(numberM(roomHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,rulerPaint)
                         cv.nativeCanvas.restore()
                     }
                     }
@@ -358,69 +532,105 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         Row(Modifier.padding(horizontal=10.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
                             Icon(Icons.Outlined.Layers,null,modifier=Modifier.size(13.dp),tint=Mint)
                             Spacer(Modifier.width(6.dp))
-                            Text("PIANTA IN SCALA",fontSize=9.sp,color=Mint,fontWeight=FontWeight.Bold,letterSpacing=.8.sp)
+                            Text(if(layer==MapLayer.NORMAL)"PIANTA IN SCALA" else layer.label.uppercase(Locale.ITALY),fontSize=9.sp,color=Mint,fontWeight=FontWeight.Bold,letterSpacing=.8.sp)
                         }
                     }
-                    Surface(shape=RoundedCornerShape(11.dp),color=PanelBg.copy(alpha=.96f)) {
-                        Text("${state.placements.size} strutture",Modifier.padding(horizontal=9.dp,vertical=9.dp),fontSize=9.sp,color=TextSecondary)
+                    if(colliding.isNotEmpty()) Surface(shape=RoundedCornerShape(11.dp),color=Danger.copy(alpha=.2f)) {
+                        Text("${colliding.size} sovrapposte",Modifier.padding(horizontal=9.dp,vertical=9.dp),fontSize=9.sp,color=Danger)
                     }
                 }
+                Row(Modifier.align(Alignment.TopEnd).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                    SmallFloatingControl(Icons.Outlined.Undo,"Annulla ${state.mapUndoLabel ?: ""}",enabled=state.mapUndoLabel!=null && !state.busy,onClick=model::undoMap)
+                    SmallFloatingControl(Icons.Outlined.Redo,"Ripeti ${state.mapRedoLabel ?: ""}",enabled=state.mapRedoLabel!=null && !state.busy,onClick=model::redoMap)
+                }
                 Column(Modifier.align(Alignment.CenterEnd).padding(end=10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    SmallFloatingControl(Icons.Outlined.Add,"Zoom +",{zoom=(zoom*1.25f).coerceAtMost(4f)})
-                    SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",{zoom=(zoom/1.25f).coerceAtLeast(.7f)})
-                    SmallFloatingControl(Icons.Outlined.CenterFocusStrong,"Inquadra tutto",{zoom=1f;panX=0f;panY=0f})
+                    SmallFloatingControl(Icons.Outlined.Add,"Zoom +",onClick={zoom=(zoom*1.25f).coerceAtMost(4f)})
+                    SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",onClick={zoom=(zoom/1.25f).coerceAtLeast(.7f)})
+                    SmallFloatingControl(Icons.Outlined.CenterFocusStrong,"Inquadra tutto",onClick={zoom=1f;panX=0f;panY=0f})
                 }
                 Surface(Modifier.align(Alignment.BottomStart).padding(10.dp),shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.96f)) {
-                    Text(when(mode){
-                        EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else "Tocca per continuare le pareti · Fine per chiudere"
-                        EditorTool.FURNITURE -> "Tocca una struttura; trascina solo se sbloccata"
-                        EditorTool.VIEW -> "Sposta la pianta trascinando lo sfondo"
+                    Text(when{
+                        state.locationPickItemIds!=null -> "Trascina per spostarti, tocca una struttura per sceglierla"
+                        layer!=MapLayer.NORMAL && mode==EditorTool.VIEW -> layer.legend+if(layer!=MapLayer.EMPTY) " · rosso = massimo" else ""
+                        mode==EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else "Tocca per continuare le pareti · Fine per chiudere"
+                        mode==EditorTool.FURNITURE -> "Tocca una struttura; trascina solo se sbloccata"
+                        else -> "Tocca una struttura per il contenuto, una parete per misurarla"
                     },Modifier.padding(horizontal=11.dp,vertical=8.dp),fontSize=10.sp,color=TextSecondary)
                 }
             }
         }
-        Row(Modifier.padding(horizontal=14.dp),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
-            if(mode==EditorTool.WALL){
-                FilterChip(selected=snapGrid,onClick={snapGrid=!snapGrid},label={Text("Griglia 25 cm",fontSize=11.sp)},leadingIcon={Icon(Icons.Outlined.GridOn,null,Modifier.size(15.dp))})
-                FilterChip(selected=orthogonal,onClick={orthogonal=!orthogonal},label={Text("90°",fontSize=11.sp)})
-                if(wallAnchor!=null)TextButton(onClick={wallAnchor=null;draftEnd=null}){Text("Fine",fontSize=12.sp)}
-            }else{
-                FilterChip(selected=showGrid,onClick={showGrid=!showGrid},label={Text("Griglia",fontSize=11.sp)})
-                FilterChip(selected=showLabels,onClick={showLabels=!showLabels},label={Text("Nomi",fontSize=11.sp)})
-                Spacer(Modifier.weight(1f))
-                Text("${(zoom*100).toInt()}%",color=Mint,fontSize=11.sp,fontWeight=FontWeight.Bold)
+        if(selectedWall!=null && mode!=EditorTool.WALL) {
+            Surface(Modifier.fillMaxWidth().padding(horizontal=12.dp),shape=RoundedCornerShape(16.dp),color=PanelBg,border=BorderStroke(1.dp,Amber.copy(alpha=.4f))) {
+                Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Parete · ${numberM(PlanGeometry.wallLength(selectedWall))}",fontSize=13.sp,fontWeight=FontWeight.Bold)
+                        Text(if(selectedWall.source=="ar")"Rilevata con AR" else "Disegnata a mano",fontSize=10.sp,color=TextSecondary)
+                    }
+                    TextButton(onClick={wallLengthFor=selectedWall.id}){Text("Lunghezza")}
+                    IconButton(onClick={model.deleteWall(selectedWall.id);selectedWallId=null}){Icon(Icons.Outlined.DeleteOutline,"Elimina parete",tint=Danger)}
+                    IconButton(onClick={selectedWallId=null}){Icon(Icons.Outlined.Close,"Chiudi")}
+                }
             }
+        }
+        Row(Modifier.padding(horizontal=14.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
+            when(mode) {
+                EditorTool.WALL -> {
+                    FilterChip(selected=snapGrid,onClick={snapGrid=!snapGrid},label={Text("Griglia 25 cm",fontSize=11.sp)},leadingIcon={Icon(Icons.Outlined.GridOn,null,Modifier.size(15.dp))})
+                    FilterChip(selected=orthogonal,onClick={orthogonal=!orthogonal},label={Text("90°",fontSize=11.sp)})
+                    if(wallAnchor!=null)TextButton(onClick={wallAnchor=null;draftEnd=null}){Text("Fine",fontSize=12.sp)}
+                }
+                EditorTool.FURNITURE -> {
+                    FilterChip(selected=snapGrid,onClick={snapGrid=!snapGrid},label={Text("Griglia",fontSize=11.sp)})
+                    FilterChip(selected=magnet,onClick={magnet=!magnet},label={Text("Magnete",fontSize=11.sp)})
+                    FilterChip(selected=showLabels,onClick={showLabels=!showLabels},label={Text("Nomi",fontSize=11.sp)})
+                }
+                EditorTool.VIEW -> {
+                    MapLayer.entries.forEach { option ->
+                        if(option==MapLayer.NORMAL) FilterChip(selected=layer==option,onClick={layer=option},label={Text(option.label,fontSize=11.sp)})
+                        else FilterChip(selected=layer==option,onClick={layer=option},label={Text(option.label,fontSize=11.sp)},
+                            leadingIcon={Icon(Icons.Outlined.Palette,null,Modifier.size(14.dp))})
+                    }
+                    FilterChip(selected=showGrid,onClick={showGrid=!showGrid},label={Text("Griglia",fontSize=11.sp)})
+                    FilterChip(selected=showLabels,onClick={showLabels=!showLabels},label={Text("Nomi",fontSize=11.sp)})
+                }
+            }
+            Text("${(zoom*100).toInt()}%",color=Mint,fontSize=11.sp,fontWeight=FontWeight.Bold)
         }
         if(mode==EditorTool.WALL){
             Row(Modifier.padding(horizontal=14.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("${walls.size} pareti · ${manualWalls.size} disegnate",fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
                 if(manualWalls.isNotEmpty()) TextButton(onClick={wallAnchor=null;draftEnd=null;model.deleteWall(manualWalls.last().id)}) {
-                    Icon(Icons.Outlined.Undo,null,Modifier.size(15.dp));Spacer(Modifier.width(4.dp));Text("Annulla ultima",fontSize=11.sp)
+                    Icon(Icons.Outlined.Undo,null,Modifier.size(15.dp));Spacer(Modifier.width(4.dp));Text("Elimina ultima",fontSize=11.sp)
                 }
             }
         }else if(mode==EditorTool.FURNITURE){
             if(placement==null){
                 Button(onClick={showNewObject=true},modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp),shape=RoundedCornerShape(14.dp)){
-                    Icon(Icons.Outlined.Add,null);Spacer(Modifier.width(8.dp));Text("Inserisci struttura nella pianta")
+                    Icon(Icons.Outlined.Add,null);Spacer(Modifier.width(8.dp));Text("Inserisci struttura dove stai guardando")
                 }
             }else{
-                Surface(Modifier.fillMaxWidth().padding(horizontal=12.dp),shape=RoundedCornerShape(16.dp),color=PanelBg,border=BorderStroke(1.dp,Mint.copy(alpha=.24f))){
-                    Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-                        Box(Modifier.size(39.dp).background(floorColor(placement.kind).copy(alpha=.27f),RoundedCornerShape(10.dp)),contentAlignment=Alignment.Center){
-                            Icon(Icons.Outlined.Warehouse,null,tint=Mint,modifier=Modifier.size(22.dp))
+                val overlaps=PlanGeometry.collisions(placement,state.placements)
+                Surface(Modifier.fillMaxWidth().padding(horizontal=12.dp),shape=RoundedCornerShape(16.dp),color=PanelBg,border=BorderStroke(1.dp,(if(overlaps.isEmpty())Mint else Danger).copy(alpha=.3f))){
+                    Column(Modifier.padding(horizontal=12.dp,vertical=8.dp)) {
+                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f)){
+                                Text(placement.label,fontSize=13.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                Text("${placement.kind} · ${numberM(placement.width)} × ${numberM(placement.depth)}"+
+                                    (if(placement.holdsStock)" · ${mapItems[placement.id]?.size?:0} articoli" else ""),fontSize=10.sp,color=TextSecondary)
+                            }
+                            IconButton(onClick={model.lockPlacement(placement.id,!placement.locked)}) {Icon(if(placement.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,"Blocco",tint=if(placement.locked)Amber else Mint)}
+                            IconButton(onClick={model.duplicatePlacement(placement.id)}) {Icon(Icons.Outlined.ContentCopy,"Duplica",tint=Sky)}
+                            IconButton(onClick={showRowFor=placement.id}) {Icon(Icons.Outlined.ViewWeek,"Crea in fila",tint=Sky)}
+                            IconButton(onClick={detailsId=placement.id}) {Icon(Icons.Outlined.Tune,"Modifica",tint=Sky)}
                         }
-                        Column(Modifier.weight(1f)){
-                            Text(placement.label,fontSize=13.sp,fontWeight=FontWeight.Bold,maxLines=1)
-                            Text("${numberM(placement.width)} × ${numberM(placement.depth)} · ${mapItems[placement.id]?.size?:0} articoli",fontSize=10.sp,color=TextSecondary)
-                        }
-                        IconButton(onClick={model.lockPlacement(placement.id,!placement.locked)}) {Icon(if(placement.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,"Blocco",tint=if(placement.locked)Amber else Mint)}
-                        IconButton(onClick={detailsId=placement.id}) {Icon(Icons.Outlined.Tune,"Modifica",tint=Sky)}
+                        if(overlaps.isNotEmpty()) Text("⚠ Si sovrappone a ${overlaps.joinToString{it.label}}",fontSize=11.sp,color=Danger)
                     }
                 }
             }
         }else{
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).padding(bottom=3.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("",modifier=Modifier.weight(1f))
+                Text("${state.placements.count{it.holdsStock}} strutture · ${state.items.count{it.placementId==null}} articoli senza ubicazione",
+                    fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
                 OutlinedButton(onClick=onAr,shape=RoundedCornerShape(13.dp)) {
                     Icon(Icons.Outlined.CameraAlt,null,Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Rilievo AR")
                 }
@@ -431,18 +641,41 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
         model.resizeMap(w,h);showDimensions=false;zoom=1f;panX=0f;panY=0f
     }
     if(showNewObject)CreatePlacementDialog({showNewObject=false}){kind,label->
-        model.addPlacement(kind,label);showNewObject=false
+        val at=viewCentre()
+        model.addPlacement(kind,label,at.x,at.y);showNewObject=false
     }
+    showRowFor?.let { id -> state.placements.firstOrNull{it.id==id}?.let { p ->
+        PlacementRowDialog(p,onClose={showRowFor=null}) { count,gap,vertical -> model.createPlacementRow(p.id,count,gap,vertical);showRowFor=null }
+    } }
+    wallLengthFor?.let { id -> state.walls.firstOrNull{it.id==id}?.let { wall ->
+        WallLengthDialog(wall,onClose={wallLengthFor=null}) { length -> model.setWallLength(wall.id,length);wallLengthFor=null }
+    } }
+    pickPositionFor?.let { id -> state.placements.firstOrNull{it.id==id}?.let { p ->
+        PositionDialog(p,"Scegli la posizione",onClose={pickPositionFor=null}) { level,slot ->
+            model.completeLocationPick(p.id,level,slot);pickPositionFor=null
+        }
+    } }
+    qrFor?.let { id -> state.placements.firstOrNull{it.id==id}?.let { p -> PlacementQrDialog(p,state.items,onDismiss={qrFor=null}) } }
     detailsId?.let { id ->
         state.placements.firstOrNull{it.id==id}?.let { f ->
-            PlacementDetailDialog(f,state.items,model,onDismiss={detailsId=null})
+            PlacementDetailDialog(f,state.items,model,onQr={qrFor=f.id},onDismiss={detailsId=null})
         }
     }
 }
 
-@Composable private fun SmallFloatingControl(icon:androidx.compose.ui.graphics.vector.ImageVector,description:String,onClick:()->Unit){
+@Composable private fun SmallFloatingControl(icon:androidx.compose.ui.graphics.vector.ImageVector,description:String,enabled:Boolean=true,onClick:()->Unit){
     Surface(shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.97f),border=BorderStroke(1.dp,Color.White.copy(alpha=.1f))){
-        IconButton(onClick=onClick,modifier=Modifier.size(38.dp)){Icon(icon,description,tint=TextPrimary,modifier=Modifier.size(18.dp))}
+        IconButton(onClick=onClick,enabled=enabled,modifier=Modifier.size(38.dp)){Icon(icon,description,tint=if(enabled)TextPrimary else TextSecondary.copy(alpha=.4f),modifier=Modifier.size(18.dp))}
+    }
+}
+
+/** Compact −/+ control; [none] shows "—" for value 0 when the field is optional. */
+@Composable fun Stepper(label:String,value:Int,range:IntRange,none:Boolean=false,onChange:(Int)->Unit) {
+    Row(verticalAlignment=Alignment.CenterVertically) {
+        Text(label,fontSize=12.sp,color=TextSecondary,modifier=Modifier.weight(1f))
+        IconButton(onClick={onChange((value-1).coerceIn(range))},enabled=value>range.first) {Icon(Icons.Outlined.Remove,"Diminuisci $label")}
+        Text(if(none&&value==0)"—" else value.toString(),fontWeight=FontWeight.Bold,fontSize=16.sp,modifier=Modifier.widthIn(min=28.dp))
+        IconButton(onClick={onChange((value+1).coerceIn(range))},enabled=value<range.last) {Icon(Icons.Outlined.Add,"Aumenta $label")}
     }
 }
 
@@ -454,8 +687,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     AlertDialog(onDismissRequest=onClose,title={Text("Dimensioni della pianta")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("Imposta le dimensioni reali del garage o del magazzino. Modificarle cambia il confine della pianta, senza riscalare gli oggetti esistenti.",fontSize=12.sp,color=TextSecondary)
-            OutlinedTextField(value=w,onValueChange={w=it},label={Text("Larghezza (metri)")},singleLine=true)
-            OutlinedTextField(value=h,onValueChange={h=it},label={Text("Profondità (metri)")},singleLine=true)
+            Input(w,{w=it},"Larghezza (metri)",number=true)
+            Input(h,{h=it},"Profondità (metri)",number=true)
         }
     },confirmButton={TextButton(onClick={onSave(parsedW!!,parsedH!!)},enabled=parsedW!=null&&parsedW in 2f..150f&&parsedH!=null&&parsedH in 2f..150f){Text("Applica")}},dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
@@ -463,31 +696,97 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
 @Composable private fun CreatePlacementDialog(onCancel:()->Unit,onCreate:(String,String)->Unit){
     var kind by remember{mutableStateOf("Scaffale")};var label by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=onCancel,title={Text("Nuova struttura")},text={
-        Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Scegli l'elemento. Appare al centro della pianta con dimensioni modificabili e puoi trascinarlo prima di bloccarlo.",color=TextSecondary,fontSize=12.sp)
-            listOf("Scaffale","Armadio","Cassetto","Banco","Area").chunked(3).forEach{ group ->
+        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Text("Appare al centro di ciò che stai guardando, con dimensioni modificabili. Trascinala prima di bloccarla.",color=TextSecondary,fontSize=12.sp)
+            Text("CONTENGONO ARTICOLI",fontSize=10.sp,color=Mint,fontWeight=FontWeight.Bold)
+            PlacementKinds.storage.chunked(3).forEach{ group ->
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){group.forEach{v ->
                     FilterChip(selected=kind==v,onClick={kind=v},label={Text(v,fontSize=11.sp)})
                 }}
             }
-            OutlinedTextField(value=label,onValueChange={label=it},label={Text("Nome / ubicazione")},singleLine=true,modifier=Modifier.fillMaxWidth())
+            Text("RIFERIMENTI IN PIANTA",fontSize=10.sp,color=Sky,fontWeight=FontWeight.Bold)
+            Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){PlacementKinds.landmarks.forEach{v ->
+                FilterChip(selected=kind==v,onClick={kind=v},label={Text(v,fontSize=11.sp)})
+            }}
+            OutlinedTextField(value=label,onValueChange={label=it.take(80)},label={Text(if(kind in PlacementKinds.landmarks)"Nome (es. Ingresso)" else "Nome / ubicazione")},singleLine=true,modifier=Modifier.fillMaxWidth())
         }
     },confirmButton={TextButton(onClick={onCreate(kind,label.trim())},enabled=label.isNotBlank()){Text("Crea")}},dismissButton={TextButton(onClick=onCancel){Text("Annulla")}})
 }
 
-@Composable private fun PlacementDetailDialog(p:Placement,items:List<StockItem>,model:StockViewModel,onDismiss:()->Unit){
+@Composable private fun PlacementRowDialog(p:Placement,onClose:()->Unit,onCreate:(Int,Float,Boolean)->Unit){
+    var count by remember{mutableIntStateOf(3)}
+    var gap by remember{mutableStateOf("1")}
+    var vertical by remember{mutableStateOf(false)}
+    val gapValue=gap.replace(',','.').toFloatOrNull()
+    var preview=p.label
+    val names=(1..count).map{ preview=PlanGeometry.nextLabel(preview);preview }
+    AlertDialog(onDismissRequest=onClose,title={Text("Crea in fila")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("Copie di «${p.label}» con stessa forma e ripiani, una dopo l'altra.",fontSize=12.sp,color=TextSecondary)
+            Stepper("Copie",count,1..50){count=it}
+            Input(gap,{gap=it},"Distanza tra le strutture (m)",number=true)
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected=!vertical,onClick={vertical=false},label={Text("Verso destra")})
+                FilterChip(selected=vertical,onClick={vertical=true},label={Text("Verso il basso")})
+            }
+            Text("Nomi: ${names.take(4).joinToString()}${if(names.size>4)" … ${names.last()}" else ""}",fontSize=11.sp,color=TextSecondary)
+        }
+    },confirmButton={TextButton(onClick={onCreate(count,gapValue!!,vertical)},enabled=gapValue!=null&&gapValue in 0f..20f){Text("Crea ${count}")}},
+        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+}
+
+@Composable private fun WallLengthDialog(wall:Wall,onClose:()->Unit,onSave:(Float)->Unit){
+    var value by remember{mutableStateOf(String.format(Locale.ITALY,"%.2f",PlanGeometry.wallLength(wall)))}
+    val parsed=value.replace(',','.').toFloatOrNull()
+    AlertDialog(onDismissRequest=onClose,title={Text("Lunghezza parete")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("Il punto iniziale e la direzione restano invariati.",fontSize=12.sp,color=TextSecondary)
+            Input(value,{value=it},"Lunghezza (metri)",number=true)
+        }
+    },confirmButton={TextButton(onClick={onSave(parsed!!)},enabled=parsed!=null&&parsed in .2f..150f){Text("Applica")}},
+        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+}
+
+/** Level/position choice; 0 = not specified. */
+@Composable fun PositionDialog(p:Placement,title:String,onClose:()->Unit,onConfirm:(Int?,Int?)->Unit){
+    var level by remember{mutableIntStateOf(0)}
+    var slot by remember{mutableIntStateOf(0)}
+    AlertDialog(onDismissRequest=onClose,title={Text(title)},text={
+        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text(p.label,fontWeight=FontWeight.Bold)
+            if(p.levels>1) Stepper("Ripiano",level,0..p.levels,none=true){level=it}
+            if(p.slots>1) Stepper("Posizione",slot,0..p.slots,none=true){slot=it}
+            Text("«—» = solo la struttura, senza ripiano o posizione precisa.",fontSize=11.sp,color=TextSecondary)
+        }
+    },confirmButton={TextButton(onClick={onConfirm(level.takeIf{it>0},slot.takeIf{it>0})}){Text("Conferma")}},
+        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+}
+
+@Composable private fun PlacementDetailDialog(p:Placement,items:List<StockItem>,model:StockViewModel,onQr:()->Unit,onDismiss:()->Unit){
     var articleQuery by remember(p.id){mutableStateOf("")}
     var askDelete by remember {mutableStateOf(false)}
+    var name by remember(p.id,p.label){mutableStateOf(p.label)}
     var w by remember(p.id,p.width){mutableStateOf("${p.width}")}
     var d by remember(p.id,p.depth){mutableStateOf("${p.depth}")}
     var angle by remember(p.id,p.rotation){mutableFloatStateOf(p.rotation)}
+    var levels by remember(p.id,p.levels){mutableIntStateOf(p.levels)}
+    var slots by remember(p.id,p.slots){mutableIntStateOf(p.slots)}
+    var chosen by remember(p.id){mutableStateOf(setOf<Long>())}
+    var assignLevel by remember(p.id){mutableIntStateOf(0)}
+    var assignSlot by remember(p.id){mutableIntStateOf(0)}
     val wVal=w.replace(',','.').toFloatOrNull()
     val dVal=d.replace(',','.').toFloatOrNull()
     val valid=wVal!=null&&wVal in .2f..15f&&dVal!=null&&dVal in .2f..15f
-    val inside=items.filter{it.placementId==p.id && (it.name.contains(articleQuery,true)||it.sku.contains(articleQuery,true))}
-    val free=items.filter{it.placementId==null && (it.name.contains(articleQuery,true)||it.sku.contains(articleQuery,true))}
+    fun matches(item:StockItem)=item.name.contains(articleQuery,true)||item.sku.contains(articleQuery,true)
+    val inside=items.filter{it.placementId==p.id && matches(it)}
+        .sortedWith(compareBy({it.shelfLevel ?: 0},{it.shelfSlot ?: 0},{it.name.lowercase(Locale.ITALY)}))
+    val free=items.filter{it.placementId==null && matches(it)}
     AlertDialog(onDismissRequest=onDismiss,title={Text(p.label)},text={
-        Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(name,{name=it.take(80)},label={Text("Nome")},singleLine=true,modifier=Modifier.weight(1f))
+                TextButton(onClick={model.renamePlacement(p.id,name)},enabled=name.isNotBlank()&&name.trim()!=p.label){Text("Rinomina")}
+            }
             Surface(color=Surface2,shape=RoundedCornerShape(12.dp)) {
                 Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
                     Icon(if(p.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,null,tint=if(p.locked)Amber else Mint)
@@ -497,35 +796,62 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
             }
             Text("INGOMBRO IN PIANTA",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(w,{w=it},label={Text("Larghezza m")},singleLine=true,modifier=Modifier.weight(1f))
-                OutlinedTextField(d,{d=it},label={Text("Profondità m")},singleLine=true,modifier=Modifier.weight(1f))
+                Input(w,{w=it},"Larghezza m",Modifier.weight(1f),number=true)
+                Input(d,{d=it},"Profondità m",Modifier.weight(1f),number=true)
             }
             Text("Rotazione ${angle.toInt()}°",fontSize=12.sp,color=TextSecondary)
             Slider(value=angle,onValueChange={angle=it},valueRange=0f..270f,steps=2)
             Button(onClick={model.resizePlacement(p.id,wVal!!,dVal!!,angle)},enabled=valid,modifier=Modifier.fillMaxWidth()) {Text("Aggiorna dimensioni e rotazione")}
-            Text("ARTICOLI COLLEGATI · ${inside.size}",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
-            Input(articleQuery,{articleQuery=it},"Cerca articolo o codice")
-            if(inside.size>100 || free.size>100) Text("Mostrati i primi 100 risultati per elenco. Affina la ricerca.",fontSize=12.sp)
-            if(inside.isEmpty())Text("Ancora nessun articolo in questa ubicazione",color=TextSecondary,fontSize=12.sp)
-            inside.take(100).forEach{item ->
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                    Column(Modifier.weight(1f)){
-                        Text(item.name,fontSize=12.sp,maxLines=1)
-                        Text("${item.sku} · ${amount(item.quantity)} ${item.unit}",fontSize=10.sp,color=TextSecondary)
-                    }
-                    IconButton(onClick={model.assignItem(item.id,null)}){Icon(Icons.Outlined.RemoveCircleOutline,"Scollega",tint=Amber)}
+            if(!p.holdsStock) {
+                Text("${p.kind}: elemento di riferimento, non contiene articoli.",fontSize=12.sp,color=TextSecondary)
+            } else {
+                Text("RIPIANI E POSIZIONI",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
+                Stepper("Ripiani (dal basso)",levels,1..PlacementKinds.MAX_LEVELS){levels=it}
+                Stepper("Posizioni per ripiano",slots,1..PlacementKinds.MAX_SLOTS){slots=it}
+                if(levels!=p.levels||slots!=p.slots) Button(onClick={model.updatePlacementLayout(p.id,levels,slots)},modifier=Modifier.fillMaxWidth()) {
+                    Text("Applica ${levels} × ${slots}")
                 }
-            }
-            if(free.isNotEmpty()){
-                Text("ASSEGNA ARTICOLI",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
-                free.take(100).forEach{item->
-                    TextButton(onClick={model.assignItem(item.id,p.id)},modifier=Modifier.fillMaxWidth()){
-                        Text("+ ${item.name}",maxLines=1,modifier=Modifier.weight(1f))
+                OutlinedButton(onClick=onQr,modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.QrCode2,null);Spacer(Modifier.width(8.dp));Text("Etichetta QR della struttura")
+                }
+                Text("ARTICOLI COLLEGATI · ${items.count{it.placementId==p.id}}",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
+                Input(articleQuery,{articleQuery=it},"Cerca articolo o codice")
+                if(inside.size>100 || free.size>100) Text("Mostrati i primi 100 risultati per elenco. Affina la ricerca.",fontSize=12.sp)
+                if(inside.isEmpty())Text("Nessun articolo in questa ubicazione",color=TextSecondary,fontSize=12.sp)
+                inside.take(100).forEach{item ->
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                        Column(Modifier.weight(1f)){
+                            Text(item.name,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            Text(listOf(item.sku,"${amount(item.quantity)} ${item.unit}",Locations.code(item.shelfLevel,item.shelfSlot))
+                                .filter{it.isNotBlank()}.joinToString(" · "),fontSize=10.sp,color=if(item.lowStock)Amber else TextSecondary)
+                        }
+                        IconButton(onClick={model.assignItem(item.id,null)}){Icon(Icons.Outlined.RemoveCircleOutline,"Scollega",tint=Amber)}
+                    }
+                }
+                if(free.isNotEmpty()){
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("ASSEGNA ARTICOLI SENZA UBICAZIONE",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.weight(1f))
+                        TextButton(onClick={chosen=if(chosen.size==free.take(100).size) emptySet() else free.take(100).map{it.id}.toSet()}) {
+                            Text(if(chosen.isNotEmpty()&&chosen.size==free.take(100).size)"Nessuno" else "Tutti",fontSize=11.sp)
+                        }
+                    }
+                    free.take(100).forEach{item->
+                        Row(Modifier.fillMaxWidth().clickable{chosen=if(item.id in chosen) chosen-item.id else chosen+item.id},verticalAlignment=Alignment.CenterVertically){
+                            Checkbox(checked=item.id in chosen,onCheckedChange={on->chosen=if(on) chosen+item.id else chosen-item.id})
+                            Text("${item.name} · ${item.sku}",fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        }
+                    }
+                    if(p.levels>1) Stepper("Ripiano",assignLevel,0..p.levels,none=true){assignLevel=it}
+                    if(p.slots>1) Stepper("Posizione",assignSlot,0..p.slots,none=true){assignSlot=it}
+                    Button(onClick={
+                        model.assignItems(chosen.toList(),p.id,assignLevel.takeIf{it>0},assignSlot.takeIf{it>0});chosen=emptySet()
+                    },enabled=chosen.isNotEmpty(),modifier=Modifier.fillMaxWidth()) {
+                        Text(if(chosen.size<=1)"Assegna articolo" else "Assegna ${chosen.size} articoli")
                     }
                 }
             }
             TextButton(onClick={askDelete=true}) {Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(5.dp));Text("Elimina struttura",color=Danger)}
         }
     },confirmButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
-    if(askDelete)AlertDialog(onDismissRequest={askDelete=false},title={Text("Eliminare ${p.label}?")},text={Text("Gli articoli rimangono nell'inventario senza ubicazione.")},confirmButton={TextButton(onClick={model.deletePlacement(p.id);askDelete=false;onDismiss()}){Text("Elimina",color=Danger)}},dismissButton={TextButton(onClick={askDelete=false}){Text("Annulla")}})
+    if(askDelete)AlertDialog(onDismissRequest={askDelete=false},title={Text("Eliminare ${p.label}?")},text={Text("Gli articoli rimangono nell'inventario senza ubicazione. Puoi annullare con il pulsante ↶ sulla mappa.")},confirmButton={TextButton(onClick={model.deletePlacement(p.id);askDelete=false;onDismiss()}){Text("Elimina",color=Danger)}},dismissButton={TextButton(onClick={askDelete=false}){Text("Annulla")}})
 }

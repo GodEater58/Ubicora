@@ -1,6 +1,28 @@
 // Shared browser domain logic. No network, DOM or implicit side effects.
 export const uid=()=>crypto.randomUUID();
-export const empty=()=>({format:'ubicora-web-1',warehouses:[],items:[],movements:[],placements:[],orders:[],reservations:[],works:[],budget:null});
+export const empty=()=>({format:'ubicora-web-1',warehouses:[],items:[],movements:[],placements:[],orders:[],reservations:[],works:[],walls:[],budget:null});
+const GRID=.25;
+export const snap=v=>Math.round(v/GRID)*GRID;
+const clamp=(v,min,max)=>Math.min(Math.max(v,min),Math.max(min,max));
+/**
+ * 1.0.4: items link to structures by ID (renaming a structure no longer breaks the link) and the
+ * plan stores walls. Older archives are upgraded in place: walls start empty, and items are linked
+ * to the structure whose name matches their location text (only when the match is unique).
+ */
+export function upgrade(s){
+ if(!s||s.format!=='ubicora-web-1')return s;
+ if(s.walls===undefined)s.walls=[];
+ if(Array.isArray(s.items)&&Array.isArray(s.placements))for(const i of s.items){
+  if(i&&typeof i==='object'&&i.placementId===undefined){
+   const matches=s.placements.filter(p=>p&&p.warehouseId===i.warehouseId&&p.name===i.location);
+   i.placementId=matches.length===1?matches[0].id:null;
+  }
+ }
+ return s;
+}
+export function nextLabel(label){const t=String(label).trim();let m=t.match(/^(.*?)([0-9]+)$/);if(m)return m[1]+String(BigInt(m[2])+1n).padStart(m[2].length,'0');
+ m=t.match(/^(.*?[^A-Za-z])?([A-Ya-y])$/);if(m)return (m[1]??'')+String.fromCharCode(m[2].charCodeAt(0)+1);return t+' 2';}
+const placementByName=(s,wid,location)=>{const m=s.placements.filter(p=>p.warehouseId===wid&&p.name===String(location??'').trim());return m.length===1?m[0].id:null;};
 export const number=(v,min=0)=>{const n=Number(String(v).replace(',','.'));if(String(v).trim()===''||!Number.isFinite(n)||n<min||n>1e12)throw Error('Inserisci un numero valido');return n;};
 export const optional=v=>String(v??'').trim()===''?null:number(v);
 export const reserved=(s,id)=>s.reservations.filter(r=>r.itemId===id&&r.status==='ACTIVE').reduce((a,r)=>a+r.quantity,0);
@@ -15,8 +37,9 @@ const deliveryDays=v=>{if(v!==null&&(!Number.isInteger(v)||v<0||v>3650))throw Er
 const stamp=v=>{if(!Number.isSafeInteger(v)||v<0||v>8640000000000000)throw Error('Data non valida');};
 export function validate(s){
  if(!s||s.format!=='ubicora-web-1')throw Error('Formato non compatibile: usa un backup Ubicora Web');
- for(const key of ['warehouses','items','movements','placements','orders','reservations','works']){
-  if(!Array.isArray(s[key])||s[key].length>(key==='movements'?100000:key==='warehouses'?100:20000))throw Error('Archivio troppo grande o non valido');
+ upgrade(s);
+ for(const key of ['warehouses','items','movements','placements','orders','reservations','works','walls']){
+  if(!Array.isArray(s[key])||s[key].length>(key==='movements'?100000:key==='warehouses'?100:key==='walls'?5000:20000))throw Error('Archivio troppo grande o non valido');
   for(const x of s[key])if(!x||typeof x!=='object'||typeof x.id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x.id))throw Error('Identificativo non valido');
   if(new Set(s[key].map(x=>x.id.toLowerCase())).size!==s[key].length)throw Error('Identificativi duplicati');
  }
@@ -32,7 +55,11 @@ export function validate(s){
  for(const o of s.orders){storedNumber(o.quantity);positive(o.quantity);storedNumber(o.received);if(o.price!==null)storedNumber(o.price);stamp(o.at);storedText(o.supplier,160);if(o.received>o.quantity||!['DRAFT','APPROVED','ORDERED','RECEIVED','CANCELLED'].includes(o.status)||(o.status==='RECEIVED'&&o.received!==o.quantity))throw Error('Ordine non valido');}
  for(const w of s.warehouses){name(storedText(w.name,160));storedText(w.location,300);if(storedNumber(w.width)<2||w.width>150||storedNumber(w.depth)<2||w.depth>150)throw Error('Dimensioni: da 2 a 150 metri');}
  for(const m of s.movements){storedNumber(m.delta,-1e12);stamp(m.at);storedText(m.note,2000);if(!m.note.trim())throw Error('Motivo movimento mancante');}
- for(const p of s.placements){name(storedText(p.name,160));storedNumber(p.x);storedNumber(p.y);storedNumber(p.width);storedNumber(p.depth);positive(p.width);positive(p.depth);const w=warehouses.get(p.warehouseId);if(p.x+p.width>w.width||p.y+p.depth>w.depth)throw Error('La struttura esce dalla pianta');}
+ for(const p of s.placements){name(storedText(p.name,160));storedNumber(p.x);storedNumber(p.y);storedNumber(p.width);storedNumber(p.depth);positive(p.width);positive(p.depth);const w=warehouses.get(p.warehouseId);if(p.x+p.width>w.width+1e-6||p.y+p.depth>w.depth+1e-6)throw Error('La struttura esce dalla pianta');}
+ const placements=new Map(s.placements.map(p=>[p.id,p]));
+ for(const i of s.items)if(i.placementId!==null&&(typeof i.placementId!=='string'||placements.get(i.placementId)?.warehouseId!==i.warehouseId))throw Error('Ubicazione dell’articolo non valida');
+ for(const w of s.walls){const room=warehouses.get(w.warehouseId);if(!room)throw Error('Magazzino non valido');for(const k of ['x1','y1','x2','y2'])storedNumber(w[k]);
+  if(w.x1>room.width+1e-6||w.x2>room.width+1e-6||w.y1>room.depth+1e-6||w.y2>room.depth+1e-6||Math.hypot(w.x2-w.x1,w.y2-w.y1)<.2)throw Error('Parete non valida');}
  for(const w of s.works){name(storedText(w.machine,160));if(!storedText(w.description,2000).trim())throw Error('Descrivi il lavoro');storedNumber(w.quantity);if(storedNumber(w.hours)>100000)throw Error('Ore lavorate non valide');if(w.rate!==null&&storedNumber(w.rate)>1e9)throw Error('Tariffa non valida');if(w.partsCost!==null)storedNumber(w.partsCost);stamp(w.at);if(w.completedAt!==null)stamp(w.completedAt);if(!['OPEN','DONE','CANCELLED'].includes(w.status)||(w.status==='DONE'&&w.completedAt===null))throw Error('Intervento non valido');}
  if(s.budget!==null)storedNumber(s.budget);return s;
 }
@@ -47,11 +74,12 @@ export function apply(state,action,at=Date.now()){
  switch(a.type){
  case 'warehouse':s.warehouses.push({id:uid(),name:name(a.name),location:String(a.location??'').trim(),width:number(a.width??12),depth:number(a.depth??8)});break;
  case 'item':{
-  find(s.warehouses,a.warehouseId);const item={id:uid(),warehouseId:a.warehouseId,sku:name(a.sku),name:name(a.name),category:String(a.category||'Ricambi').trim(),unit:name(a.unit||'pz'),quantity:number(a.quantity),minimum:number(a.minimum||0),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim()};
+  find(s.warehouses,a.warehouseId);const item={id:uid(),warehouseId:a.warehouseId,sku:name(a.sku),name:name(a.name),category:String(a.category||'Ricambi').trim(),unit:name(a.unit||'pz'),quantity:number(a.quantity),minimum:number(a.minimum||0),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim(),placementId:null};
+  item.placementId=placementByName(s,item.warehouseId,item.location);
   if(item.leadDays!==null&&(!Number.isInteger(item.leadDays)||item.leadDays>3650))throw Error('Giorni di consegna non validi');
   s.items.push(item);if(item.quantity)s.movements.unshift({id:uid(),itemId:item.id,delta:item.quantity,note:'Giacenza iniziale',at});break;
  }
- case 'edit':{const i=find(s.items,a.id);Object.assign(i,{name:name(a.name),category:String(a.category||'Ricambi').trim(),minimum:number(a.minimum),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim()});break;}
+ case 'edit':{const i=find(s.items,a.id);Object.assign(i,{name:name(a.name),category:String(a.category||'Ricambi').trim(),minimum:number(a.minimum),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim()});i.placementId=placementByName(s,i.warehouseId,i.location);break;}
  case 'move':{if(!['in','out','count'].includes(a.kind))throw Error('Tipo movimento non valido');const i=find(s.items,a.id);const q=a.kind==='count'?number(a.quantity):positive(a.quantity);move(s,i,a.kind==='in'?q:a.kind==='out'?-q:q-i.quantity,a.note,at);break;}
  case 'reserve':{const i=find(s.items,a.id),q=positive(a.quantity);if(q>available(s,i)+1e-7)throw Error('Quantità disponibile insufficiente');if(String(a.reference).trim().length<3)throw Error('Indica la commessa o attività');s.reservations.push({id:uid(),itemId:i.id,quantity:q,reference:String(a.reference).trim(),status:'ACTIVE',at});break;}
  case 'reservation':{const r=find(s.reservations,a.id);if(r.status!=='ACTIVE')throw Error('Prenotazione già chiusa');r.status=a.consume?'CONSUMED':'RELEASED';if(a.consume)move(s,find(s.items,r.itemId),-r.quantity,'Consumo prenotazione: '+r.reference,at);break;}
@@ -61,8 +89,19 @@ export function apply(state,action,at=Date.now()){
  case 'receive':{const o=find(s.orders,a.id);if(o.status!=='ORDERED')throw Error('Ordine non inviato o già chiuso');const q=positive(a.quantity);if(q>o.quantity-o.received+1e-7)throw Error('Arrivo superiore al residuo');const residual=o.quantity-o.received,applied=Math.min(q,residual);if(applied<=0)throw Error('Ordine già ricevuto');move(s,find(s.items,o.itemId),applied,'Ricezione ordine '+o.id.slice(0,8),at);o.received=applied===residual?o.quantity:Math.min(o.quantity,o.received+applied);if(o.received===o.quantity)o.status='RECEIVED';break;}
  case 'work':{find(s.warehouses,a.warehouseId);const item=a.id?find(s.items,a.id):null;s.works.unshift({id:uid(),warehouseId:a.warehouseId,machine:name(a.machine),description:String(a.description).trim(),itemId:item?.id??null,quantity:item?positive(a.quantity):0,hours:number(a.hours||0),rate:optional(a.rate),partsCost:null,status:'OPEN',at,completedAt:null});if(!s.works[0].description)throw Error('Descrivi il lavoro');break;}
  case 'finish':{const w=find(s.works,a.id);if(w.status!=='OPEN')throw Error('Intervento già chiuso');w.status=a.cancel?'CANCELLED':'DONE';if(!a.cancel){const i=w.itemId?find(s.items,w.itemId):null;if(i)move(s,i,-w.quantity,'Manutenzione: '+w.machine,at);w.partsCost=i?(i.cost===null?null:i.cost*w.quantity):0;w.completedAt=at;}break;}
- case 'placement':{const w=find(s.warehouses,a.warehouseId);const p={id:uid(),warehouseId:w.id,name:name(a.name),x:number(a.x),y:number(a.y),width:positive(a.width),depth:positive(a.depth)};if(p.x+p.width>w.width||p.y+p.depth>w.depth)throw Error('La struttura esce dalla pianta');s.placements.push(p);break;}
- case 'removePlacement':{const p=find(s.placements,a.id);s.placements=s.placements.filter(x=>x.id!==p.id);break;}
+ case 'placement':{const w=find(s.warehouses,a.warehouseId);const p={id:uid(),warehouseId:w.id,name:name(a.name),x:number(a.x),y:number(a.y),width:positive(a.width),depth:positive(a.depth)};if(p.x+p.width>w.width+1e-6||p.y+p.depth>w.depth+1e-6)throw Error('La struttura esce dalla pianta');s.placements.push(p);break;}
+ case 'movePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);p.x=clamp(snap(number(a.x,-1e12)),0,w.width-p.width);p.y=clamp(snap(number(a.y,-1e12)),0,w.depth-p.depth);break;}
+ case 'resizePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);const width=positive(a.width),depth=positive(a.depth);if(width<.2||depth<.2||width>w.width||depth>w.depth)throw Error('Dimensioni: da 0,2 m fino alla pianta');p.width=width;p.depth=depth;p.x=clamp(p.x,0,w.width-width);p.y=clamp(p.y,0,w.depth-depth);break;}
+ case 'rotatePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);if(p.depth>w.width||p.width>w.depth)throw Error('Ruotata non entrerebbe nella pianta');const cx=p.x+p.width/2,cy=p.y+p.depth/2;[p.width,p.depth]=[p.depth,p.width];p.x=clamp(cx-p.width/2,0,w.width-p.width);p.y=clamp(cy-p.depth/2,0,w.depth-p.depth);break;}
+ case 'renamePlacement':{const p=find(s.placements,a.id),next=name(a.name);if(s.placements.some(x=>x.id!==p.id&&x.warehouseId===p.warehouseId&&x.name===next))throw Error('Esiste già una struttura con questo nome');for(const i of s.items)if(i.placementId===p.id)i.location=next;p.name=next;break;}
+ case 'duplicatePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);let label=nextLabel(p.name);while(s.placements.some(x=>x.warehouseId===w.id&&x.name===label))label=nextLabel(label);
+  const x=p.x+p.width+.25<=w.width-p.width?p.x+p.width+.25:p.x,y=x===p.x?Math.min(p.y+p.depth+.25,w.depth-p.depth):p.y;s.placements.push({...p,id:uid(),name:label,x:snap(x),y:snap(y)});break;}
+ case 'assignPlacement':{const target=a.placementId?find(s.placements,a.placementId):null;const ids=[...new Set(a.ids??[])];if(!ids.length)throw Error('Seleziona almeno un articolo');
+  for(const id of ids){const i=find(s.items,id);if(target&&target.warehouseId!==i.warehouseId)throw Error('Struttura di un’altra sede');i.placementId=target?.id??null;i.location=target?.name??'';}break;}
+ case 'wall':{const w=find(s.warehouses,a.warehouseId);const pts=['x1','y1','x2','y2'].map(k=>snap(number(a[k],-1e12)));const [x1,y1,x2,y2]=[clamp(pts[0],0,w.width),clamp(pts[1],0,w.depth),clamp(pts[2],0,w.width),clamp(pts[3],0,w.depth)];
+  if(Math.hypot(x2-x1,y2-y1)<.2)throw Error('Parete troppo corta (minimo 20 cm)');s.walls.push({id:uid(),warehouseId:w.id,x1,y1,x2,y2});break;}
+ case 'removeWall':{const wall=find(s.walls,a.id);s.walls=s.walls.filter(x=>x.id!==wall.id);break;}
+ case 'removePlacement':{const p=find(s.placements,a.id);for(const i of s.items)if(i.placementId===p.id){i.placementId=null;i.location='';}s.placements=s.placements.filter(x=>x.id!==p.id);break;}
  case 'budget':s.budget=optional(a.value);break;
  default:throw Error('Operazione sconosciuta');
  }return validate(s);
@@ -95,7 +134,7 @@ const unformula=v=>{v=String(v??'');return /^'[\s]*[=+@-]/.test(v)||/^'[\t\r]/.t
 export function importCsv(state,text,wid){
  find(state.warehouses,wid);const s=structuredClone(state),at=Date.now();
  for(const a of parseCsv(text)){
-  const i={id:uid(),warehouseId:wid,sku:name(unformula(a.sku)),name:unformula(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:unformula(a.supplier),leadDays:optional(a.leadDays),location:unformula(a.location),note:unformula(a.note)};
+  const i={id:uid(),warehouseId:wid,sku:name(unformula(a.sku)),name:unformula(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:unformula(a.supplier),leadDays:optional(a.leadDays),location:unformula(a.location),note:unformula(a.note),placementId:null};i.placementId=placementByName(s,wid,i.location);
   if(i.leadDays!==null&&(!Number.isInteger(i.leadDays)||i.leadDays>3650))throw Error('Giorni di consegna non validi');
   s.items.push(i);if(i.quantity)s.movements.push({id:uid(),itemId:i.id,delta:i.quantity,note:'Importazione inventario CSV Android',at});
  }return validate(s);
@@ -112,9 +151,9 @@ export function exportAndroidCsv(s,wid){
 }
 
 export function demo(){let s=empty();s=apply(s,{type:'warehouse',name:'Officina - esempio',location:'Archivio dimostrativo',width:12,depth:8});const wid=s.warehouses[0].id;
+ for(const [name,x,y,width,depth]of[['Scaffale A',1,1,3,.8],['Cassettiera B',6,1,2,.8],['Banco 1',1,5,2,1]])s=apply(s,{type:'placement',warehouseId:wid,name,x,y,width,depth});
  for(const [sku,name,q,min,c,loc]of[['CUS-000001','Cuscinetto 6204',26,5,8.5,'Scaffale A'],['SNS-000001','Sensore induttivo M12',3,5,24,'Cassettiera B'],['UTN-000001','Chiave dinamometrica',2,1,75,'Banco 1'],['RIC-000002','Cinghia T10',0,2,null,'Scaffale A']])s=apply(s,{type:'item',warehouseId:wid,sku,name,quantity:q,minimum:min,cost:c,location:loc,supplier:'Fornitore esempio'});
  s=apply(s,{type:'reserve',id:s.items[0].id,quantity:6,reference:'Manutenzione compressore'});
- for(const [name,x,y,width,depth]of[['Scaffale A',1,1,3,.8],['Cassettiera B',6,1,2,.8],['Banco 1',1,5,2,1]])s=apply(s,{type:'placement',warehouseId:wid,name,x,y,width,depth});
  return s;
 }
 

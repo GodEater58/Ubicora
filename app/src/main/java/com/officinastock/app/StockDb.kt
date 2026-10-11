@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 10) {
+class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 11) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -29,7 +29,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
             kind TEXT NOT NULL, label TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL,
             locked INTEGER NOT NULL DEFAULT 0,
-            width_m REAL NOT NULL DEFAULT 1.6, depth_m REAL NOT NULL DEFAULT 0.75, rotation_deg REAL NOT NULL DEFAULT 0)""")
+            width_m REAL NOT NULL DEFAULT 1.6, depth_m REAL NOT NULL DEFAULT 0.75, rotation_deg REAL NOT NULL DEFAULT 0,
+            levels INTEGER NOT NULL DEFAULT 1 CHECK(levels BETWEEN 1 AND 20),
+            slots INTEGER NOT NULL DEFAULT 1 CHECK(slots BETWEEN 1 AND 50))""")
         db.execSQL("""CREATE TABLE items (
             id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
             sku TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL,
@@ -39,6 +41,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             note TEXT NOT NULL DEFAULT '', photo_file TEXT DEFAULT NULL,
             unit_cost REAL DEFAULT NULL CHECK(unit_cost >= 0), supplier TEXT NOT NULL DEFAULT '',
             lead_days INTEGER DEFAULT NULL CHECK(lead_days >= 0 AND lead_days <= 3650),
+            shelf_level INTEGER DEFAULT NULL CHECK(shelf_level BETWEEN 1 AND 20),
+            shelf_slot INTEGER DEFAULT NULL CHECK(shelf_slot BETWEEN 1 AND 50),
             UNIQUE(warehouse_id,sku))""")
         db.execSQL("""CREATE TABLE movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -116,6 +120,22 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             // StockPlanningDb.createTables also adds missing maintenance fields idempotently.
         }
         if (oldVersion < 10 && newVersion >= 10) StockTraceDb.createTables(db)
+        if (oldVersion < 11 && newVersion >= 11) {
+            // 4.7: shelf levels and positions. Additive and idempotent: existing structures become
+            // 1 level x 1 position; columns already present (e.g. a re-run upgrade) are left alone.
+            fun addColumn(table: String, column: String, definition: String) {
+                val exists=db.rawQuery("PRAGMA table_info($table)",null).use { c ->
+                    var found=false
+                    while(c.moveToNext()) if(c.getString(1)==column) found=true
+                    found
+                }
+                if(!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+            }
+            addColumn("placements","levels","INTEGER NOT NULL DEFAULT 1 CHECK(levels BETWEEN 1 AND 20)")
+            addColumn("placements","slots","INTEGER NOT NULL DEFAULT 1 CHECK(slots BETWEEN 1 AND 50)")
+            addColumn("items","shelf_level","INTEGER DEFAULT NULL CHECK(shelf_level BETWEEN 1 AND 20)")
+            addColumn("items","shelf_slot","INTEGER DEFAULT NULL CHECK(shelf_slot BETWEEN 1 AND 50)")
+        }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (
@@ -246,7 +266,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     ).use { c -> require(c.moveToFirst()) { "Magazzino non trovato" }; c.getFloat(0) to c.getFloat(1) }
 
     fun items(warehouseId: Long, filter: String = ""): List<StockItem> {
-        val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days
+        val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days,shelf_level,shelf_slot
             FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ?)
             ORDER BY name COLLATE NOCASE,id"""
         val safeFilter = "%${filter.trim().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")}%"
@@ -258,9 +278,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     }
     private fun Cursor.toItem() = StockItem(getLong(0),getLong(1),getString(2),getString(3),getString(4),
         getDouble(5),getDouble(6),getString(7),if(isNull(8)) null else getLong(8),getString(9),
-        if(isNull(10)) null else getString(10),if(isNull(11)) null else getDouble(11),getString(12),if(isNull(13)) null else getInt(13))
+        if(isNull(10)) null else getString(10),if(isNull(11)) null else getDouble(11),getString(12),if(isNull(13)) null else getInt(13),
+        if(isNull(14)) null else getInt(14),if(isNull(15)) null else getInt(15))
     fun item(id: Long): StockItem? = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days FROM items WHERE id=?",arrayOf(id.toString())
+        "SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days,shelf_level,shelf_slot FROM items WHERE id=?",arrayOf(id.toString())
     ).use { if(it.moveToFirst()) it.toItem() else null }
     fun addItem(warehouseId: Long, name: String, category: String,
                 quantity: Double, minimum: Double, unit: String, note: String, photoFile: String? = null,
@@ -475,10 +496,16 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         } finally { endTransaction() } }
     }
     fun placements(warehouseId: Long): List<Placement> = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
-    ).use { c -> buildList { while(c.moveToNext()) add(Placement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5),c.getInt(6)!=0,c.getFloat(7),c.getFloat(8),c.getFloat(9))) } }
+        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
+    ).use { c -> buildList { while(c.moveToNext()) add(c.toPlacement()) } }
+    private fun Cursor.toPlacement() = Placement(getLong(0),getLong(1),getString(2),getString(3),getFloat(4),getFloat(5),
+        getInt(6)!=0,getFloat(7),getFloat(8),getFloat(9),getInt(10),getInt(11))
+    fun placement(id: Long): Placement? = readableDatabase.rawQuery(
+        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE id=?",
+        arrayOf(id.toString())).use { if(it.moveToFirst()) it.toPlacement() else null }
     fun addPlacement(warehouseId: Long, kind: String, label: String, x: Float, y: Float): Long {
-        require(label.trim().isNotEmpty()) { "Inserisci un nome" }
+        require(label.trim().isNotEmpty() && label.trim().length<=80) { "Inserisci un nome (massimo 80 caratteri)" }
+        require(kind in PlacementKinds.all) { "Tipo di struttura non riconosciuto" }
         val (mapWidth,mapHeight)=mapBounds(warehouseId)
         val (furnitureWidth,furnitureDepth)=PlanGeometry.defaultSize(kind)
         require(furnitureWidth<=mapWidth && furnitureDepth<=mapHeight) {
@@ -529,17 +556,133 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     fun lockPlacement(id: Long, locked: Boolean) { writableDatabase.update("placements",ContentValues().apply {
         put("locked",if(locked) 1 else 0)
     },"id=?",arrayOf(id.toString())) }
-    fun assignItem(itemId: Long, placementId: Long?) {
-        val item = requireNotNull(item(itemId)) { "Articolo inesistente" }
-        if(placementId!=null) {
-            val allowed = readableDatabase.rawQuery("SELECT 1 FROM placements WHERE id=? AND warehouse_id=?",arrayOf(placementId.toString(),item.warehouseId.toString())).use{it.moveToFirst()}
-            require(allowed) { "Ubicazione di un altro magazzino" }
-        }
-        writableDatabase.update("items",ContentValues().apply {
-            if(placementId==null) putNull("placement_id") else put("placement_id",placementId)
-        },"id=?",arrayOf(itemId.toString()))
+    fun assignItem(itemId: Long, placementId: Long?, level: Int? = null, slot: Int? = null) {
+        assignItems(listOf(itemId),placementId,level,slot)
     }
-    fun deletePlacement(id: Long) { writableDatabase.delete("placements","id=?",arrayOf(id.toString())) }
+    /** Assigns several items in one transaction: all or nothing. */
+    fun assignItems(itemIds: List<Long>, placementId: Long?, level: Int? = null, slot: Int? = null): Int {
+        require(itemIds.isNotEmpty() && itemIds.size<=5000) { "Seleziona da 1 a 5000 articoli" }
+        val target=placementId?.let { requireNotNull(placement(it)) { "Ubicazione inesistente" } }
+        if(target!=null) Locations.validate(target,level,slot)
+        else require(level==null && slot==null) { "Ripiano senza struttura" }
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            for(itemId in itemIds.distinct()) {
+                val item=requireNotNull(item(itemId)) { "Articolo inesistente" }
+                require(target==null || target.warehouseId==item.warehouseId) { "Ubicazione di un altro magazzino" }
+                require(db.update("items",ContentValues().apply {
+                    if(placementId==null) putNull("placement_id") else put("placement_id",placementId)
+                    if(level==null) putNull("shelf_level") else put("shelf_level",level)
+                    if(slot==null) putNull("shelf_slot") else put("shelf_slot",slot)
+                },"id=?",arrayOf(itemId.toString()))==1) { "Articolo non aggiornato" }
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        return itemIds.distinct().size
+    }
+    fun renamePlacement(id: Long, label: String) {
+        require(label.trim().length in 1..80) { "Nome: da 1 a 80 caratteri" }
+        require(writableDatabase.update("placements",ContentValues().apply{put("label",label.trim())},
+            "id=?",arrayOf(id.toString()))==1) { "Struttura non trovata" }
+    }
+    /** Levels/positions can shrink only if no item sits beyond the new limits. */
+    fun updatePlacementLayout(id: Long, levels: Int, slots: Int) {
+        require(levels in 1..PlacementKinds.MAX_LEVELS && slots in 1..PlacementKinds.MAX_SLOTS) {
+            "Ripiani 1–${PlacementKinds.MAX_LEVELS}, posizioni 1–${PlacementKinds.MAX_SLOTS}"
+        }
+        val p=requireNotNull(placement(id)) { "Struttura non trovata" }
+        require(p.holdsStock || (levels==1 && slots==1)) { "${p.kind}: non ha ripiani" }
+        val outside=readableDatabase.rawQuery("""SELECT COUNT(*) FROM items WHERE placement_id=?
+            AND ((shelf_level IS NOT NULL AND shelf_level>?) OR (shelf_slot IS NOT NULL AND shelf_slot>?))""",
+            arrayOf(id.toString(),levels.toString(),slots.toString())).use { it.moveToFirst(); it.getInt(0) }
+        require(outside==0) { "$outside articoli sono su ripiani/posizioni che verrebbero eliminati: spostali prima." }
+        writableDatabase.update("placements",ContentValues().apply{put("levels",levels);put("slots",slots)},
+            "id=?",arrayOf(id.toString()))
+    }
+    /** Copy of a structure (geometry, kind, levels) with the next label, placed at [x],[y]. */
+    fun duplicatePlacement(sourceId: Long, x: Float, y: Float, label: String? = null): Long {
+        val src=requireNotNull(placement(sourceId)) { "Struttura non trovata" }
+        val (mapWidth,mapHeight)=mapBounds(src.warehouseId)
+        val pos=PlanGeometry.boundedPlacementCenter(x,y,src.width,src.depth,src.rotation,mapWidth,mapHeight)
+        val name=(label ?: PlanGeometry.nextLabel(src.label)).trim().take(80)
+        return writableDatabase.insertOrThrow("placements",null,ContentValues().apply {
+            put("warehouse_id",src.warehouseId);put("kind",src.kind);put("label",name)
+            put("x",pos.x);put("y",pos.y);put("locked",0)
+            put("width_m",src.width);put("depth_m",src.depth);put("rotation_deg",src.rotation)
+            put("levels",src.levels);put("slots",src.slots)
+        })
+    }
+    /** [count] copies in a row after the source. Fails as a whole if any copy would leave the room. */
+    fun createPlacementRow(sourceId: Long, count: Int, gap: Float, vertical: Boolean): List<Long> {
+        val src=requireNotNull(placement(sourceId)) { "Struttura non trovata" }
+        val (mapWidth,mapHeight)=mapBounds(src.warehouseId)
+        val centres=PlanGeometry.rowCentres(src,count,gap,vertical)
+        var label=src.label
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            val ids=centres.map { c ->
+                require(PlanGeometry.placementFitsRoom(src.copy(x=c.x,y=c.y),mapWidth,mapHeight)) {
+                    "La fila esce dalla pianta: riduci il numero di copie o la distanza."
+                }
+                label=PlanGeometry.nextLabel(label)
+                duplicatePlacement(sourceId,c.x,c.y,label)
+            }
+            db.setTransactionSuccessful()
+            return ids
+        } finally { db.endTransaction() }
+    }
+    /** Item placement captured before a delete, so the delete can be undone. */
+    data class ItemSpot(val itemId: Long, val level: Int?, val slot: Int?)
+    fun itemSpots(placementId: Long): List<ItemSpot> = readableDatabase.rawQuery(
+        "SELECT id,shelf_level,shelf_slot FROM items WHERE placement_id=?",arrayOf(placementId.toString())
+    ).use { c -> buildList { while(c.moveToNext()) add(ItemSpot(c.getLong(0),
+        if(c.isNull(1)) null else c.getInt(1),if(c.isNull(2)) null else c.getInt(2))) } }
+    /** Undo of a delete: same id, same geometry, items put back where they were (if still unplaced). */
+    fun restorePlacement(p: Placement, spots: List<ItemSpot>) {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            db.insertOrThrow("placements",null,ContentValues().apply {
+                put("id",p.id);put("warehouse_id",p.warehouseId);put("kind",p.kind);put("label",p.label)
+                put("x",p.x);put("y",p.y);put("locked",if(p.locked)1 else 0)
+                put("width_m",p.width);put("depth_m",p.depth);put("rotation_deg",p.rotation)
+                put("levels",p.levels);put("slots",p.slots)
+            })
+            for(s in spots) db.update("items",ContentValues().apply {
+                put("placement_id",p.id)
+                if(s.level==null) putNull("shelf_level") else put("shelf_level",s.level)
+                if(s.slot==null) putNull("shelf_slot") else put("shelf_slot",s.slot)
+            },"id=? AND placement_id IS NULL AND warehouse_id=?",arrayOf(s.itemId.toString(),p.warehouseId.toString()))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+    /** Undo/redo position: ignores the lock (it restores a previous state) but never leaves the room. */
+    fun setPlacementPosition(id: Long, x: Float, y: Float) {
+        require(x.isFinite() && y.isFinite()) { "Coordinate non valide" }
+        val p=requireNotNull(placement(id)) { "Struttura non trovata" }
+        val (mapWidth,mapHeight)=mapBounds(p.warehouseId)
+        val pos=PlanGeometry.boundedPlacementCenter(x,y,p.width,p.depth,p.rotation,mapWidth,mapHeight)
+        writableDatabase.update("placements",ContentValues().apply{put("x",pos.x);put("y",pos.y)},"id=?",arrayOf(id.toString()))
+    }
+    /** Per-structure movement count since [since]: drives the "most used" heat map. */
+    fun placementActivity(warehouseId: Long, since: Long): Map<Long,Int> = readableDatabase.rawQuery(
+        """SELECT i.placement_id,COUNT(*) FROM movements m JOIN items i ON i.id=m.item_id
+           WHERE i.warehouse_id=? AND i.placement_id IS NOT NULL AND m.created_at>=?
+           GROUP BY i.placement_id""",arrayOf(warehouseId.toString(),since.toString())
+    ).use { c -> buildMap { while(c.moveToNext()) put(c.getLong(0),c.getInt(1)) } }
+    fun deletePlacement(id: Long) {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            // ON DELETE SET NULL clears placement_id only: clear the shelf position too.
+            db.update("items",ContentValues().apply{putNull("shelf_level");putNull("shelf_slot")},
+                "placement_id=?",arrayOf(id.toString()))
+            db.delete("placements","id=?",arrayOf(id.toString()))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
     fun walls(warehouseId: Long): List<Wall> = readableDatabase.rawQuery(
         "SELECT id,warehouse_id,x1,y1,x2,y2,source FROM walls WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Wall(c.getLong(0),c.getLong(1),c.getFloat(2),c.getFloat(3),c.getFloat(4),c.getFloat(5),c.getString(6))) } }
@@ -552,6 +695,27 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         })
     }
     fun deleteWall(id: Long) { writableDatabase.delete("walls","id=?",arrayOf(id.toString())) }
+    fun wall(id: Long): Wall? = readableDatabase.rawQuery(
+        "SELECT id,warehouse_id,x1,y1,x2,y2,source FROM walls WHERE id=?",arrayOf(id.toString())
+    ).use { c -> if(c.moveToFirst()) Wall(c.getLong(0),c.getLong(1),c.getFloat(2),c.getFloat(3),c.getFloat(4),c.getFloat(5),c.getString(6)) else null }
+    fun updateWall(id: Long, raw: FloatArray) {
+        val w=requireNotNull(wall(id)) { "Parete non trovata" }
+        val p=StockRules.normalizeWall(raw)
+        val (mapWidth,mapHeight)=mapBounds(w.warehouseId)
+        require(p[0] in 0f..mapWidth && p[2] in 0f..mapWidth && p[1] in 0f..mapHeight && p[3] in 0f..mapHeight) {
+            "La parete uscirebbe dalla pianta"
+        }
+        writableDatabase.update("walls",ContentValues().apply {
+            put("x1",p[0]);put("y1",p[1]);put("x2",p[2]);put("y2",p[3])
+        },"id=?",arrayOf(id.toString()))
+    }
+    /** Undo of a wall delete: same id and source (manual or AR). */
+    fun restoreWall(w: Wall) {
+        writableDatabase.insertOrThrow("walls",null,ContentValues().apply {
+            put("id",w.id);put("warehouse_id",w.warehouseId);put("x1",w.x1);put("y1",w.y1)
+            put("x2",w.x2);put("y2",w.y2);put("source",w.source)
+        })
+    }
     /** Result format v1 from ARCore scanner; normalize meter-world XZ to an editable 0..100 canvas. */
     fun importArScan(warehouseId: Long, json: String): Int {
         val o=JSONObject(json)
@@ -732,6 +896,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                         arrayOf(id.toString(),warehouseId.toString())).use {c ->
                         if(c.moveToFirst() && !c.isNull(0)) photos.add(c.getString(0))
                     }
+                    if(entity=="placements") db.update("items",ContentValues().apply{putNull("shelf_level");putNull("shelf_slot")},
+                        "placement_id=?",arrayOf(id.toString()))
                     db.delete(table,"id=? AND warehouse_id=?",arrayOf(id.toString(),warehouseId.toString()))
                 }
             }
@@ -751,7 +917,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(seen.add(row.sku)) { "Codice duplicato nel CSV" }
             require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
             if(row.location.isNotBlank()) {
-                require(locations[row.location]?.size==1) {
+                require(locations[row.location]?.size==1 && locations[row.location]!!.single().holdsStock) {
                     "Ubicazione non trovata o ambigua: ${row.location}. Prima dell’importazione crea nella Planimetria una struttura con questo nome esatto, oppure rinomina le strutture duplicate."
                 }
             }
@@ -807,6 +973,13 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     /** SQL foreign keys alone do not enforce warehouse ownership or valid floating point geometry. */
     internal fun validateRestoredData() {
         val db=readableDatabase
+        db.rawQuery("""SELECT 1 FROM items i JOIN placements p ON p.id=i.placement_id
+            WHERE COALESCE(i.shelf_level,0)>p.levels OR COALESCE(i.shelf_slot,0)>p.slots LIMIT 1""",null).use {
+            require(!it.moveToFirst()) { "Articolo su un ripiano inesistente nel backup" }
+        }
+        db.rawQuery("SELECT 1 FROM items WHERE placement_id IS NULL AND (shelf_level IS NOT NULL OR shelf_slot IS NOT NULL) LIMIT 1",null).use {
+            require(!it.moveToFirst()) { "Ripiano senza struttura nel backup" }
+        }
         db.rawQuery("SELECT 1 FROM items i JOIN placements p ON p.id=i.placement_id WHERE i.warehouse_id<>p.warehouse_id LIMIT 1",null).use {
             require(!it.moveToFirst()) { "Ubicazione collegata a un altro magazzino nel backup" }
         }

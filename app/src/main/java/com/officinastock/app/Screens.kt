@@ -520,8 +520,14 @@ private fun EditItemDetailsDialog(
             Input(quantity,{quantity=it},if(action=="rettifica")"Quantità contata" else "Quantità",number=true)
             if(action=="prestito") Input(borrower,{borrower=it},"Assegnato a")
             else Input(note,{note=it},"Motivo / riferimento")
-            OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.fillMaxWidth()) {
-                Text("Ubicazione: ${placements.firstOrNull{it.id==item.placementId}?.label ?: "Da assegnare"}")
+            val location=placements.firstOrNull{it.id==item.placementId}
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+                OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.weight(1f)) {
+                    Text("Ubicazione: ${Locations.describe(location,item)}",maxLines=2,overflow=TextOverflow.Ellipsis)
+                }
+                if(location!=null) FilledTonalIconButton(onClick={model.showOnMap(location.id);onDismiss()}) {
+                    Icon(Icons.Outlined.Map,contentDescription="Mostra in pianta")
+                }
             }
             if(item.note.isNotBlank()) Text(item.note,color=TextSecondary,fontSize=12.sp)
         }
@@ -542,12 +548,39 @@ private fun EditItemDetailsDialog(
         model.updatePurchase(item.id,cost,supplier,lead)
         editPurchase=false
     }
-    if(pickingLocation) AlertDialog(onDismissRequest={pickingLocation=false},title={Text("Assegna ubicazione")},text={
-        Column(Modifier.heightIn(max=340.dp).verticalScroll(rememberScrollState())) {
-            TextButton(onClick={model.assignItem(item.id,null);pickingLocation=false}){Text("Nessuna ubicazione")}
-            placements.forEach {p->TextButton(onClick={model.assignItem(item.id,p.id);pickingLocation=false}){Text("${p.label} · ${p.kind}")}}
+    if(pickingLocation) LocationPickerDialog(item,placements,
+        onMap={model.startLocationPick(listOf(item.id));pickingLocation=false;onDismiss()},
+        onClose={pickingLocation=false}) { placementId,level,slot ->
+        model.assignItem(item.id,placementId,level,slot);pickingLocation=false
+    }
+}
+
+/** Searchable list of storage structures, with optional shelf/position and a map shortcut. */
+@Composable fun LocationPickerDialog(item:StockItem,placements:List<Placement>,onMap:()->Unit,onClose:()->Unit,
+                                     onChoose:(Long?,Int?,Int?)->Unit) {
+    var query by remember { mutableStateOf("") }
+    var positionFor by remember { mutableStateOf<Placement?>(null) }
+    val storage=placements.filter{it.holdsStock && (query.isBlank() || it.label.contains(query,true) || it.kind.contains(query,true))}
+        .sortedBy{it.label.lowercase(Locale.ITALY)}
+    AlertDialog(onDismissRequest=onClose,title={Text("Assegna ubicazione")},text={
+        Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            OutlinedButton(onClick=onMap,modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Map,null);Spacer(Modifier.width(8.dp));Text("Scegli sulla mappa")
+            }
+            if(placements.count{it.holdsStock}>6) Input(query,{query=it},"Cerca struttura")
+            TextButton(onClick={onChoose(null,null,null)}){Text("Nessuna ubicazione")}
+            storage.forEach { p ->
+                TextButton(onClick={if(p.hasPositions) positionFor=p else onChoose(p.id,null,null)},modifier=Modifier.fillMaxWidth()) {
+                    Text("${p.label} · ${p.kind}"+(if(p.hasPositions)" · ${p.levels}×${p.slots}" else ""),
+                        fontWeight=if(p.id==item.placementId)FontWeight.Bold else FontWeight.Normal,modifier=Modifier.weight(1f))
+                }
+            }
+            if(storage.isEmpty()) Text("Nessuna struttura trovata. Creala nella Mappa → Strutture.",fontSize=12.sp,color=TextSecondary)
         }
-    },confirmButton={TextButton(onClick={pickingLocation=false}){Text("Chiudi")}})
+    },confirmButton={TextButton(onClick=onClose){Text("Chiudi")}})
+    positionFor?.let { p -> PositionDialog(p,"Ripiano e posizione",onClose={positionFor=null}) { level,slot ->
+        positionFor=null;onChoose(p.id,level,slot)
+    } }
 }
 
 @Composable fun MovementsScreen(

@@ -40,7 +40,35 @@ jobs:
       - name: Verify Ubicora branding and compatibility
         run: python3 tests/brand_identity_contract_test.py && python3 tests/update_signing_contract_test.py
       - name: Build and test
-        run: chmod +x ./gradlew && ./gradlew --no-daemon --stacktrace clean lint testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease assembleDebugAndroidTest
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace --continue clean lint testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease assembleDebugAndroidTest 2>&1 | tee gradle-build.log
+      - name: Report compiler and test failures as annotations
+        if: failure()
+        shell: bash
+        run: |
+          # Kotlin errors, failed tests and lint errors become readable annotations in the PR.
+          set +e
+          set +o pipefail
+          grep -E '^e: ' gradle-build.log | head -40 | while IFS= read -r line; do
+            loc=$(printf '%s' "$line" | sed -E 's#^e: file://[^ ]*/app/(src/[^:]+):([0-9]+):([0-9]+) .*#app/\1|\2#;t;s#.*#|#')
+            echo "::error file=${loc%%|*},line=${loc##*|}::${line:0:900}"
+          done
+          grep -E ' FAILED$' -A4 gradle-build.log | head -80 | sed -E 's/^/::error::/' || true
+          grep -E 'Lint found [0-9]+ errors|^> Task .* FAILED|What went wrong' -A3 gradle-build.log | head -30 | sed -E 's/^/::error::/' || true
+          find app/build/test-results -name 'TEST-*.xml' -exec grep -l '<failure' {} + 2>/dev/null | while read -r f; do
+            python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          for case in ET.parse(sys.argv[1]).getroot().iter('testcase'):
+              for failure in case.findall('failure'):
+                  msg=(failure.get('message') or failure.text or '').replace('\n',' ')[:700]
+                  print(f"::error::{case.get('classname')}.{case.get('name')}: {msg}")
+          PY
+          done
+          grep -h -B1 -A3 'severity="Error"' app/build/reports/lint-results-*.xml 2>/dev/null | grep -oE '(message|file|line)="[^"]*"' | paste -sd' ' | fold -w 900 | sed -E 's/^/::error::lint /' | head -20
+          exit 0
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
