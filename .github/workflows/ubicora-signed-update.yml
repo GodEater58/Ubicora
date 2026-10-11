@@ -18,12 +18,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
       - name: Install Android SDK 36 and build tools
         run: |
           set -euo pipefail
@@ -94,7 +94,7 @@ jobs:
             echo "Device install update is permitted only when the installed app uses this same signer and a compatible versionCode."
           } > app/build/reports/signed-update/RELEASE-AUDIT.txt
       - name: Upload signed UPDATE APK (never the debug artifact)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ubicora-signed-update-code-${{ inputs.expected_version_code }}
           path: |
