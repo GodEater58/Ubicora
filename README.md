@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.6.0 (Planning + Traceability Alpha)
+# Ubicora — Android nativo 4.6.3 (Planning + Traceability Alpha)
+
+> **4.6.3 / Web 1.0.3:** correzioni di affidabilità e sicurezza (feed di sincronizzazione, blocco PIN progressivo, login web, CSV). Dettagli e limiti: [CHANGELOG 4.6.3](docs/CHANGELOG_4_6_3.md).
 
 App locale per inventario di più magazzini e profili, con codici automatici per categoria, etichette QR, scanner QR, fotografie, movimenti, prestiti, planimetria metrica, statistiche manageriali e backup completo cifrato. L'app non richiede un account cloud per il funzionamento dell'inventario. La scansione AR utilizza Google Play Services per AR su dispositivi compatibili.
 
