@@ -121,11 +121,20 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         }
         if (oldVersion < 10 && newVersion >= 10) StockTraceDb.createTables(db)
         if (oldVersion < 11 && newVersion >= 11) {
-            // 4.7: shelf levels and positions. Additive: existing structures become 1 level x 1 position.
-            db.execSQL("ALTER TABLE placements ADD COLUMN levels INTEGER NOT NULL DEFAULT 1 CHECK(levels BETWEEN 1 AND 20)")
-            db.execSQL("ALTER TABLE placements ADD COLUMN slots INTEGER NOT NULL DEFAULT 1 CHECK(slots BETWEEN 1 AND 50)")
-            db.execSQL("ALTER TABLE items ADD COLUMN shelf_level INTEGER DEFAULT NULL CHECK(shelf_level BETWEEN 1 AND 20)")
-            db.execSQL("ALTER TABLE items ADD COLUMN shelf_slot INTEGER DEFAULT NULL CHECK(shelf_slot BETWEEN 1 AND 50)")
+            // 4.7: shelf levels and positions. Additive and idempotent: existing structures become
+            // 1 level x 1 position; columns already present (e.g. a re-run upgrade) are left alone.
+            fun addColumn(table: String, column: String, definition: String) {
+                val exists=db.rawQuery("PRAGMA table_info($table)",null).use { c ->
+                    var found=false
+                    while(c.moveToNext()) if(c.getString(1)==column) found=true
+                    found
+                }
+                if(!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+            }
+            addColumn("placements","levels","INTEGER NOT NULL DEFAULT 1 CHECK(levels BETWEEN 1 AND 20)")
+            addColumn("placements","slots","INTEGER NOT NULL DEFAULT 1 CHECK(slots BETWEEN 1 AND 50)")
+            addColumn("items","shelf_level","INTEGER DEFAULT NULL CHECK(shelf_level BETWEEN 1 AND 20)")
+            addColumn("items","shelf_slot","INTEGER DEFAULT NULL CHECK(shelf_slot BETWEEN 1 AND 50)")
         }
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
@@ -585,7 +594,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         val p=requireNotNull(placement(id)) { "Struttura non trovata" }
         require(p.holdsStock || (levels==1 && slots==1)) { "${p.kind}: non ha ripiani" }
         val outside=readableDatabase.rawQuery("""SELECT COUNT(*) FROM items WHERE placement_id=?
-            AND (COALESCE(shelf_level,0)>? OR COALESCE(shelf_slot,0)>?)""",
+            AND ((shelf_level IS NOT NULL AND shelf_level>?) OR (shelf_slot IS NOT NULL AND shelf_slot>?))""",
             arrayOf(id.toString(),levels.toString(),slots.toString())).use { it.moveToFirst(); it.getInt(0) }
         require(outside==0) { "$outside articoli sono su ripiani/posizioni che verrebbero eliminati: spostali prima." }
         writableDatabase.update("placements",ContentValues().apply{put("levels",levels);put("slots",slots)},

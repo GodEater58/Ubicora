@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.6.3 (Planning + Traceability Alpha)
+# Ubicora — Android nativo 4.7.0 (Mappa e ubicazioni Alpha)
+
+> **4.7.0 / Web 1.0.4:** mappa con ripiani e posizioni, QR delle strutture, annulla/ripeti, viste a colori, PDF della pianta; editor mappa nel browser. Dettagli: [CHANGELOG 4.7.0](docs/CHANGELOG_4_7_0.md).
 
 > **4.6.3 / Web 1.0.3:** correzioni di affidabilità e sicurezza (feed di sincronizzazione, blocco PIN progressivo, login web, CSV). Dettagli e limiti: [CHANGELOG 4.6.3](docs/CHANGELOG_4_6_3.md).
 
