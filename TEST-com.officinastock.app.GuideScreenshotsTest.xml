@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.officinastock.app.GuideScreenshotsTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-12T18:13:21" hostname="runnervmmprz5" time="140.103">
+  <properties/>
+  <testcase name="renderGuideScreens" classname="com.officinastock.app.GuideScreenshotsTest" time="140.103"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
