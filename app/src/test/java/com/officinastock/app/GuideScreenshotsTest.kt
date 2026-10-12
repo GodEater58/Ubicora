@@ -226,26 +226,29 @@ class GuideScreenshotsTest {
             UiPrefs.updateGlove(false); UiPrefs.updateLight(false); settle(model)
 
             // ---------------- 4.7.4 unit of measure menu
-            compose.onNodeWithContentDescription("Articoli").performClick(); settle(model)
+            compose.onAllNodesWithContentDescription("Articoli",useUnmergedTree=true).onFirst().performClick(); settle(model)
             shot("28_unita_misura",model,dialog=true) {
                 compose.onNodeWithContentDescription("Nuovo articolo").performClick(); settle(model)
                 compose.onNodeWithText("Elettrico").performClick(); settle(model)
                 compose.onNode(SemanticsMatcher("unit picker") { it.config.getOrNull(SemanticsActions.OnClick)?.label=="Scegli l'unità di misura" })
                     .performScrollTo().performClick()
             }
-            // 4.10 join with the central's QR: last, with the clock driven by hand (diagnostic if it never settles).
+            // 4.10 join dialogs, last: each step logged to tell an app problem from a test one.
+            repeat(2) { runCatching { compose.onAllNodesWithText("Annulla").onLast().performClick() }; runCatching { settle(model) } }
             try {
-                runCatching { compose.onAllNodesWithText("Annulla").onLast().performClick() }
                 model.leaveTeam(); settle(model)
-                compose.onNodeWithContentDescription("Impostazioni").performClick(); settle(model)
-                compose.mainClock.autoAdvance=false
+                compose.onAllNodesWithContentDescription("Impostazioni",useUnmergedTree=true).onFirst().performClick(); settle(model)
+                scrollTo("SINCRONIZZAZIONE TRA TELEFONI"); settle(model)
+                compose.onNodeWithText("Collega a un telefono centrale").performClick(); settle(model)
+                save("38_collega_manuale"); log.appendLine("diag A ok: manual join dialog settles")
+                compose.onAllNodesWithText("Annulla").onLast().performClick(); settle(model)
+            } catch(e:Throwable) { log.appendLine("diag A FAIL: ${e::class.simpleName}: ${e.message?.take(200)}") }
+            try {
                 model.handleScannedCode(TeamQr.encode("squadra-2026",listOf("B"),"Magazzino officina"))
-                repeat(8) { compose.mainClock.advanceTimeBy(250); shadowOf(Looper.getMainLooper()).idle() }
+                settle(model)
                 log.appendLine("teamQr after=${model.ui.teamQr} role=${model.ui.team.role}")
-                save("37_collega_qr")
-                repeat(8) { compose.mainClock.advanceTimeBy(250); shadowOf(Looper.getMainLooper()).idle() }
-                save("37b_collega_qr_dopo")
-            } catch(e:Throwable) { log.appendLine("FAIL 37: ${e::class.simpleName}: ${e.message?.take(300)}") }
+                save("37_collega_qr"); log.appendLine("diag B ok: QR join dialog settles")
+            } catch(e:Throwable) { log.appendLine("diag B FAIL: ${e::class.simpleName}: ${e.message?.take(200)}") }
         } finally {
             File(out,"log.txt").writeText(log.toString())
         }
