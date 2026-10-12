@@ -168,7 +168,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     val u=model.ui
     val count=u.items.size;val critical=u.items.count{it.lowStock}
     val recently=u.movements.take(4)
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(17.dp),verticalArrangement=Arrangement.spacedBy(17.dp)) {
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=17.dp,top=17.dp,end=17.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(17.dp)) {
         item {
             Column {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -419,7 +419,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                 }
             }
         }
-        LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=18.dp,end=18.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             items(filtered,key={it.id}) { entry ->
                 Panel(Modifier.fillMaxWidth().clickable{selected=entry}) {
                     Row(verticalAlignment=Alignment.CenterVertically) {

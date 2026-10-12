@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.10.2
+# Ubicora — Android nativo 4.10.3
 
+> **4.10.3:** il pulsante «Scansiona QR» non copre più l'ultimo elemento delle liste. Dettagli: [CHANGELOG 4.10.3](docs/CHANGELOG_4_10_3.md).
+>
 > **4.10.2:** prelievo a raffica che resta attivo, contatore sincronizzazione dopo gli spostamenti, carichi e prelievi più veloci. Dettagli: [CHANGELOG 4.10.2](docs/CHANGELOG_4_10_2.md).
 >
 > **4.10.1:** barre di sistema coerenti con il tema chiaro; prelievo a raffica con giacenze sotto 1 unità. Dettagli: [CHANGELOG 4.10.1](docs/CHANGELOG_4_10_1.md).
