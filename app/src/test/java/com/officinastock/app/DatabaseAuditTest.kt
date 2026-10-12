@@ -109,6 +109,23 @@ class DatabaseAuditTest {
         rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
         assertEquals("Cuscinetto",db.item(id)!!.name)
     }
+    @Test fun undoRecordsTheOppositeMovementAndKeepsHistory(){
+        val id=item(10.0)
+        db.movement(id,-1.0,"Prelievo rapido")
+        assertEquals(9.0,db.item(id)!!.quantity,0.0)
+        // What the "Annulla" bar does: the opposite movement, never a deletion.
+        db.movement(id,1.0,"Annullato: Prelievo 1 pz · Vite")
+        assertEquals(10.0,db.item(id)!!.quantity,0.0)
+        val notes=db.movements(warehouse).filter{it.itemId==id}.map{it.note}
+        assertTrue(notes.contains("Prelievo rapido"))
+        assertTrue(notes.contains("Annullato: Prelievo 1 pz · Vite"))
+        // Undoing a load after the stock was used up is refused, stock never goes negative.
+        val other=item(0.0)
+        db.movement(other,1.0,"Carico rapido")
+        db.movement(other,-1.0,"Prelievo")
+        rejects { db.movement(other,-1.0,"Annullato: Carico 1 pz · Vite") }
+        assertEquals(0.0,db.item(other)!!.quantity,0.0)
+    }
     @Test fun csvExportAndImportKeepShelfLevelAndPosition(){
         val shelf=db.addPlacement(warehouse,"Scaffale","Scaffale A",2f,2f)
         db.updatePlacementLayout(shelf,4,6)
