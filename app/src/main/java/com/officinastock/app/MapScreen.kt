@@ -116,6 +116,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var wallAnchor by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftEnd by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftCloses by remember(warehouse.id){mutableStateOf(false)}
+    // 4.7.2: Back while drawing ends the current chain of walls instead of leaving the map.
+    androidx.activity.compose.BackHandler(enabled=wallAnchor!=null) { wallAnchor=null;draftEnd=null;draftCloses=false }
     var showNewObject by remember {mutableStateOf(false)}
     var showDimensions by remember {mutableStateOf(false)}
     var showRowFor by remember {mutableStateOf<Long?>(null)}

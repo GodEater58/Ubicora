@@ -29,6 +29,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
 
 class MainActivity: ComponentActivity() {
     private val model: StockViewModel by viewModels()
@@ -181,18 +183,30 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
 @Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    // 4.7.2: Back returns to the previous section instead of leaving the app.
+    val history=remember { mutableStateListOf<Tab>() }
+    fun go(next:Tab) {
+        if(next==tab) return
+        history.remove(next)
+        history.add(tab)
+        if(history.size>12) history.removeAt(0)
+        tab=next
+    }
+    androidx.activity.compose.BackHandler(enabled=history.isNotEmpty() || tab!=Tab.HOME) {
+        tab=if(history.isNotEmpty()) history.removeAt(history.lastIndex) else Tab.HOME
+    }
     var stockFocus by rememberSaveable { mutableStateOf(StockFocus.ALL) }
     var activityFocus by rememberSaveable { mutableStateOf(ActivityFocus.ALL) }
     var activityDays by rememberSaveable { mutableIntStateOf(0) }
     val data=model.ui
-    fun openStock(focus:StockFocus) { stockFocus=focus; tab=Tab.STOCK }
-    fun openActivity(focus:ActivityFocus,days:Int=0) { activityFocus=focus; activityDays=days; tab=Tab.MOVES }
+    fun openStock(focus:StockFocus) { stockFocus=focus; go(Tab.STOCK) }
+    fun openActivity(focus:ActivityFocus,days:Int=0) { activityFocus=focus; activityDays=days; go(Tab.MOVES) }
     LaunchedEffect(data.scannedItemId) {
-        if(data.scannedItemId!=null) tab=Tab.STOCK
+        if(data.scannedItemId!=null) go(Tab.STOCK)
     }
     // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
     LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
-        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) tab=Tab.MAP
+        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) go(Tab.MAP)
     }
     Scaffold(containerColor=Ink, floatingActionButton={
         if(tab==Tab.HOME || tab==Tab.STOCK) {
@@ -215,7 +229,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.SETTINGS -> Icons.Outlined.Settings
                     Tab.MANAGER -> Icons.Outlined.Dashboard
                 }
-                NavigationBarItem(selected=tab==item,onClick={tab=item},
+                NavigationBarItem(selected=tab==item,onClick={go(item)},
                     icon={Icon(icon,contentDescription=item.label)},
                     label={Text(item.label,maxLines=1)},alwaysShowLabel=tab==item)
             }
@@ -230,20 +244,30 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     }
                 }
             }
+            data.movementUndo?.let { undo ->
+                // Visible for 6 seconds; disappears earlier if anything else changes the archive.
+                LaunchedEffect(undo.token) { kotlinx.coroutines.delay(6000); model.dismissMovementUndo(undo.token) }
+                Surface(color=Surface2) {
+                    Row(Modifier.fillMaxWidth().padding(start=14.dp,end=6.dp,top=2.dp,bottom=2.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(undo.label,color=TextPrimary,fontSize=13.sp,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,modifier=Modifier.weight(1f))
+                        TextButton(onClick=model::undoMovement,enabled=!data.busy){Text("Annulla",color=Mint,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)}
+                    }
+                }
+            }
             when(tab) {
                 Tab.HOME -> DashboardScreen(model,
                     goStock={openStock(StockFocus.ALL)},
-                    goMap={tab=Tab.MAP},
+                    goMap={go(Tab.MAP)},
                     goMoves={openActivity(ActivityFocus.ALL)},
-                    goManager={tab=Tab.MANAGER},
+                    goManager={go(Tab.MANAGER)},
                     onStockFocus={openStock(it)},
                     onActivityFocus={focus,days->openActivity(focus,days)},
-                    onItemFocus={itemId->model.openItemDetails(itemId);tab=Tab.STOCK})
+                    onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
                 Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
                 Tab.MAP -> NativeMapScreen(model,onAr)
                 Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
                 Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
-                Tab.MANAGER -> OperationsScreen(model,onBack={tab=Tab.HOME},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
+                Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
             }
         }
     }

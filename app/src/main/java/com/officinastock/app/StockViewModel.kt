@@ -32,6 +32,8 @@ data class StockUiState(
     val initialized: Boolean = false,
     val sessionLocked: Boolean = false,
     val csvPreviewCount: Int? = null,
+    /** 4.7.2: last carico/prelievo, offered for a few seconds as "Annulla". */
+    val movementUndo: MovementUndo? = null,
     val orders: List<PurchaseRequest> = emptyList(),
     val stockCounts: List<StockCount> = emptyList(),
     val stockTransfers: List<StockTransfer> = emptyList(),
@@ -106,7 +108,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=if(item!=null) ui.copy(scannedItemId=item.id,message=null)
         else ui.copy(scannedItemId=null,message="Articolo ${target.sku} non trovato in ${warehouse.name}.")
     }
-    private fun execute(action: () -> Unit) {
+    private fun execute(onSuccess: (() -> Unit)? = null, action: () -> Unit) {
         if(ui.busy) return
         val generation=backgroundGeneration
         ui=ui.copy(busy=true, message=null)
@@ -117,6 +119,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     catch(e:Exception) { e.message ?: "Operazione non riuscita" }
                 }
                 reloadAfterSelection(failure,generation)
+                if(failure==null && generation==backgroundGeneration) onSuccess?.invoke()
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
             finally { ui=ui.copy(busy=false) }
@@ -309,7 +312,21 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
         db.updatePurchase(itemId,cost,supplier,leadDays)
     }
-    fun movement(itemId:Long,delta:Double,note:String) = execute { db.movement(itemId,delta,note) }
+    fun movement(itemId:Long,delta:Double,note:String) {
+        val item=ui.items.firstOrNull { it.id==itemId }
+        val label=MovementUndo.label(delta,item)
+        execute(onSuccess={ ui=ui.copy(movementUndo=MovementUndo(itemId,delta,label,System.nanoTime())) }) { db.movement(itemId,delta,note) }
+    }
+    /** Quick +1 / -1 from the list: same traced movement as the item page. */
+    fun quickMovement(itemId:Long,delta:Double) = movement(itemId,delta,if(delta>0) "Carico rapido" else "Prelievo rapido")
+    /** Undo never deletes history: it records the opposite movement, so the audit trail stays complete. */
+    fun undoMovement() {
+        val undo=ui.movementUndo ?: return
+        if(ui.busy) return
+        ui=ui.copy(movementUndo=null)
+        execute { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) }
+    }
+    fun dismissMovementUndo(token:Long) { if(ui.movementUndo?.token==token) ui=ui.copy(movementUndo=null) }
     fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute { db.reconcileQuantity(itemId,counted,reason) }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
     fun returnLoan(id:Long) = execute {db.returnLoan(id)}
@@ -607,3 +624,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
 }
 
 
+
+data class MovementUndo(val itemId: Long, val delta: Double, val label: String, val token: Long) {
+    companion object {
+        fun label(delta: Double, item: StockItem?): String =
+            "${if(delta>0) "Carico" else "Prelievo"} ${amount(kotlin.math.abs(delta))} ${item?.unit.orEmpty()}".trim() +
+                (item?.let { " · ${it.name}" } ?: "")
+    }
+}

@@ -285,9 +285,36 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
+/** Small ±1 button on an inventory row (40 dp touch target). */
+@Composable fun QuickStep(icon:androidx.compose.ui.graphics.vector.ImageVector,description:String,enabled:Boolean,onClick:()->Unit) {
+    FilledTonalIconButton(onClick=onClick,enabled=enabled,modifier=Modifier.size(40.dp)) {
+        Icon(icon,contentDescription=description,modifier=Modifier.size(18.dp))
+    }
+}
+
+/** 4.7.2: list orderings. */
+enum class StockSort(val label:String) {
+    NAME("Nome A–Z"), CRITICAL("Critici prima"), QTY_LOW("Quantità crescente"),
+    QTY_HIGH("Quantità decrescente"), RECENT("Ultimi movimentati"), CODE("Codice")
+}
+
+/** Orders a filtered list; [lastMoved] maps item id to its latest movement time. */
+fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):List<StockItem> = when(sort) {
+    StockSort.NAME -> items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    StockSort.CRITICAL -> items.sortedWith(compareBy<StockItem>({ !it.lowStock },{ if(it.minimum>0) it.quantity/it.minimum else Double.MAX_VALUE }).thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    StockSort.QTY_LOW -> items.sortedWith(compareBy<StockItem> { it.quantity }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    StockSort.QTY_HIGH -> items.sortedWith(compareByDescending<StockItem> { it.quantity }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    StockSort.RECENT -> items.sortedWith(compareByDescending<StockItem> { lastMoved[it.id] ?: 0L }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    StockSort.CODE -> items.sortedBy { it.sku }
+}
+
 @Composable fun InventoryScreen(model:StockViewModel,onScan:()->Unit,requestedFocus:StockFocus=StockFocus.ALL) {
     val u=model.ui
     var query by remember(u.warehouse?.id){mutableStateOf("")}
+    var sort by rememberSaveable { mutableStateOf(StockSort.NAME) }
+    var sortMenu by remember { mutableStateOf(false) }
+    val placementById=remember(u.placements) { u.placements.associateBy { it.id } }
+    val lastMoved=remember(u.movements) { buildMap<Long,Long> { u.movements.forEach { m -> if(m.createdAt>(get(m.itemId) ?: 0L)) put(m.itemId,m.createdAt) } } }
     var activeFocus by remember(u.warehouse?.id){mutableStateOf(requestedFocus)}
     val idleIds=remember(u.manager.usage) {
         u.manager.usage.filter { it.consumed90>0.0 }.map { it.itemId }.toSet()
@@ -314,7 +341,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             }
         }
     }
-    val filtered=remember(u.items,query,activeFocus,idleIds) { u.items.filter { item ->
+    val filtered=remember(u.items,query,activeFocus,idleIds,sort,lastMoved) { sortStock(u.items.filter { item ->
         val matches=when(activeFocus){
             StockFocus.ALL -> true
             StockFocus.CRITICAL -> item.lowStock
@@ -324,7 +351,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             StockFocus.IDLE_90 -> item.id !in idleIds
         }
         matches && (query.isBlank()||listOf(item.name,item.sku,item.category).any{v->v.contains(query,true)})
-    } }
+    },sort,lastMoved) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
@@ -338,6 +365,16 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
                 leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                Box {
+                    AssistChip(onClick={sortMenu=true},label={Text(sort.label)},
+                        leadingIcon={Icon(Icons.Outlined.Sort,contentDescription="Ordina",modifier=Modifier.size(18.dp))})
+                    DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}) {
+                        StockSort.entries.forEach { option ->
+                            DropdownMenuItem(text={Text(option.label,fontWeight=if(option==sort) FontWeight.Bold else FontWeight.Normal)},
+                                onClick={sort=option;sortMenu=false})
+                        }
+                    }
+                }
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
@@ -359,11 +396,23 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(entry.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
-                            Text("${entry.sku}  ·  ${entry.category}",color=TextSecondary,fontSize=11.sp)
+                            Text("${entry.sku}  ·  ${entry.category}",color=TextSecondary,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            // 4.7.2: where to find it, without opening the item.
+                            val place=entry.placementId?.let { placementById[it] }
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Place,contentDescription=null,tint=if(place==null)Amber else Sky,modifier=Modifier.size(13.dp))
+                                Spacer(Modifier.width(3.dp))
+                                Text(Locations.describe(place,entry),color=if(place==null)Amber else Sky,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            }
                         }
                         Column(horizontalAlignment=Alignment.End) {
                             Text("${amount(entry.quantity)} ${entry.unit}",color=if(entry.lowStock)Amber else TextPrimary,fontWeight=FontWeight.Bold)
                             Text(if(entry.lowStock)"Scorta bassa" else "Disponibile",color=if(entry.lowStock)Amber else Mint,fontSize=11.sp)
+                            // Quick ±1: the same traced movement as the item page, with "Annulla" afterwards.
+                            Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.padding(top=4.dp)) {
+                                QuickStep(Icons.Outlined.Remove,"Preleva 1 ${entry.unit}",enabled=!u.busy && entry.quantity>=1.0) { model.quickMovement(entry.id,-1.0) }
+                                QuickStep(Icons.Outlined.Add,"Carica 1 ${entry.unit}",enabled=!u.busy) { model.quickMovement(entry.id,1.0) }
+                            }
                         }
                     }
                 }
