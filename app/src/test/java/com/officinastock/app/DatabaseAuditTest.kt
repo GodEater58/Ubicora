@@ -172,6 +172,21 @@ class DatabaseAuditTest {
         assertEquals(3,imported.shelfLevel)
         assertEquals(5,imported.shelfSlot)
     }
+    @Test fun csvRowsWithoutCodeGetTheNextCodeWithoutCollisions(){
+        val existing=db.item(item())!!.sku
+        val rows=listOf(
+            CsvImportRow("","Guanti","DPI",10.0,2.0,"paia","","",null,"",null),
+            CsvImportRow("","Bullone","Ricambi",5.0,0.0,"pz","","",null,"",null),
+            // An explicit code later in the same file must not clash with an automatic one.
+            CsvImportRow("RIC-000002","Dado","Ricambi",1.0,0.0,"pz","","",null,"",null))
+        assertEquals(3,db.importCsv(warehouse,rows))
+        val skus=db.items(warehouse).associate { it.name to it.sku }
+        assertEquals("DPI-000001",skus["Guanti"])
+        assertEquals("RIC-000002",skus["Dado"])
+        assertEquals("RIC-000003",skus["Bullone"])
+        assertEquals(existing,skus["Vite"])
+        assertEquals(4,skus.values.toSet().size)
+    }
     @Test fun csvImportRollsBackDuplicateAndPreservesOriginal(){
         val original=item()
         val row=CsvImportRow("RIC-001201","Other","Ricambi",2.0,1.0,"pz","","",null,"",null)

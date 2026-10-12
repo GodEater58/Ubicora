@@ -924,17 +924,19 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         val locations=placements(warehouseId).groupBy { it.label }
         val seen=HashSet<String>()
         for(row in rows) {
-            require(seen.add(row.sku)) { "Codice duplicato nel CSV" }
-            require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
+            if(row.sku.isNotEmpty()) {
+                require(seen.add(row.sku)) { "Codice duplicato nel CSV" }
+                require(!existing.contains(row.sku)) { "Codice già presente nel magazzino: ${row.sku}" }
+            }
             if(row.location.isNotBlank()) {
                 require(locations[row.location]?.size==1 && locations[row.location]!!.single().holdsStock) {
                     "Ubicazione non trovata o ambigua: ${row.location}. Prima dell’importazione crea nella Planimetria una struttura con questo nome esatto, oppure rinomina le strutture duplicate."
                 }
                 val target=locations[row.location]!!.single()
                 require((row.shelfLevel ?: 1)<=target.levels && (row.shelfSlot ?: 1)<=target.slots) {
-                    "${row.sku}: ${target.label} ha ${target.levels} ripiani e ${target.slots} posizioni. Imposta ripiani e posizioni della struttura prima di importare."
+                    "${row.sku.ifEmpty{row.name}}: ${target.label} ha ${target.levels} ripiani e ${target.slots} posizioni. Imposta ripiani e posizioni della struttura prima di importare."
                 }
-            } else require(row.shelfLevel==null && row.shelfSlot==null) { "${row.sku}: ripiano senza ubicazione" }
+            } else require(row.shelfLevel==null && row.shelfSlot==null) { "${row.sku.ifEmpty{row.name}}: ripiano senza ubicazione" }
         }
     }
 
@@ -945,9 +947,19 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         try {
             validateCsvImport(warehouseId,rows)
             val locations=placements(warehouseId).associateBy { it.label }
+            // Codes written in the file reserve their numbers first, so an automatic code given to
+            // another row can never collide with one that appears later in the same file.
+            for(row in rows.filter { it.sku.isNotEmpty() }) {
+                val prefix=row.sku.substringBefore('-')
+                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
+                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
+                    arrayOf(row.sku.substringAfter('-').toLong()+1,prefix))
+            }
             for(row in rows) {
+                // No code in the file: the next one of the category, as when the article is created in the app.
+                val sku=row.sku.ifEmpty { nextSku(db,row.category) }
                 val values=ContentValues().apply {
-                    put("warehouse_id",warehouseId);put("sku",row.sku)
+                    put("warehouse_id",warehouseId);put("sku",sku)
                     put("name",row.name);put("category",row.category)
                     put("quantity",row.quantity);put("minimum",row.minimum)
                     put("unit",row.unit);put("note",row.note)
@@ -960,8 +972,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 }
                 val id=db.insertOrThrow("items",null,values)
                 if(row.quantity>0)recordMovement(db,id,row.quantity,"Carico iniziale da CSV")
-                val prefix=row.sku.substringBefore('-')
-                val serial=row.sku.substringAfter('-').toLong()
+                val prefix=sku.substringBefore('-')
+                val serial=sku.substringAfter('-').toLong()
                 db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
                 db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
                     arrayOf(serial+1,prefix))
