@@ -1,0 +1,50 @@
+name: Guide screenshots
+# Renders the real app screens with demo data (Robolectric) for the user guide and
+# publishes the PNGs, the log and the test report on the branch guide-screenshots-output.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/guide-screenshots]
+concurrency:
+  group: guide-screenshots
+  cancel-in-progress: true
+jobs:
+  shots:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Locate preinstalled Android SDK
+        shell: bash
+        run: |
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          echo "$(dirname "$SDKMGR")" >> "$GITHUB_PATH"
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools'
+      - name: Render screens
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          mkdir -p guide-shots
+          export UBICORA_GUIDE_SHOTS="$PWD/guide-shots"
+          set -o pipefail
+          ./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.officinastock.app.GuideScreenshotsTest' 2>&1 | tee guide-shots/gradle.log || true
+          cp app/build/test-results/testDebugUnitTest/TEST-com.officinastock.app.GuideScreenshotsTest.xml guide-shots/ 2>/dev/null || true
+          grep -E '^e: |FAILED|What went wrong' -A3 guide-shots/gradle.log | head -60 > guide-shots/errors.txt || true
+      - name: Publish on guide-screenshots-output
+        shell: bash
+        run: |
+          cd guide-shots
+          git init -q -b guide-screenshots-output
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Guide screenshots from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" guide-screenshots-output

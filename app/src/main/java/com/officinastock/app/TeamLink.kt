@@ -264,6 +264,9 @@ class TeamLink(
         connectedTo?.let { client.disconnectFromEndpoint(it) }; connectedTo = null
     }
 
+    /** Guide screenshots only: shows a given state without radio. */
+    internal fun preview(state: LinkUi) { ui = state }
+
     // ------------------------------------------------------------------ common
 
     /** Closes the network or the search; safe to call at any time. */

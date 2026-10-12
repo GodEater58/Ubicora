@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,7 +92,8 @@ import java.util.Locale
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
                             Text(if (cats.isEmpty()) "Tutti i reparti" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy) { Text("Modifica") }
+                            TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy,
+                                modifier = Modifier.testTag("scope_$l")) { Text("Modifica") }
                         }
                     }
                     HorizontalDivider()
