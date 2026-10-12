@@ -56,17 +56,24 @@ class MainActivity: ComponentActivity() {
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         externalActivityPending=savedInstanceState?.getBoolean("externalActivityPending") ?: false
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        UiPrefs.init(this)
+        // Screens are protected unless the user allows screenshots (Impostazioni › Visualizzazione).
+        if(!UiPrefs.screenshots) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
             StockTheme {
                 val context=LocalContext.current
+                val allowShots=UiPrefs.screenshots
+                LaunchedEffect(allowShots) {
+                    if(allowShots) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                    else window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                }
                 val arLauncher=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                     if(result.resultCode==RESULT_OK) {
                         result.data?.getStringExtra("map_json")?.let{model.importAr(it)}
                     }
                 }
                 val qrLauncher=rememberLauncherForActivityResult(ScanContract()) { result ->
-                    result.contents?.let { model.handleScannedCode(it) }
+                    result.contents?.let { model.handleScannedCode(it) } ?: model.scanCancelled()
                 }
                 val csvLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
                     if(uri!=null) lifecycleScope.launch {
@@ -138,7 +145,8 @@ class MainActivity: ComponentActivity() {
                     qrLauncher.launch(ScanOptions()
                         .setCaptureActivity(StockQrCaptureActivity::class.java)
                         .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                        .setPrompt("Inquadra il QR di un articolo o di una struttura")
+                        .setPrompt(if(model.ui.burstMode) "Prelievo a raffica: inquadra il prossimo articolo · Indietro per finire"
+                            else "Inquadra il QR di un articolo, di una struttura o del telefono centrale")
                         .setBeepEnabled(false)
                         .setOrientationLocked(false))
                 })
@@ -169,6 +177,11 @@ class MainActivity: ComponentActivity() {
             else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
     }
+    // 4.10: screens ask for the scanner through the model (burst picking, team QR).
+    LaunchedEffect(data.scanRequest) {
+        if(data.scanRequest!=0L) { model.consumeScanRequest(); onScan() }
+    }
+    if(data.profile!=null && !data.sessionLocked) { BurstPickDialog(model); TeamLinkDialog(model) }
     if(data.busy && data.initialized) androidx.compose.ui.window.Dialog(
         onDismissRequest={},
         properties=androidx.compose.ui.window.DialogProperties(dismissOnBackPress=false,dismissOnClickOutside=false)
@@ -178,7 +191,7 @@ class MainActivity: ComponentActivity() {
 }
 
 enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione") }
-enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90 }
+enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90, FAVORITES }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
 @Composable fun StockShell(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
@@ -204,6 +217,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     LaunchedEffect(data.scannedItemId) {
         if(data.scannedItemId!=null) go(Tab.STOCK)
     }
+    LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.SETTINGS) }
     // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
     LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
         if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) go(Tab.MAP)
@@ -215,7 +229,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                 icon={ Icon(Icons.Outlined.QrCodeScanner,contentDescription=null) },
                 text={ Text("Scansiona QR") },
                 containerColor=Mint,
-                contentColor=Ink
+                contentColor=OnMint
             )
         }
     }, bottomBar={

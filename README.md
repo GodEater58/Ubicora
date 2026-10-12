@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.9.1 (Sincronizzazione Alpha)
+# Ubicora — Android nativo 4.10.0
 
+> **4.10.0:** collegamento con QR, sincronizza dalla Panoramica, prelievo a raffica, lista da ordinare da condividere, modalità guanti, tema chiaro, preferiti, screenshot consentibili. Dettagli: [CHANGELOG 4.10.0](docs/CHANGELOG_4_10_0.md).
+>
 > **4.9.1:** correzioni alla sincronizzazione: lettera prenotata al primo collegamento, password controllata dal centrale, articoli non validi come conflitti. Dettagli: [CHANGELOG 4.9.1](docs/CHANGELOG_4_9_1.md).
 >
 > **4.9.0:** sincronizzazione automatica: il telefono centrale apre una sua rete (Bluetooth + Wi-Fi diretto) e i satelliti vicini si collegano da soli, con animazione; reparti per operatore (categorie assegnate dal centrale). Dettagli: [CHANGELOG 4.9.0](docs/CHANGELOG_4_9_0.md).

@@ -300,6 +300,9 @@ class TeamSync(private val stock: StockDb) {
         } finally { sql.endTransaction() }
     }
 
+    /** Central only: the team password, to show it as a QR for new phones. */
+    fun teamPassword(): String? = if (setting("role") == "central") setting("password") else null
+
     /** Identifies the shared warehouse (the same on the central and on every satellite). */
     fun warehouseUid(): String? = if (setting("role") == null) null else setting("warehouse_uid")
 

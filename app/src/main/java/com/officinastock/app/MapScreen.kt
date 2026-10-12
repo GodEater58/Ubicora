@@ -238,7 +238,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         modifier=Modifier.weight(1f).clickable {mode=tool;wallAnchor=null;draftEnd=null;selectedWallId=null},
                         shape=RoundedCornerShape(14.dp),
                         color=if(active) Mint.copy(alpha=.15f) else Surface2,
-                        border=BorderStroke(1.dp,if(active) Mint.copy(alpha=.66f) else Color.White.copy(alpha=.07f))
+                        border=BorderStroke(1.dp,if(active) Mint.copy(alpha=.66f) else Hairline.copy(alpha=.07f))
                     ) {
                         Row(Modifier.padding(vertical=10.dp,horizontal=5.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                             Icon(icon,null,tint=if(active) Mint else TextSecondary,modifier=Modifier.size(16.dp))
@@ -685,7 +685,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
 }
 
 @Composable private fun SmallFloatingControl(icon:androidx.compose.ui.graphics.vector.ImageVector,description:String,enabled:Boolean=true,onClick:()->Unit){
-    Surface(shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.97f),border=BorderStroke(1.dp,Color.White.copy(alpha=.1f))){
+    Surface(shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.97f),border=BorderStroke(1.dp,Hairline.copy(alpha=.1f))){
         IconButton(onClick=onClick,enabled=enabled,modifier=Modifier.size(38.dp)){Icon(icon,description,tint=if(enabled)TextPrimary else TextSecondary.copy(alpha=.4f),modifier=Modifier.size(18.dp))}
     }
 }
