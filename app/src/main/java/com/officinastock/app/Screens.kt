@@ -383,6 +383,37 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
+/**
+ * 4.7.1: article screens open as full pages (top bar, scrollable body, main action pinned at the
+ * bottom) instead of small dialogs, so long forms and the keyboard have room on a phone.
+ */
+@Composable fun FullScreenPage(title:String,onClose:()->Unit,subtitle:String="",
+    action:(@Composable RowScope.()->Unit)?=null,content:@Composable ColumnScope.()->Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest=onClose,
+        properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)) {
+        Surface(Modifier.fillMaxSize(),color=Ink) {
+            Column(Modifier.fillMaxSize().imePadding()) {
+                Surface(color=PanelBg) {
+                    Row(Modifier.fillMaxWidth().padding(start=4.dp,end=12.dp,top=6.dp,bottom=6.dp),
+                        verticalAlignment=Alignment.CenterVertically) {
+                        IconButton(onClick=onClose) { Icon(Icons.Outlined.Close,contentDescription="Chiudi") }
+                        Column(Modifier.weight(1f)) {
+                            Text(title,fontWeight=FontWeight.SemiBold,fontSize=18.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=TextPrimary)
+                            if(subtitle.isNotBlank()) Text(subtitle,fontSize=12.sp,color=TextSecondary,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=14.dp),
+                    verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
+                if(action!=null) Surface(color=PanelBg) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),
+                        horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically,content=action)
+                }
+            }
+        }
+    }
+}
+
 @Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Ricambi") }
@@ -395,8 +426,15 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     var leadDays by remember { mutableStateOf("") }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
     val categories=ArticleCodes.categoryPrefixes.keys.toList()
-    AlertDialog(onDismissRequest=onClose,title={Text("Nuovo articolo")},text={
-        Column(Modifier.heightIn(max=470.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+    val valid=name.trim().length in 1..180&&unit.trim().length<=24&&note.length<=3000&&supplier.length<=160&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
+            &&(unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true)
+            &&(leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)
+    FullScreenPage("Nuovo articolo",onClose=onClose,action={
+        OutlinedButton(onClick=onClose,modifier=Modifier.weight(1f)){Text("Annulla")}
+        Button(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note,photoUri,
+            unitCost.takeIf{it.isNotBlank()}?.replace(',','.')?.toDouble(),supplier,leadDays.takeIf{it.isNotBlank()}?.toInt())},
+            enabled=valid,modifier=Modifier.weight(1f)){Text("Salva")}
+    }) {
             Input(name,{name=it},"Nome articolo")
             Text("Categoria",color=TextSecondary,fontSize=12.sp)
             Column { categories.chunked(3).forEach { group->
@@ -422,13 +460,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Input(leadDays,{leadDays=it},"Giorni di consegna",number=true)
             ArticlePhotoField(savedPhoto=null,selectedUri=photoUri,
                 onSelected={photoUri=it},onApply=null,onRemoveSaved=null)
-        }
-    },confirmButton={TextButton(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note,photoUri,
-        unitCost.takeIf{it.isNotBlank()}?.replace(',','.')?.toDouble(),supplier,leadDays.takeIf{it.isNotBlank()}?.toInt())},
-        enabled=name.trim().length in 1..180&&unit.trim().length<=24&&note.length<=3000&&supplier.length<=160&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
-            &&(unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true)
-            &&(leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)){Text("Salva")}},
-        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+    }
 }
 
 /** Gestione anagrafica: la quantità si modifica solo tramite Carico/Prelievo tracciato. */
@@ -454,9 +486,11 @@ private fun EditItemDetailsDialog(
         parsedMinimum?.let(StockRules::validQuantity)==true &&
         (cost.isBlank() || parsedCost?.let { it.isFinite() && it>=0.0 && it<=100000000.0 }==true) &&
         (lead.isBlank() || parsedDays?.let { it in 0..3650 }==true)
-    AlertDialog(onDismissRequest=onClose,title={Text("Modifica articolo")},text={
-        Column(Modifier.heightIn(max=490.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement=Arrangement.spacedBy(8.dp)) {
+    FullScreenPage("Modifica articolo",onClose=onClose,subtitle=item.name,action={
+        OutlinedButton(onClick=onClose,modifier=Modifier.weight(1f)){Text("Annulla")}
+        Button(onClick={onSave(name,category,parsedMinimum!!,unit,note,parsedCost,supplier,parsedDays)},
+            enabled=valid,modifier=Modifier.weight(1f)){Text("Salva modifiche")}
+    }) {
             Text("Codice ${item.sku}: non cambia. Giacenza e movimenti restano invariati.",
                 color=TextSecondary,fontSize=12.sp)
             Input(name,{name=it},"Nome articolo")
@@ -473,11 +507,7 @@ private fun EditItemDetailsDialog(
             Input(cost,{cost=it},"Costo unitario EUR",number=true)
             Input(supplier,{supplier=it},"Fornitore")
             Input(lead,{lead=it},"Giorni di consegna",number=true)
-        }
-    },confirmButton={TextButton(
-        onClick={onSave(name,category,parsedMinimum!!,unit,note,parsedCost,supplier,parsedDays)},
-        enabled=valid){Text("Salva modifiche")}},
-        dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
+    }
 }
 
 @Composable fun ItemDialog(item:StockItem,placements:List<Placement>,model:StockViewModel,onDismiss:()->Unit) {
@@ -489,13 +519,19 @@ private fun EditItemDetailsDialog(
     var showQrLabel by remember(item.id) { mutableStateOf(false) }
     var editPurchase by remember(item.id) { mutableStateOf(false) }
     var editDetails by remember(item.id) { mutableStateOf(false) }
-    AlertDialog(onDismissRequest=onDismiss,title={Text(item.name)},text={
-        Column(Modifier.heightIn(max=510.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement=Arrangement.spacedBy(10.dp)) {
+    val canConfirm=quantity.replace(',','.').toDoubleOrNull()?.let{it.isFinite() && (if(action=="rettifica") it>=0.0 && it!=item.quantity else it>0.0)}==true&&(action!="prestito"||borrower.isNotBlank())&&(action!="rettifica"||note.trim().length in 3..250)
+    FullScreenPage(item.name,onClose=onDismiss,subtitle="${item.sku} · ${item.category}",action={
+        Button(onClick={
+            val q=quantity.replace(',','.').toDouble()
+            if(action=="prestito") model.lend(item.id,borrower,q)
+            else if(action=="rettifica") model.reconcileQuantity(item.id,q,note)
+            else model.movement(item.id,if(action=="carico")q else -q,note)
+            onDismiss()
+        },enabled=canConfirm,modifier=Modifier.fillMaxWidth()){Text("Conferma ${action}")}
+    }) {
             ArticlePhotoField(savedPhoto=item.photoFile,selectedUri=null,
                 onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},
                 onRemoveSaved={model.removeItemPhoto(item.id)},busy=model.ui.busy)
-            Text("Codice ${item.sku} · ${item.category}",color=TextSecondary)
             OutlinedButton(onClick={editDetails=true},modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.Edit,contentDescription=null,modifier=Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -530,15 +566,7 @@ private fun EditItemDetailsDialog(
                 }
             }
             if(item.note.isNotBlank()) Text(item.note,color=TextSecondary,fontSize=12.sp)
-        }
-    },confirmButton={TextButton(onClick={
-        val q=quantity.replace(',','.').toDouble()
-        if(action=="prestito") model.lend(item.id,borrower,q)
-        else if(action=="rettifica") model.reconcileQuantity(item.id,q,note)
-        else model.movement(item.id,if(action=="carico")q else -q,note)
-        onDismiss()
-    },enabled=quantity.replace(',','.').toDoubleOrNull()?.let{it.isFinite() && (if(action=="rettifica") it>=0.0 && it!=item.quantity else it>0.0)}==true&&(action!="prestito"||borrower.isNotBlank())&&(action!="rettifica"||note.trim().length in 3..250)){Text("Conferma")}},
-        dismissButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
+    }
     if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
     if(editDetails) EditItemDetailsDialog(item,onClose={editDetails=false}) { name,category,min,unit,note,cost,supplier,days ->
         model.updateItemDetails(item.id,name,category,min,unit,note,cost,supplier,days)
