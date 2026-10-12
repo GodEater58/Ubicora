@@ -8,33 +8,40 @@ import java.util.Locale
 import kotlin.math.ceil
 
 /**
- * 4.10: QR shown by the central phone to add a satellite without typing the team password.
- * "UBICORA-TEAM:1:<password>:<letters already used>:<warehouse>" (password and name in Base64).
+ * QR shown by the central phone to add a satellite without typing the team password.
+ * 4.11: "UBICORA-TEAM:2:<one-time code>:<letters already used>:<warehouse>" — the code is valid
+ * 10 minutes and the team password then travels only encrypted. 4.10 QRs ("…:1:<password>…") are still read.
  */
 object TeamQr {
-    private const val PREFIX = "UBICORA-TEAM:1:"
-    data class Invite(val password: String, val taken: Set<String>, val warehouse: String) {
+    private const val PREFIX = "UBICORA-TEAM:2:"
+    private const val LEGACY = "UBICORA-TEAM:1:"
+    /** [secret] is the one-time code ([viaCode]) or, for a 4.10 QR, the team password. */
+    data class Invite(val secret: String, val taken: Set<String>, val warehouse: String, val viaCode: Boolean) {
         /** First free letter among those offered on screen (B…F), then the rest of the alphabet. */
         val suggestedLetter: String get() = ('B'..'Z').map { it.toString() }.firstOrNull { it !in taken } ?: "B"
     }
     private val enc = Base64.getUrlEncoder().withoutPadding()
     private val dec = Base64.getUrlDecoder()
 
-    fun encode(password: String, taken: Collection<String>, warehouse: String): String =
-        PREFIX + enc.encodeToString(password.toByteArray(Charsets.UTF_8)) + ":" +
+    fun encode(code: String, taken: Collection<String>, warehouse: String): String =
+        PREFIX + enc.encodeToString(code.toByteArray(Charsets.UTF_8)) + ":" +
             taken.filter { ArticleCodes.isSatelliteLetter(it) }.sorted().joinToString("") + ":" +
             enc.encodeToString(warehouse.take(60).toByteArray(Charsets.UTF_8))
 
     fun parse(raw: String): Invite? {
-        if (!raw.startsWith(PREFIX)) return null
-        val parts = raw.removePrefix(PREFIX).split(':')
+        val viaCode = raw.startsWith(PREFIX)
+        if (!viaCode && !raw.startsWith(LEGACY)) return null
+        val parts = raw.removePrefix(if (viaCode) PREFIX else LEGACY).split(':')
         if (parts.size != 3) return null
         return runCatching {
-            val password = String(dec.decode(parts[0]), Charsets.UTF_8)
+            val secret = String(dec.decode(parts[0]), Charsets.UTF_8)
             val taken = parts[1].map { it.toString() }.filter { ArticleCodes.isSatelliteLetter(it) }.toSet()
-            Invite(password, taken, String(dec.decode(parts[2]), Charsets.UTF_8))
-        }.getOrNull()?.takeIf { it.password.length >= 8 }
+            Invite(secret, taken, String(dec.decode(parts[2]), Charsets.UTF_8), viaCode)
+        }.getOrNull()?.takeIf { it.secret.length >= 8 }
     }
+    /** 4.10 format (password in the QR), kept only to read QRs printed before 4.11. */
+    internal fun encodeLegacy(password: String, taken: Collection<String>, warehouse: String): String =
+        encode(password, taken, warehouse).replaceFirst(PREFIX, LEGACY)
 }
 
 /** 4.10: list of articles under their minimum, ready to send by WhatsApp or email. */

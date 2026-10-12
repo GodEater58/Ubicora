@@ -37,11 +37,13 @@ import java.util.Locale
     var confirm by remember { mutableStateOf("") }
     var letter by remember { mutableStateOf("B") }
     var invitedTo by remember { mutableStateOf<String?>(null) }
+    var viaCode by remember { mutableStateOf(false) }
+    var askPassword by remember { mutableStateOf(false) }
     var showInvite by remember { mutableStateOf(false) }
     // 4.10: the central's QR fills password and a free letter.
     LaunchedEffect(u.teamQr) {
         u.teamQr?.let { invite ->
-            password = invite.password; letter = invite.suggestedLetter; invitedTo = invite.warehouse
+            password = invite.secret; viaCode = invite.viaCode; letter = invite.suggestedLetter; invitedTo = invite.warehouse
             askJoin = true; model.consumeTeamQr()
         }
     }
@@ -64,6 +66,16 @@ import java.util.Locale
 
     Panel(Modifier.fillMaxWidth()) {
         Text("SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+        if (t.role != TeamRole.NONE && t.needsPassword) {
+            // 4.11: the password is sealed by this phone's keystore; after a restore on another phone it is typed again.
+            Surface(color = Amber.copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(10.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Reinserisci la password della squadra", color = Amber, fontWeight = FontWeight.SemiBold)
+                    Text("Per sicurezza non viaggia nei backup in chiaro: su questo telefono va scritta una volta.", fontSize = 11.sp, color = TextSecondary)
+                    OutlinedButton(onClick = { password = ""; askPassword = true }, enabled = !u.busy) { Text("Inserisci password") }
+                }
+            }
+        }
         when (t.role) {
             TeamRole.NONE -> {
                 Text("Più persone, nessun server", fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -75,7 +87,7 @@ import java.util.Locale
                 OutlinedButton(onClick = { model.requestScan() }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Collega con il QR del centrale")
                 }
-                OutlinedButton(onClick = { password = ""; letter = "B"; invitedTo = null; askJoin = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { password = ""; letter = "B"; invitedTo = null; viaCode = false; askJoin = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                     Text("Collega a un telefono centrale")
                 }
             }
@@ -164,10 +176,11 @@ import java.util.Locale
 
     if (askJoin) AlertDialog(onDismissRequest = { askJoin = false }, title = { Text("Collega al centrale") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            invitedTo?.let { Text("QR letto: magazzino «$it». Password già inserita.", fontSize = 12.sp, color = Mint) }
+            invitedTo?.let { Text(if (viaCode) "QR letto: magazzino «$it». Codice valido ${TeamSync.INVITE_MINUTES} minuti, non serve la password."
+                else "QR letto: magazzino «$it». Password già inserita.", fontSize = 12.sp, color = Mint) }
             Text("Avvicinati al telefono centrale con la rete aperta, oppure usa il file «aggiornamento» che ti ha inviato. " +
                 "Verrà creato un nuovo magazzino con i suoi articoli e la sua mappa.", fontSize = 13.sp)
-            Input(password, { password = it }, "Password della squadra", password = true)
+            if (!viaCode) Input(password, { password = it }, "Password della squadra", password = true)
             Text("Lettera di questo telefono (diversa per ogni persona)", fontSize = 12.sp, color = TextSecondary)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("B", "C", "D", "E", "F").forEach { l -> FilterChip(selected = letter == l, onClick = { letter = l }, label = { Text(l) }) }
@@ -176,14 +189,24 @@ import java.util.Locale
         }
     }, confirmButton = {
         Column(horizontalAlignment = Alignment.End) {
-            TextButton(onClick = { askJoin = false; val p = password; val l = letter; password = ""; nearby { model.joinNearby(p, l) } },
+            TextButton(onClick = { askJoin = false; val p = password; val l = letter; password = ""; val code = viaCode; nearby { model.joinNearby(p, l, code) } },
                 enabled = password.length >= 8) { Text("Cerca il centrale vicino") }
-            TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Usa un file") }
+            // The file exchange needs the real team password (the QR code works only over the nearby network).
+            if (!viaCode) TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Usa un file") }
             TextButton(onClick = { askJoin = false; password = "" }) { Text("Annulla") }
         }
     })
 
     val unsent = t.role == TeamRole.SATELLITE && t.pending > 0
+    if (askPassword) AlertDialog(onDismissRequest = { askPassword = false }, title = { Text("Password della squadra") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("La stessa usata da tutti i telefoni della squadra.", fontSize = 13.sp)
+            Input(password, { password = it }, "Password della squadra", password = true)
+        }
+    }, confirmButton = { TextButton(onClick = { model.restoreTeamPassword(password); password = ""; askPassword = false },
+        enabled = password.length >= 8) { Text("Salva") } },
+        dismissButton = { TextButton(onClick = { askPassword = false; password = "" }) { Text("Annulla") } })
+
     if (askLeave) AlertDialog(onDismissRequest = { askLeave = false }, title = { Text("Scollegare il telefono?") }, text = {
         Text(when {
             t.role == TeamRole.CENTRAL -> "Gli articoli restano su questo telefono, ma i satelliti non potranno più scambiare file con lui."
@@ -217,7 +240,8 @@ import java.util.Locale
                     ?: Text("QR non disponibile", color = Danger)
                 Text("Sull'altro telefono: Impostazioni › Sincronizzazione › «Collega con il QR del centrale», poi «Cerca il centrale vicino» " +
                     "mentre qui la rete è aperta.", fontSize = 12.sp, color = TextSecondary)
-                Text("Il QR contiene la password della squadra: mostralo solo ai colleghi.", fontSize = 12.sp, color = Amber)
+                Text("Il QR contiene un codice usa e getta valido ${TeamSync.INVITE_MINUTES} minuti, non la password: dopo scade da solo.",
+                    fontSize = 12.sp, color = TextSecondary)
             }
         }, confirmButton = { TextButton(onClick = { showInvite = false }) { Text("Chiudi") } })
     }

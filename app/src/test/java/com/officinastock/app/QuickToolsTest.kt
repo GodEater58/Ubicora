@@ -8,18 +8,25 @@ class QuickToolsTest {
     private fun item(name: String, qty: Double, min: Double, supplier: String = "", unit: String = "pz") =
         StockItem(1, 1, "RIC-00000${name.length}", name, "Ricambi", qty, min, unit, null, "", supplier = supplier)
 
-    @Test fun teamQrCarriesPasswordFreeLetterAndWarehouse() {
-        val raw = TeamQr.encode("squadra:2026 è", listOf("C", "B"), "Officina Rovigo")
+    @Test fun teamQrCarriesAOneTimeCodeNotThePassword() {
+        val raw = TeamQr.encode("K7M2P9QX4T", listOf("C", "B"), "Officina Rovigo")
         val invite = TeamQr.parse(raw)!!
-        assertEquals("squadra:2026 è", invite.password)
+        assertTrue(invite.viaCode)
+        assertEquals("K7M2P9QX4T", invite.secret)
         assertEquals(setOf("B", "C"), invite.taken)
         assertEquals("D", invite.suggestedLetter)
         assertEquals("Officina Rovigo", invite.warehouse)
     }
 
+    @Test fun qrPrintedBefore411StillWork() {
+        val invite = TeamQr.parse(TeamQr.encodeLegacy("squadra:2026 è", listOf("B"), "Officina"))!!
+        assertFalse(invite.viaCode)
+        assertEquals("squadra:2026 è", invite.secret)
+    }
+
     @Test fun otherCodesAreNotTeamInvites() {
         assertNull(TeamQr.parse("OFFICINA-STOCK:1:W1:RIC-000001"))
-        assertNull(TeamQr.parse("UBICORA-TEAM:1:%%%:B:x"))
+        assertNull(TeamQr.parse("UBICORA-TEAM:2:%%%:B:x"))
         assertNull(TeamQr.parse(TeamQr.encode("corta", emptyList(), "X")))   // under 8 characters
     }
 
