@@ -20,8 +20,9 @@ import androidx.compose.ui.unit.sp
 @Composable fun BurstPickDialog(model: StockViewModel) {
     val u = model.ui
     val item = u.burstItemId?.let { id -> u.items.firstOrNull { it.id == id } } ?: return
-    var qty by remember(item.id, u.burstCount) { mutableStateOf(1.0) }
     val max = item.quantity
+    // Less than one unit left (e.g. 0.5 kg): offer exactly what is there.
+    var qty by remember(item.id, u.burstCount) { mutableStateOf(if (max > 0.0 && max < 1.0) max else 1.0) }
     val place = item.placementId?.let { id -> u.placements.firstOrNull { it.id == id } }
     AlertDialog(onDismissRequest = {}, title = {
         Column {
@@ -41,11 +42,11 @@ import androidx.compose.ui.unit.sp
                     Icon(Icons.Outlined.Add, "Uno in più")
                 }
             }
-            if (max < 1.0) Text("Giacenza insufficiente: salta questo articolo.", color = Danger, fontSize = 12.sp)
+            if (max <= 0.0) Text("Esaurito: salta questo articolo.", color = Danger, fontSize = 12.sp)
         }
     }, confirmButton = {
         Column(horizontalAlignment = Alignment.End) {
-            Button(onClick = { model.burstPick(item.id, qty) }, enabled = !u.busy && qty <= max) {
+            Button(onClick = { model.burstPick(item.id, qty) }, enabled = !u.busy && qty > 0.0 && qty <= max) {
                 Text("Preleva ${amount(qty)} ${item.unit} e continua")
             }
             TextButton(onClick = { model.burstSkip() }, enabled = !u.busy) { Text("Salta, scansiona il prossimo") }
