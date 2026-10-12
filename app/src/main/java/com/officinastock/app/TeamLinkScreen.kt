@@ -38,7 +38,7 @@ import androidx.compose.ui.window.DialogProperties
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         val action = pending; pending = null
         if (granted.values.all { it } && TeamLink.missingPermissions(context).isEmpty()) action?.invoke()
-        else onDenied("Per trovare gli altri telefoni servono i permessi «Dispositivi nelle vicinanze» e «Posizione». " +
+        else onDenied("Per trovare gli altri telefoni servono i permessi «Dispositivi nelle vicinanze» e «Posizione» (posizione precisa). " +
             "Se li hai negati, attivali da Impostazioni Android › App › Ubicora › Autorizzazioni.")
     }
     return { action ->

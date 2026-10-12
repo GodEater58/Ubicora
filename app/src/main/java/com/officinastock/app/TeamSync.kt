@@ -129,6 +129,7 @@ class TeamSync(private val stock: StockDb) {
     companion object {
         const val SNAPSHOT = "UBICORA_SYNC_STATE"
         const val CHANGES = "UBICORA_SYNC_CHANGES"
+        const val JOIN = "UBICORA_SYNC_JOIN"
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
     }
@@ -198,6 +199,39 @@ class TeamSync(private val stock: StockDb) {
             sql.setTransactionSuccessful()
             return result
         } finally { sql.endTransaction() }
+    }
+
+    /**
+     * 4.9.1, nearby join: a small file encrypted with the team password that books [letter] on the
+     * central before any article is created, so two phones can never end up with the same letter.
+     */
+    fun joinTicket(out: OutputStream, password: String, letter: String) {
+        requirePassword(password)
+        require(ArticleCodes.isSatelliteLetter(letter)) { "Scegli una lettera da B a Z" }
+        require(setting("role") == null) { "Questo telefono è già collegato a una sincronizzazione" }
+        write(out, JSONObject().put("format", JOIN).put("version", 1).put("device_uid", deviceUid())
+            .put("letter", letter).put("created_at", System.currentTimeMillis()), password)
+    }
+
+    /** Central: checks the password in the ticket and books the letter. Returns the letter. */
+    fun acceptJoin(input: InputStream): String {
+        require(setting("role") == "central") { "Questo telefono non è il centrale" }
+        val ticket = try { read(input, setting("password")!!, JOIN) }
+            catch (e: IllegalArgumentException) { throw IllegalArgumentException("Password della squadra errata: controlla e riprova") }
+        val device = ticket.getString("device_uid"); val letter = ticket.getString("letter")
+        require(ArticleCodes.isSatelliteLetter(letter) && device.isNotBlank()) { "Richiesta di collegamento non valida" }
+        val sql = db
+        sql.beginTransaction()
+        try {
+            val owner = sql.rawQuery("SELECT device_uid FROM team_sync_peers WHERE letter=?", arrayOf(letter)).use {
+                if (it.moveToFirst()) it.getString(0) else null }
+            require(owner == null || owner == device) { "La lettera $letter è già usata da un altro telefono: scegline un'altra" }
+            val known = sql.rawQuery("SELECT 1 FROM team_sync_peers WHERE device_uid=?", arrayOf(device)).use { it.moveToFirst() }
+            if (known) sql.update("team_sync_peers", ContentValues().apply { put("letter", letter) }, "device_uid=?", arrayOf(device))
+            else sql.insertOrThrow("team_sync_peers", null, ContentValues().apply { put("device_uid", device); put("letter", letter) })
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
+        return letter
     }
 
     /**
@@ -356,7 +390,14 @@ class TeamSync(private val stock: StockDb) {
                         if (scope != null && o.getString("category") !in scope) {
                             conflict(sql, letter, "${o.getString("sku")} · ${o.getString("name")}",
                                 "articolo non creato: la categoria ${o.getString("category")} non è del reparto $letter"); conflicts++
-                        } else if (insertArticle(sql, warehouseId, e)) articles++ else skipped++
+                        } else {
+                            // A bad article (e.g. a code already taken) must not block every later file of this phone.
+                            val inserted = runCatching { insertArticle(sql, warehouseId, e) }
+                            inserted.onSuccess { if (it) articles++ else skipped++ }.onFailure {
+                                conflict(sql, letter, "${o.optString("sku")} · ${o.optString("name")}",
+                                    "articolo non creato: ${it.message ?: "dati non validi"}"); conflicts++
+                            }
+                        }
                     }
                     "MOVE" -> {
                         val itemId = itemId(sql, warehouseId, e.getString("item"))
@@ -632,8 +673,8 @@ class TeamSync(private val stock: StockDb) {
     private fun dimension(v: Double): Double { require(v.isFinite() && v in 2.0..150.0) { "Dimensioni pianta non valide nel file" }; return v }
     private fun requirePassword(password: String) = require(password.length >= 8) { "La password della squadra deve avere almeno 8 caratteri" }
 
-    private fun write(out: OutputStream, json: JSONObject) {
-        val password = setting("password") ?: throw IllegalArgumentException("Password della squadra mancante")
+    private fun write(out: OutputStream, json: JSONObject, explicitPassword: String? = null) {
+        val password = explicitPassword ?: setting("password") ?: throw IllegalArgumentException("Password della squadra mancante")
         BackupCipher.encrypt(out, password).use { enc -> GZIPOutputStream(enc).use { it.write(json.toString().toByteArray(Charsets.UTF_8)) } }
     }
     private fun read(input: InputStream, password: String, format: String): JSONObject {

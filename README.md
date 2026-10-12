@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.9.0 (Sincronizzazione Alpha)
+# Ubicora — Android nativo 4.9.1 (Sincronizzazione Alpha)
 
+> **4.9.1:** correzioni alla sincronizzazione: lettera prenotata al primo collegamento, password controllata dal centrale, articoli non validi come conflitti. Dettagli: [CHANGELOG 4.9.1](docs/CHANGELOG_4_9_1.md).
+>
 > **4.9.0:** sincronizzazione automatica: il telefono centrale apre una sua rete (Bluetooth + Wi-Fi diretto) e i satelliti vicini si collegano da soli, con animazione; reparti per operatore (categorie assegnate dal centrale). Dettagli: [CHANGELOG 4.9.0](docs/CHANGELOG_4_9_0.md).
 >
 > **4.8.1:** sincronizzazione più robusta: satellite rifiutato scollegabile e ricollegabile, nessun blocco con copie del magazzino già sul telefono o codici di versioni vecchie, dati articolo protetti sui satelliti. Dettagli: [CHANGELOG 4.8.1](docs/CHANGELOG_4_8_1.md).
