@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.8.0 (Sincronizzazione Alpha)
+# Ubicora — Android nativo 4.8.1 (Sincronizzazione Alpha)
 
+> **4.8.1:** sincronizzazione più robusta: satellite rifiutato scollegabile e ricollegabile, nessun blocco con copie del magazzino già sul telefono o codici di versioni vecchie, dati articolo protetti sui satelliti. Dettagli: [CHANGELOG 4.8.1](docs/CHANGELOG_4_8_1.md).
+>
 > **4.8.0:** sincronizzazione tra telefoni senza server: un telefono centrale e più satelliti si scambiano file cifrati; giacenze unite sommando i movimenti, importazioni ripetibili senza doppioni. Dettagli: [CHANGELOG 4.8.0](docs/CHANGELOG_4_8_0.md).
 
 > **4.7.5:** anagrafica iniziale da Excel: modello con menù a tendina e importazione CSV che accetta codici vuoti, file di Excel e righe vuote. Dettagli: [CHANGELOG 4.7.5](docs/CHANGELOG_4_7_5.md).

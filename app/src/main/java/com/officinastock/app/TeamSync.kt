@@ -143,7 +143,8 @@ class TeamSync(private val stock: StockDb) {
         require(setting("role") == null) { "Questo telefono è già collegato a una sincronizzazione" }
         val state = read(input, password, SNAPSHOT)
         val room = state.getJSONObject("warehouse")
-        require(state.getJSONObject("letters").let { taken -> taken.keys().asSequence().none { taken.getString(it) == letter } }) {
+        val me = setting("device_uid")
+        require(state.getJSONObject("letters").let { taken -> taken.keys().asSequence().none { it != me && taken.getString(it) == letter } }) {
             "La lettera $letter è già usata da un altro telefono: scegline un'altra"
         }
         val sql = db
@@ -166,18 +167,38 @@ class TeamSync(private val stock: StockDb) {
         } finally { sql.endTransaction() }
     }
 
-    /** Leaves the sync. A satellite with unsent changes must send them first. */
-    fun leave() {
-        require(setting("role") != "satellite" ||
+    /**
+     * Leaves the sync. A satellite with unsent changes must send them first, unless [force]
+     * (for example the central refused its letter): the local data stays, it is just not sent.
+     * The phone keeps its identity, so the central recognises it if it joins again.
+     */
+    fun leave(force: Boolean = false) {
+        require(force || setting("role") != "satellite" ||
             db.rawQuery("SELECT COUNT(*) FROM team_sync_outbox", null).use { it.moveToFirst(); it.getInt(0) } == 0) {
             "Ci sono modifiche non ancora inviate al centrale: inviale prima di scollegare il telefono"
         }
         val sql = db
         sql.beginTransaction()
         try {
-            for (t in listOf("team_sync_settings", "team_sync_outbox", "team_sync_peers", "team_sync_conflicts")) sql.delete(t, null, null)
+            sql.delete("team_sync_settings", "key<>'device_uid'", null)
+            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts")) sql.delete(t, null, null)
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
+    }
+
+    /**
+     * On a satellite the article details (name, category, minimum, purchase data) come from the
+     * central with every update, so a local edit would be silently overwritten: only the phone's
+     * own articles not yet sent can still be corrected.
+     */
+    fun requireDetailsEditable(itemId: Long) {
+        if (setting("role") != "satellite") return
+        val synced = db.rawQuery("SELECT 1 FROM items WHERE id=? AND warehouse_id=?",
+            arrayOf(itemId.toString(), setting("warehouse_id").orEmpty())).use { it.moveToFirst() }
+        if (!synced) return
+        require(db.rawQuery("SELECT 1 FROM team_sync_outbox WHERE kind='ITEM' AND ref_id=?", arrayOf(itemId.toString())).use { it.moveToFirst() }) {
+            "Su questo telefono (satellite ${setting("letter")}) i dati dell'articolo si modificano dal telefono centrale. Carichi, prelievi e ubicazione invece sì."
+        }
     }
 
     fun dismissConflicts() { db.delete("team_sync_conflicts", null, null) }
@@ -255,7 +276,8 @@ class TeamSync(private val stock: StockDb) {
                 val e = events.getJSONObject(i)
                 val seq = e.getLong("seq")
                 if (seq <= processed) { skipped++; continue }
-                require(seq == processed + 1) { "Manca un invio precedente del telefono $letter: importa prima quello" }
+                // Each file holds every change not yet confirmed, so a gap in the numbering only
+                // follows a forced disconnection or a restored backup: nothing to wait for.
                 when (e.getString("kind")) {
                     "ITEM" -> if (insertArticle(sql, warehouseId, e)) articles++ else skipped++
                     "MOVE" -> {
@@ -388,8 +410,10 @@ class TeamSync(private val stock: StockDb) {
                 put("width_m", p.getDouble("width")); put("depth_m", p.getDouble("depth")); put("rotation_deg", p.getDouble("rotation"))
                 put("levels", p.getInt("levels")); put("slots", p.getInt("slots")); put("uid", uid)
             }
-            if (sql.update("placements", values, "uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString())) == 0)
+            if (sql.update("placements", values, "uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString())) == 0) {
+                freeUid(sql, "placements", uid, warehouseId)
                 sql.insertOrThrow("placements", null, values)
+            }
         }
         sql.rawQuery("SELECT id,uid FROM placements WHERE warehouse_id=?", arrayOf(warehouseId.toString())).use { c ->
             val gone = buildList { while (c.moveToNext()) if (c.getString(1) !in keep) add(c.getLong(0)) }
@@ -408,7 +432,7 @@ class TeamSync(private val stock: StockDb) {
         for (i in 0 until items.length()) {
             val it = items.getJSONObject(i)
             val uid = it.getString("uid")
-            val local = sql.rawQuery("SELECT id,quantity FROM items WHERE uid=?", arrayOf(uid)).use { c -> if (c.moveToFirst()) c.getLong(0) to c.getDouble(1) else null }
+            val local = sql.rawQuery("SELECT id,quantity FROM items WHERE uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString())).use { c -> if (c.moveToFirst()) c.getLong(0) to c.getDouble(1) else null }
             // Central quantity plus what this phone moved and has not sent yet (never below zero).
             val target = StockRules.difference(it.getDouble("quantity"), -(local?.let { l -> pendingDelta[l.first] } ?: 0.0))
                 .coerceAtLeast(0.0)
@@ -416,6 +440,7 @@ class TeamSync(private val stock: StockDb) {
             if (local == null) {
                 values.put("warehouse_id", warehouseId); values.put("uid", uid)
                 placeOn(values, placementOf(sql, warehouseId, it))
+                freeUid(sql, "items", uid, warehouseId)
                 val id = sql.insertOrThrow("items", null, values)
                 if (target > 0) stock.recordTeamMovement(sql, id, target, "Allineamento dal centrale", System.currentTimeMillis())
                 stock.bumpSequence(sql, it.getString("sku"))
@@ -448,9 +473,10 @@ class TeamSync(private val stock: StockDb) {
     private fun articleValues(o: JSONObject) = ContentValues().apply {
         val name = o.getString("name").trim(); require(name.length in 1..180) { "Nome articolo non valido nel file" }
         ArticleCodes.prefix(o.getString("category"))
-        require(ArticleCodes.parseCode(o.getString("sku")) != null) { "Codice articolo non valido nel file" }
+        // Codes from older versions may not follow today's format: any non-empty code is kept.
+        require(o.getString("sku").trim().length in 1..40) { "Codice articolo non valido nel file" }
         val minimum = o.getDouble("minimum"); require(StockRules.validQuantity(minimum)) { "Scorta minima non valida nel file" }
-        put("sku", o.getString("sku")); put("name", name); put("category", o.getString("category"))
+        put("sku", o.getString("sku").trim()); put("name", name); put("category", o.getString("category"))
         put("minimum", minimum); put("unit", o.getString("unit").trim().take(24).ifEmpty { "pz" })
         put("note", o.optString("note").take(3000)); put("supplier", o.optString("supplier").take(160))
         if (o.isNull("cost")) putNull("unit_cost") else put("unit_cost", o.getDouble("cost").also { require(it.isFinite() && it >= 0) })
@@ -477,6 +503,7 @@ class TeamSync(private val stock: StockDb) {
         }
         require(sql.rawQuery("SELECT 1 FROM items WHERE warehouse_id=? AND sku=?", arrayOf(warehouseId.toString(), o.getString("sku")))
             .use { !it.moveToFirst() }) { "Codice ${o.getString("sku")} già presente: due telefoni con la stessa lettera?" }
+        freeUid(sql, "items", o.getString("uid"), warehouseId)
         sql.insertOrThrow("items", null, values)
         stock.bumpSequence(sql, o.getString("sku"))
         return true
@@ -496,6 +523,13 @@ class TeamSync(private val stock: StockDb) {
         }
         sql.update("items", values, "id=?", arrayOf(itemId.toString()))
     }
+
+    /**
+     * Another warehouse on this phone may carry the same global id (for example a copy of the
+     * central's backup restored here before joining): that copy gets a new one.
+     */
+    private fun freeUid(sql: SQLiteDatabase, table: String, uid: String, warehouseId: Long) =
+        sql.execSQL("UPDATE $table SET uid=lower(hex(randomblob(16))) WHERE uid=? AND warehouse_id<>?", arrayOf(uid, warehouseId))
 
     private fun itemId(sql: SQLiteDatabase, warehouseId: Long, uid: String): Long? =
         if (uid.isEmpty()) null else sql.rawQuery("SELECT id FROM items WHERE uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString()))

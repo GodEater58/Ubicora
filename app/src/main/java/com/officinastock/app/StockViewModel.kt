@@ -330,9 +330,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
                           unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
+        team.requireDetailsEditable(itemId)
         db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
     }
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
+        team.requireDetailsEditable(itemId)
         db.updatePurchase(itemId,cost,supplier,leadDays)
     }
     fun movement(itemId:Long,delta:Double,note:String) {
@@ -650,7 +652,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     // ---- 4.8 phone-to-phone sync ----
     fun becomeTeamCentral(password:String) = execute { team.becomeCentral(requireWarehouse(),password) }
-    fun leaveTeam() = execute { team.leave() }
+    fun leaveTeam(force:Boolean=false) = execute { team.leave(force) }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
     /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
     private suspend fun teamFile(block:()->String):String {

@@ -130,10 +130,16 @@ import java.util.Locale
     }, confirmButton = { TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Scegli il file") } },
         dismissButton = { TextButton(onClick = { askJoin = false; password = "" }) { Text("Annulla") } })
 
+    val unsent = t.role == TeamRole.SATELLITE && t.pending > 0
     if (askLeave) AlertDialog(onDismissRequest = { askLeave = false }, title = { Text("Scollegare il telefono?") }, text = {
-        Text(if (t.role == TeamRole.CENTRAL) "Gli articoli restano su questo telefono, ma i satelliti non potranno più scambiare file con lui."
-            else "Gli articoli restano su questo telefono. Se ci sono modifiche non inviate, prima inviale al centrale.", fontSize = 13.sp)
-    }, confirmButton = { TextButton(onClick = { model.leaveTeam(); askLeave = false }) { Text("Scollega", color = Danger) } },
+        Text(when {
+            t.role == TeamRole.CENTRAL -> "Gli articoli restano su questo telefono, ma i satelliti non potranno più scambiare file con lui."
+            unsent -> "Ci sono ${t.pending} modifiche non ancora inviate al centrale. Se scolleghi ora restano solo su questo telefono e il centrale non le riceverà. " +
+                "Fallo solo se il centrale ha rifiutato i tuoi file (per esempio lettera già usata)."
+            else -> "Gli articoli restano su questo telefono."
+        }, fontSize = 13.sp)
+    }, confirmButton = { TextButton(onClick = { model.leaveTeam(force = unsent); askLeave = false }) {
+        Text(if (unsent) "Scollega comunque" else "Scollega", color = Danger) } },
         dismissButton = { TextButton(onClick = { askLeave = false }) { Text("Annulla") } })
 
     if (showConflicts) AlertDialog(onDismissRequest = { showConflicts = false }, title = { Text("Conflitti") }, text = {
