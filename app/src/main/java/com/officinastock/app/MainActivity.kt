@@ -62,6 +62,16 @@ class MainActivity: ComponentActivity() {
         setContent {
             StockTheme {
                 val context=LocalContext.current
+                // 4.10.1: status and navigation bars follow the light/dark theme.
+                val lightTheme=UiPrefs.light
+                LaunchedEffect(lightTheme) {
+                    val bar=if(lightTheme) 0xFFF2F6F5.toInt() else 0xFF081320.toInt()
+                    @Suppress("DEPRECATION") run { window.statusBarColor=bar; window.navigationBarColor=bar }
+                    window.decorView.setBackgroundColor(bar)   // behind the bars on edge-to-edge Android 15+
+                    androidx.core.view.WindowCompat.getInsetsController(window,window.decorView).apply {
+                        isAppearanceLightStatusBars=lightTheme; isAppearanceLightNavigationBars=lightTheme
+                    }
+                }
                 val allowShots=UiPrefs.screenshots
                 LaunchedEffect(allowShots) {
                     if(allowShots) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
