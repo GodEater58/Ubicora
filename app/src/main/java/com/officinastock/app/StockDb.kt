@@ -319,7 +319,10 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             if(quantity > 0) recordMovement(db,id,quantity,"Carico iniziale")
             db.setTransactionSuccessful()
             return id
-        } catch(e: SQLiteConstraintException) { throw IllegalArgumentException("Codice già utilizzato. Riprova.",e) }
+        } catch(e: SQLiteConstraintException) {
+            val department=e.message?.takeIf { it.contains("reparto") }?.substringBefore(" (code ")
+            throw IllegalArgumentException(department ?: "Codice già utilizzato. Riprova.",e)
+        }
         finally { db.endTransaction() }
     }
     private fun validatePurchase(unitCost: Double?, leadDays: Int?) {

@@ -67,6 +67,33 @@ object TeamSyncSchema {
             WHEN $active AND NEW.warehouse_id=$synced AND (OLD.placement_id IS NOT NEW.placement_id
                 OR OLD.shelf_level IS NOT NEW.shelf_level OR OLD.shelf_slot IS NOT NEW.shelf_slot)
             BEGIN INSERT INTO team_sync_outbox(kind,ref_id,created_at) VALUES('LOCATE',NEW.id,$now); END""")
+        createScopeTriggers(db)
+    }
+    /**
+     * 4.9 departments: on a satellite the central may limit new articles, loads and moves to some
+     * categories (setting "scope", one category per line; empty = all). Withdrawals stay free.
+     * Enforced here for every code path; the central checks again when importing.
+     */
+    fun createScopeTriggers(db: SQLiteDatabase) {
+        fun s(key: String) = "(SELECT value FROM team_sync_settings WHERE key='$key')"
+        val active = "${s("role")}='satellite' AND COALESCE(${s("applying")},'0')='0'"
+        val synced = "CAST(${s("warehouse_id")} AS INTEGER)"
+        fun outside(category: String) = "COALESCE(${s("scope")},'')<>'' AND instr(char(10)||${s("scope")}||char(10), char(10)||$category||char(10))=0"
+        val message = "Fuori dal tuo reparto: qui puoi solo prelevare. Per il resto chiedi al telefono centrale"
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_item BEFORE INSERT ON items
+            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("NEW.category")}
+            BEGIN SELECT RAISE(ABORT,'Fuori dal tuo reparto: non puoi creare articoli di questa categoria'); END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_category BEFORE UPDATE OF category ON items
+            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("NEW.category")}
+            BEGIN SELECT RAISE(ABORT,'Fuori dal tuo reparto: categoria non consentita'); END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_load BEFORE INSERT ON movements
+            WHEN $active AND NEW.delta>0 AND COALESCE(${s("returning")},'0')='0'
+                AND EXISTS(SELECT 1 FROM items i WHERE i.id=NEW.item_id AND i.warehouse_id=$synced AND ${outside("i.category")})
+            BEGIN SELECT RAISE(ABORT,'$message'); END""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_locate BEFORE UPDATE OF placement_id,shelf_level,shelf_slot ON items
+            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("OLD.category")} AND (OLD.placement_id IS NOT NEW.placement_id
+                OR OLD.shelf_level IS NOT NEW.shelf_level OR OLD.shelf_slot IS NOT NEW.shelf_slot)
+            BEGIN SELECT RAISE(ABORT,'$message'); END""")
     }
     fun backfillIds(db: SQLiteDatabase) {
         for (table in listOf("items", "placements"))
@@ -89,7 +116,11 @@ data class TeamConflict(val id: Long, val letter: String, val item: String, val 
 data class TeamSyncStatus(
     val role: TeamRole = TeamRole.NONE, val warehouseId: Long? = null, val letter: String? = null,
     val pending: Int = 0, val lastSync: Long = 0, val peers: List<TeamPeer> = emptyList(),
-    val conflicts: List<TeamConflict> = emptyList()
+    val conflicts: List<TeamConflict> = emptyList(),
+    /** Satellite: its department (categories); empty = all. */
+    val scope: List<String> = emptyList(),
+    /** Central: departments per satellite letter. */
+    val scopes: Map<String, List<String>> = emptyMap()
 )
 data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
                             val letter: String? = null)
@@ -114,7 +145,8 @@ class TeamSync(private val stock: StockDb) {
         val conflicts = db.rawQuery("SELECT id,letter,item,detail,created_at FROM team_sync_conflicts ORDER BY id DESC LIMIT 200", null).use { c ->
             buildList { while (c.moveToNext()) add(TeamConflict(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4))) } }
         return TeamSyncStatus(role, setting("warehouse_id")?.toLongOrNull(), setting("letter"),
-            if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts)
+            if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts,
+            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap())
     }
 
     // ---------------------------------------------------------------- set-up
@@ -202,6 +234,38 @@ class TeamSync(private val stock: StockDb) {
         }
     }
 
+    /** Central: limits satellite [letter] to [categories] (empty = all). Reaches it at the next exchange. */
+    fun setScope(letter: String, categories: List<String>) {
+        require(setting("role") == "central") { "I reparti li assegna il telefono centrale" }
+        require(ArticleCodes.isSatelliteLetter(letter)) { "Lettera non valida" }
+        categories.forEach { ArticleCodes.prefix(it) }
+        val all = ArticleCodes.categoryPrefixes.keys
+        val chosen = all.filter { it in categories }
+        if (chosen.isEmpty() || chosen.size == all.size) db.delete("team_sync_settings", "key=?", arrayOf("scope:$letter"))
+        else TeamSyncSchema.put(db, "scope:$letter", chosen.joinToString("\n"))
+    }
+    private fun scopes(): Map<String, List<String>> =
+        db.rawQuery("SELECT key,value FROM team_sync_settings WHERE key LIKE 'scope:%'", null).use { c ->
+            buildMap { while (c.moveToNext()) put(c.getString(0).removePrefix("scope:"), lines(c.getString(1))) } }
+    private fun lines(value: String?) = value.orEmpty().split('\n').filter { it.isNotBlank() }
+
+    /**
+     * Runs [block] as the return of something this phone took (undo of a withdrawal, a loan
+     * coming back): allowed even outside the department.
+     */
+    fun <T> returning(block: () -> T): T {
+        if (setting("role") != "satellite") return block()
+        val sql = db
+        sql.beginTransaction()   // the flag can never stay on: it is rolled back with the block
+        try {
+            TeamSyncSchema.put(sql, "returning", "1")
+            val result = block()
+            TeamSyncSchema.put(sql, "returning", "0")
+            sql.setTransactionSuccessful()
+            return result
+        } finally { sql.endTransaction() }
+    }
+
     /** Identifies the shared warehouse (the same on the central and on every satellite). */
     fun warehouseUid(): String? = if (setting("role") == null) null else setting("warehouse_uid")
 
@@ -227,6 +291,7 @@ class TeamSync(private val stock: StockDb) {
             while (c.moveToNext()) { processed.put(c.getString(0), c.getLong(2)); letters.put(c.getString(0), c.getString(1)) }
         }
         state.put("processed", processed).put("letters", letters)
+            .put("scopes", JSONObject().apply { scopes().forEach { (l, c) -> put(l, JSONArray(c)) } })
         val placements = JSONArray()
         read.rawQuery("SELECT uid,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE warehouse_id=? ORDER BY id",
             arrayOf(warehouseId.toString())).use { c -> while (c.moveToNext()) placements.put(JSONObject()
@@ -273,6 +338,9 @@ class TeamSync(private val stock: StockDb) {
             else if (known.first != letter) sql.update("team_sync_peers", ContentValues().apply { put("letter", letter) },
                 "device_uid=?", arrayOf(device))
             var processed = known?.second ?: 0L
+            val scope = setting("scope:$letter")?.let { lines(it).toSet() }
+            fun outside(itemId: Long?): Boolean = scope != null && itemId != null &&
+                sql.rawQuery("SELECT category FROM items WHERE id=?", arrayOf(itemId.toString())).use { it.moveToFirst() && it.getString(0) !in scope }
             val events = changes.getJSONArray("events")
             require(events.length() <= MAX_EVENTS) { "File troppo grande" }
             var articles = 0; var moves = 0; var locations = 0; var skipped = 0; var conflicts = 0
@@ -283,11 +351,20 @@ class TeamSync(private val stock: StockDb) {
                 // Each file holds every change not yet confirmed, so a gap in the numbering only
                 // follows a forced disconnection or a restored backup: nothing to wait for.
                 when (e.getString("kind")) {
-                    "ITEM" -> if (insertArticle(sql, warehouseId, e)) articles++ else skipped++
+                    "ITEM" -> {
+                        val o = e.getJSONObject("item")
+                        if (scope != null && o.getString("category") !in scope) {
+                            conflict(sql, letter, "${o.getString("sku")} · ${o.getString("name")}",
+                                "articolo non creato: la categoria ${o.getString("category")} non è del reparto $letter"); conflicts++
+                        } else if (insertArticle(sql, warehouseId, e)) articles++ else skipped++
+                    }
                     "MOVE" -> {
                         val itemId = itemId(sql, warehouseId, e.getString("item"))
                         val note = "$letter · " + e.getString("note").take(240)
-                        val failure = if (itemId == null) "articolo sconosciuto" else runCatching {
+                        val failure = if (itemId == null) "articolo sconosciuto"
+                            else if (e.getDouble("delta") > 0 && outside(itemId) && !e.getString("note").startsWith("Annullato") &&
+                                !e.getString("note").startsWith("Restituito")) "carico fuori dal reparto $letter"
+                            else runCatching {
                             stock.applyTeamMovement(sql, itemId, e.getDouble("delta"), note, e.getLong("at"))
                         }.exceptionOrNull()?.let { it.message ?: "movimento non applicabile" }
                         if (failure == null) moves++ else {
@@ -297,7 +374,9 @@ class TeamSync(private val stock: StockDb) {
                     }
                     "LOCATE" -> {
                         val itemId = itemId(sql, warehouseId, e.getString("item"))
-                        val failure = if (itemId == null) "articolo sconosciuto" else runCatching {
+                        val failure = if (itemId == null) "articolo sconosciuto"
+                            else if (outside(itemId)) "spostamento fuori dal reparto $letter"
+                            else runCatching {
                             locate(sql, warehouseId, itemId, e.optString("placement").ifEmpty { null },
                                 e.optInt("level").takeIf { e.has("level") && !e.isNull("level") },
                                 e.optInt("slot").takeIf { e.has("slot") && !e.isNull("slot") })
@@ -396,6 +475,10 @@ class TeamSync(private val stock: StockDb) {
                 "ITEM" -> pendingItems.add(c.getLong(1))
             }
         }
+        TeamSyncSchema.createScopeTriggers(sql)
+        val myScope = state.optJSONObject("scopes")?.optJSONArray(setting("letter").orEmpty())
+        if (myScope == null || myScope.length() == 0) sql.delete("team_sync_settings", "key='scope'", null)
+        else TeamSyncSchema.put(sql, "scope", (0 until myScope.length()).joinToString("\n") { myScope.getString(it) })
         TeamSyncSchema.put(sql, "applying", "1")
         val room = state.getJSONObject("warehouse")
         sql.update("warehouses", ContentValues().apply {

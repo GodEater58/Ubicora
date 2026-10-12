@@ -444,7 +444,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
         }
     }
-    if(add) NewItemDialog(onClose={add=false},save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays->
+    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays->
         model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays);add=false
     })
     labelItem?.let { current ->
@@ -487,9 +487,11 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     }
 }
 
-@Composable fun NewItemDialog(onClose:()->Unit,save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
+@Composable fun NewItemDialog(onClose:()->Unit,allowed:List<String> = emptyList(),save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
+    // A satellite with a department only sees its own categories (4.9).
+    val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }
     var name by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Ricambi") }
+    var category by remember { mutableStateOf(if("Ricambi" in categories) "Ricambi" else categories.first()) }
     var qty by remember { mutableStateOf("0") }
     var min by remember { mutableStateOf("0") }
     var unit by remember { mutableStateOf("pz") }
@@ -498,7 +500,6 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     var supplier by remember { mutableStateOf("") }
     var leadDays by remember { mutableStateOf("") }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val categories=ArticleCodes.categoryPrefixes.keys.toList()
     val valid=name.trim().length in 1..180&&unit.trim().length<=24&&note.length<=3000&&supplier.length<=160&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
             &&(unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true)
             &&(leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)

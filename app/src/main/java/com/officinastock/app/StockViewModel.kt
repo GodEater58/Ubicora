@@ -121,7 +121,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             try {
                 val failure=withContext(Dispatchers.IO) {
                     try { action(); null } catch(e:CancellationException) { throw e }
-                    catch(e:Exception) { e.message ?: "Operazione non riuscita" }
+                    catch(e:Exception) { (e.message ?: "Operazione non riuscita").substringBefore(" (code ") }
                 }
                 reloadAfterSelection(failure,generation)
                 if(failure==null && generation==backgroundGeneration) onSuccess?.invoke()
@@ -216,6 +216,19 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             "Su questo telefono (satellite ${t.letter}) la mappa si modifica solo dal telefono centrale"
         }
     }
+    /** Satellite with a department: true when [category] is outside it (the central decides). */
+    private fun outsideDepartment(category:String?):Boolean {
+        val t=ui.team
+        return t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id && t.scope.isNotEmpty() && category!=null && category !in t.scope
+    }
+    private fun department()=ui.team.scope.joinToString(", ")
+    /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
+    fun departmentCategories():List<String> { val t=ui.team
+        return if(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) t.scope else emptyList() }
+    private fun requireDepartment(itemIds:List<Long>,what:String) {
+        val outside=ui.items.filter { it.id in itemIds && outsideDepartment(it.category) }
+        require(outside.isEmpty()) { "${outside.first().name} non è del tuo reparto (${department()}): $what" }
+    }
     private fun executeMap(record:Boolean=true,action:()->MapEdit?) = runMap(action) { edit ->
         if(record) { mapUndo.addLast(edit);while(mapUndo.size>50)mapUndo.removeFirst();mapRedo.clear() }
     }
@@ -229,7 +242,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 var failure:String?=null
                 val edit=withContext(Dispatchers.IO) {
                     try { action() } catch(e:CancellationException) { throw e }
-                    catch(e:Exception) { failure=e.message ?: "Operazione non riuscita"; null }
+                    catch(e:Exception) { failure=(e.message ?: "Operazione non riuscita").substringBefore(" (code "); null }
                 }
                 if(edit!=null && generation==backgroundGeneration && ui.warehouse?.id==warehouseId) onSuccess(edit)
                 reloadMap(failure)
@@ -302,6 +315,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
                 cost:Double?=null,supplier:String="",leadDays:Int?=null) = execute {
+        require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
             pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
@@ -333,6 +347,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
                           unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
         team.requireDetailsEditable(itemId)
+        require(!outsideDepartment(category)) { "Categoria fuori dal tuo reparto (${department()})" }
         db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
     }
     fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
@@ -342,7 +357,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun movement(itemId:Long,delta:Double,note:String) {
         val item=ui.items.firstOrNull { it.id==itemId }
         val label=MovementUndo.label(delta,item)
-        execute(onSuccess={ ui=ui.copy(movementUndo=MovementUndo(itemId,delta,label,System.nanoTime())) }) { db.movement(itemId,delta,note) }
+        execute(onSuccess={ ui=ui.copy(movementUndo=MovementUndo(itemId,delta,label,System.nanoTime())) }) {
+            if(delta>0) requireDepartment(listOf(itemId),"qui puoi solo prelevare")
+            db.movement(itemId,delta,note)
+        }
     }
     /** Quick +1 / -1 from the list: same traced movement as the item page. */
     fun quickMovement(itemId:Long,delta:Double) = movement(itemId,delta,if(delta>0) "Carico rapido" else "Prelievo rapido")
@@ -351,12 +369,15 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val undo=ui.movementUndo ?: return
         if(ui.busy) return
         ui=ui.copy(movementUndo=null)
-        execute { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) }
+        execute { team.returning { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) } }
     }
     fun dismissMovementUndo(token:Long) { if(ui.movementUndo?.token==token) ui=ui.copy(movementUndo=null) }
-    fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute { db.reconcileQuantity(itemId,counted,reason) }
+    fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute {
+        requireDepartment(listOf(itemId),"la rettifica la fa il telefono centrale")
+        db.reconcileQuantity(itemId,counted,reason)
+    }
     fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
-    fun returnLoan(id:Long) = execute {db.returnLoan(id)}
+    fun returnLoan(id:Long) = execute { team.returning { db.returnLoan(id) } }
     /** Local managerial actions operate only on the currently authenticated warehouse. */
     private fun managerActor():String = requireNotNull(ui.profile){"Profilo non selezionato"}.name
     fun changeManagerMode(business:Boolean) = execute {
@@ -510,9 +531,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         MapEdit.Deleted(listOf(snapshot to spots))
     }
     fun assignItem(itemId:Long,placementId:Long?,level:Int?=null,slot:Int?=null)=
-        executeMap(record=false){db.assignItems(listOf(itemId),placementId,level,slot);null}
+        executeMap(record=false){requireDepartment(listOf(itemId),"lo sposta il telefono centrale");db.assignItems(listOf(itemId),placementId,level,slot);null}
     fun assignItems(itemIds:List<Long>,placementId:Long?,level:Int?=null,slot:Int?=null)=
-        executeMap(record=false){db.assignItems(itemIds,placementId,level,slot);null}
+        executeMap(record=false){requireDepartment(itemIds,"lo sposta il telefono centrale");db.assignItems(itemIds,placementId,level,slot);null}
     /** Walls drawn faster than they are saved are queued, never dropped: the chain stays closed. */
     fun addWall(coords:FloatArray) {
         val warehouseId=ui.warehouse?.id ?: return
@@ -648,6 +669,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun confirmCsvImport() = execute {
         val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
+        rows.firstOrNull { outsideDepartment(it.category) }?.let { throw IllegalArgumentException("${it.name}: categoria ${it.category} fuori dal tuo reparto (${department()})") }
         require(warehouseId==requireWarehouse() && !ui.sessionLocked) { "Magazzino cambiato" }
         db.importCsv(warehouseId,rows)
         pendingCsvImport=null
@@ -682,6 +704,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     override fun onCleared() { link.stop();super.onCleared() }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
+    /** Central: departments of a satellite letter (empty = all categories). */
+    fun setTeamScope(letter:String,categories:List<String>) = execute { team.setScope(letter,categories) }
     /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
     private suspend fun teamFile(block:()->String):String {
         require(!ui.busy && ui.profile!=null && !ui.sessionLocked) { "Attendi il completamento dell'operazione in corso" }

@@ -188,6 +188,45 @@ class TeamSyncTest {
         TeamSync(central).requireDetailsEditable(central.items(warehouse).single().id)
     }
 
+    private fun refused(block: () -> Unit) { try { block(); fail("accettato") } catch (expected: Exception) {} }
+
+    @Test fun aDepartmentLimitsTheSatelliteButWithdrawalsStayFree() {
+        TeamSync(central).setScope("B", listOf("Meccanica", "Pneumatica"))
+        assertEquals(listOf("Pneumatica", "Meccanica"), TeamSync(central).status().scopes["B"])   // app order
+        val wh = join(satellite, "B")
+        assertEquals(listOf("Pneumatica", "Meccanica"), TeamSync(satellite).status().scope)
+        val vite = satellite.items(wh).single().id                     // "Ricambi": outside the department
+        try { satellite.addItem(wh, "Cavo", "Elettrico", 0.0, 0.0, "m", ""); fail("accettato") }
+        catch (e: IllegalArgumentException) { assertTrue(e.message!!.contains("reparto")) }
+        satellite.addItem(wh, "Molla", "Meccanica", 2.0, 0.0, "pz", "")
+        satellite.movement(vite, -1.0, "Prelievo")                     // withdrawals are free
+        refused { satellite.movement(vite, 1.0, "Carico") }
+        refused { satellite.assignItem(vite, null) }
+        TeamSync(satellite).returning { satellite.movement(vite, 1.0, "Annullato: prelievo") }   // undo is allowed
+        val r = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(0, r.conflicts)
+        assertEquals(10.0, qty(central, warehouse, "Vite M8"), 0.0)    // -1 +1
+        assertEquals(2.0, qty(central, warehouse, "Molla"), 0.0)
+    }
+
+    @Test fun theCentralRejectsWorkOutsideTheDepartmentEvenFromAnOldSatellite() {
+        val wh = join(satellite, "B")                                    // no department yet
+        satellite.addItem(wh, "Cavo", "Elettrico", 0.0, 0.0, "m", "")
+        satellite.movement(satellite.items(wh).single { it.name == "Vite M8" }.id, 2.0, "Carico")
+        TeamSync(central).setScope("B", listOf("Meccanica"))
+        val r = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(0, r.articles)
+        assertEquals(2, r.conflicts)
+        assertEquals(10.0, qty(central, warehouse, "Vite M8"), 0.0)
+        assertEquals(1, central.items(warehouse).size)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(listOf("Meccanica"), TeamSync(satellite).status().scope)
+        // Back to all departments.
+        TeamSync(central).setScope("B", emptyList())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertTrue(TeamSync(satellite).status().scope.isEmpty())
+    }
+
     @Test fun backupsKeepTheSyncRoleAndOldBackupsGetGlobalIds() {
         val wh = join(satellite, "B")
         assertTrue(satellite.items(wh).all { it.id > 0 })

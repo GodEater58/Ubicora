@@ -30,6 +30,8 @@ import java.util.Locale
     var askJoin by remember { mutableStateOf(false) }
     var askLeave by remember { mutableStateOf(false) }
     var showConflicts by remember { mutableStateOf(false) }
+    var editScope by remember { mutableStateOf<String?>(null) }
+    var scopeChoice by remember { mutableStateOf(setOf<String>()) }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var letter by remember { mutableStateOf("B") }
@@ -79,6 +81,21 @@ import java.util.Locale
                         Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Invia aggiornamento a tutti")
                     }
                 }
+                if (synced) {
+                    HorizontalDivider()
+                    Text("REPARTI DEGLI OPERATORI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+                    Text("Fuori dal suo reparto un operatore vede gli articoli e può solo prelevare: non crea, non carica, non sposta.",
+                        fontSize = 11.sp, color = TextSecondary)
+                    listOf("B", "C", "D", "E", "F").forEach { l ->
+                        val cats = t.scopes[l].orEmpty()
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
+                            Text(if (cats.isEmpty()) "Tutti i reparti" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy) { Text("Modifica") }
+                        }
+                    }
+                    HorizontalDivider()
+                }
                 if (t.peers.isEmpty()) Text("Nessun satellite ancora: invia l'aggiornamento e fallo importare con «Collega a un telefono centrale».",
                     fontSize = 11.sp, color = TextSecondary)
                 t.peers.forEach { p ->
@@ -91,6 +108,8 @@ import java.util.Locale
                 Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name} · la mappa la modifica solo il centrale"
                     else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
+                Text("Reparto: " + (if (t.scope.isEmpty()) "tutti" else t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare"),
+                    fontSize = 12.sp, color = if (t.scope.isEmpty()) TextSecondary else Mint)
                 Surface(color = (if (t.pending > 0) Amber else Mint).copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
                     Text(if (t.pending > 0) "${t.pending} modifiche da inviare al centrale" else "Tutto inviato al centrale",
                         Modifier.padding(10.dp).fillMaxWidth(), color = if (t.pending > 0) Amber else Mint, fontWeight = FontWeight.SemiBold)
@@ -172,6 +191,20 @@ import java.util.Locale
         dismissButton = { TextButton(onClick = { showConflicts = false }) { Text("Chiudi") } })
 
     TeamLinkDialog(model)
+
+    editScope?.let { l -> AlertDialog(onDismissRequest = { editScope = null }, title = { Text("Reparto dell'operatore $l") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text("Categorie in cui può creare, caricare e spostare articoli. Nessuna spuntata = tutte. " +
+                "Arriva al telefono $l al prossimo scambio.", fontSize = 12.sp, color = TextSecondary)
+            ArticleCodes.categoryPrefixes.keys.forEach { c ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = c in scopeChoice, onCheckedChange = { on -> scopeChoice = if (on) scopeChoice + c else scopeChoice - c })
+                    Text(c)
+                }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { model.setTeamScope(l, scopeChoice.toList()); editScope = null }) { Text("Salva") } },
+        dismissButton = { TextButton(onClick = { editScope = null }) { Text("Annulla") } }) }
 
     result?.let { text -> AlertDialog(onDismissRequest = { result = null }, title = { Text("Sincronizzazione") }, text = { Text(text) },
         confirmButton = { TextButton(onClick = { result = null }) { Text("OK") } }) }
