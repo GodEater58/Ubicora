@@ -141,6 +141,53 @@ class TeamSyncTest {
         rejects { TeamSync(satellite).leave() }
     }
 
+    @Test fun aRefusedSatelliteCanLeaveAndJoinAgainWithoutBlockingTheCentral() {
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single().id
+        satellite.movement(vite, -1.0, "Prelievo")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        satellite.movement(vite, -2.0, "Mai inviato")
+        rejects { TeamSync(satellite).leave() }
+        TeamSync(satellite).leave(force = true)
+        assertEquals(TeamRole.NONE, TeamSync(satellite).status().role)
+        // Same phone, same letter: the central recognises it; the lost numbers are not a blocking gap.
+        val again = TeamSync(satellite).joinAsSatellite(satellite.createProfile("Luca", "9999"), ByteArrayInputStream(state()), pw, "B")
+        assertEquals(1, again.articles)
+        val wh2 = TeamSync(satellite).status().warehouseId!!
+        satellite.movement(satellite.items(wh2).single().id, -4.0, "Dopo il ricollegamento")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(5.0, qty(central, warehouse, "Vite M8"), 0.0)   // 10 - 1 - 4
+    }
+
+    @Test fun aCopyOfTheCentralAlreadyOnThePhoneDoesNotBlockTheJoin() {
+        // The satellite restored the central's backup in the past: same global ids in another warehouse.
+        val p = satellite.createProfile("Copia", "4321")
+        val old = satellite.createWarehouse(p, "Copia vecchia", "Rovigo")
+        val copy = satellite.addItem(old, "Vite M8", "Ricambi", 3.0, 0.0, "pz", "")
+        val uid = central.readableDatabase.rawQuery("SELECT uid FROM items", null).use { it.moveToFirst(); it.getString(0) }
+        satellite.writableDatabase.execSQL("UPDATE items SET uid=? WHERE id=?", arrayOf(uid, copy))
+        val wh = join(satellite, "B")
+        assertEquals(10.0, qty(satellite, wh, "Vite M8"), 0.0)
+        assertEquals(3.0, qty(satellite, old, "Vite M8"), 0.0)   // the old copy is untouched
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(3.0, qty(satellite, old, "Vite M8"), 0.0)
+    }
+
+    @Test fun codesFromOlderVersionsTravelToo() {
+        central.writableDatabase.execSQL("UPDATE items SET sku='RIC-12'")
+        val wh = join(satellite, "B")
+        assertEquals("RIC-12", satellite.items(wh).single().sku)
+    }
+
+    @Test fun onASatelliteOnlyItsOwnUnsentArticlesCanBeEdited() {
+        val wh = join(satellite, "B")
+        val fromCentral = satellite.items(wh).single().id
+        rejects { TeamSync(satellite).requireDetailsEditable(fromCentral) }
+        val mine = satellite.addItem(wh, "Guanti", "DPI", 1.0, 0.0, "paia", "")
+        TeamSync(satellite).requireDetailsEditable(mine)
+        TeamSync(central).requireDetailsEditable(central.items(warehouse).single().id)
+    }
+
     @Test fun backupsKeepTheSyncRoleAndOldBackupsGetGlobalIds() {
         val wh = join(satellite, "B")
         assertTrue(satellite.items(wh).all { it.id > 0 })
