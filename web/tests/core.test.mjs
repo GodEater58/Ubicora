@@ -208,3 +208,17 @@ test('1.0.4 map: 1.0.3 archives upgrade in place, linking only unique names',()=
  assert.equal(up.items.find(i=>i.location==='Scaffale A').placementId,null);
  assert.equal(up.items.find(i=>i.location==='Banco 1').placementId,up.placements.find(p=>p.name==='Banco 1').id);
 });
+
+import {wallPoint} from '../core.mjs';
+test('Wall drawing closes shapes on nearby corners and walls',()=>{
+ const sq=[{x1:1,y1:1,x2:2,y2:1},{x1:2,y1:1,x2:2,y2:2},{x1:2,y1:2,x2:1,y2:2}];
+ assert.deepEqual(wallPoint({x:1.08,y:1.1},{x:1,y:2},sq,.3),{x:1,y:1,closes:true,kind:'vertex'});
+ // A diagonal closes a triangle even off the grid.
+ const tri=[{x1:0,y1:0,x2:3,y2:0},{x1:3,y1:0,x2:3,y2:2}];
+ assert.equal(wallPoint({x:.1,y:.12},{x:3,y:2},tri,.3).closes,true);
+ // The wall just drawn never captures its own start.
+ assert.equal(wallPoint({x:.15,y:.05},{x:1,y:0},[{x1:0,y1:0,x2:1,y2:0}],.3).closes,false);
+ const t=wallPoint({x:.12,y:2.6},{x:2,y:2.5},[{x1:0,y1:0,x2:0,y2:6}],.3);
+ assert.equal(t.kind,'wall');assert.equal(t.x,0);assert.equal(t.y,2.5);
+ assert.deepEqual(wallPoint({x:3.1,y:3.4},{x:1,y:0},[{x1:0,y1:0,x2:1,y2:0}],.3),{x:3,y:3.5,closes:false,kind:'grid'});
+});

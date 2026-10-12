@@ -16,6 +16,37 @@ class PlanGeometryTest {
         val walls=listOf(Wall(1,1,0f,0f,4f,0f,"manual"))
         assertEquals(PointMetres(4f,0f),PlanGeometry.snapToWallEndpoint(PointMetres(4.1f,.08f),walls))
     }
+    @Test fun wallNearStartCornerClosesSquare() {
+        val walls=listOf(Wall(1,1,1f,1f,2f,1f,"manual"),Wall(2,1,2f,1f,2f,2f,"manual"),Wall(3,1,2f,2f,1f,2f,"manual"))
+        val end=PlanGeometry.wallPoint(PointMetres(1.08f,1.1f),PointMetres(1f,2f),walls,.3f,true,true)
+        assertEquals(WallSnapKind.VERTEX,end.kind)
+        assertEquals(PointMetres(1f,1f),end.point)
+        assertTrue(end.closes)
+    }
+    @Test fun cornerBeatsOrthogonalSoTrianglesClose() {
+        val walls=listOf(Wall(1,1,0f,0f,3f,0f,"manual"),Wall(2,1,3f,0f,3f,2f,"manual"))
+        val end=PlanGeometry.wallPoint(PointMetres(.1f,.12f),PointMetres(3f,2f),walls,.3f,false,true)
+        assertEquals(PointMetres(0f,0f),end.point)
+        assertTrue(end.closes)
+    }
+    @Test fun wallJustDrawnDoesNotCaptureItsOwnStart() {
+        val walls=listOf(Wall(1,1,0f,0f,1f,0f,"manual"))
+        val end=PlanGeometry.wallPoint(PointMetres(.15f,.05f),PointMetres(1f,0f),walls,.3f,false,false)
+        assertFalse(end.closes)
+    }
+    @Test fun strokeEndingOnAWallHooksOntoIt() {
+        val walls=listOf(Wall(1,1,0f,0f,0f,6f,"manual"))
+        val end=PlanGeometry.wallPoint(PointMetres(.12f,2.6f),PointMetres(2f,2.5f),walls,.3f,false,true)
+        assertEquals(WallSnapKind.SEGMENT,end.kind)
+        assertEquals(0f,end.point.x,.001f)
+        assertEquals(2.5f,end.point.y,.001f)
+    }
+    @Test fun farFromGeometryKeepsGridAndChainOpen() {
+        val walls=listOf(Wall(1,1,0f,0f,1f,0f,"manual"))
+        val end=PlanGeometry.wallPoint(PointMetres(3.1f,3.4f),PointMetres(1f,0f),walls,.3f,true,false)
+        assertEquals(PointMetres(3f,3.5f),end.point)
+        assertFalse(end.closes)
+    }
     @Test fun rotationHitTest() {
         val fixture=Placement(1,1,"Scaffale","A",5f,4f,false,2f,.8f,90f)
         assertTrue(PlanGeometry.contains(PointMetres(5f,4.9f),fixture))

@@ -5,6 +5,23 @@ const GRID=.25;
 export const snap=v=>Math.round(v/GRID)*GRID;
 const clamp=(v,min,max)=>Math.min(Math.max(v,min),Math.max(min,max));
 /**
+ * Where a wall point lands while drawing. An existing corner within `tol` metres wins over the grid;
+ * next a point on an existing wall; otherwise the grid point. Landing on existing geometry
+ * (`closes`) ends the chain, so squares, triangles and other footprints close by themselves.
+ */
+export function wallPoint(raw,from,walls,tol){
+ const near=(p,w)=>{const vx=w.x2-w.x1,vy=w.y2-w.y1,l=vx*vx+vy*vy,t=l?Math.min(Math.max(((p.x-w.x1)*vx+(p.y-w.y1)*vy)/l,0),1):0;return {x:w.x1+t*vx,y:w.y1+t*vy,d:Math.hypot(p.x-w.x1-t*vx,p.y-w.y1-t*vy)};};
+ const leaving=from?walls.filter(w=>near(from,w).d<1e-3):[],others=walls.filter(w=>!leaving.includes(w));
+ let best=null;
+ for(const w of others)for(const v of [{x:w.x1,y:w.y1},{x:w.x2,y:w.y2}]){if(from&&Math.hypot(v.x-from.x,v.y-from.y)<1e-3)continue;const d=Math.hypot(v.x-raw.x,v.y-raw.y);if(d<=tol&&(!best||d<best.d))best={...v,d};}
+ if(best)return {x:best.x,y:best.y,closes:true,kind:'vertex'};
+ const g={x:snap(raw.x),y:snap(raw.y)};
+ for(const w of others){const vx=w.x2-w.x1,vy=w.y2-w.y1,dx=g.x-(from?.x??g.x),dy=g.y-(from?.y??g.y),dl=Math.hypot(dx,dy),wl=Math.hypot(vx,vy);
+  if(!wl||(from&&dl>1e-3&&Math.abs(dx*vy-dy*vx)/(dl*wl)<.17))continue; // parallel to the stroke
+  const p=near(g,w);if(p.d<=tol&&(!best||p.d<best.d))best=p;}
+ return best?{x:best.x,y:best.y,closes:true,kind:'wall'}:{...g,closes:false,kind:'grid'};
+}
+/**
  * 1.0.4: items link to structures by ID (renaming a structure no longer breaks the link) and the
  * plan stores walls. Older archives are upgraded in place: walls start empty, and items are linked
  * to the structure whose name matches their location text (only when the match is unique).
