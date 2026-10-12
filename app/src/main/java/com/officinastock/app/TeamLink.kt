@@ -161,8 +161,20 @@ class TeamLink(
 
     private val centralLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+            // 4.11: limit simultaneous phones; anything beyond waits for its turn.
+            val busy = ui.peers.count { it.phase in setOf(PeerPhase.CONNECTING, PeerPhase.RECEIVING, PeerPhase.APPLYING, PeerPhase.SENDING) }
+            if (busy >= TeamLinkProtocol.MAX_PEERS) { client.rejectConnection(endpointId); return }
             peer(endpointId, PeerPhase.CONNECTING, "Collegamento…", info.endpointName.take(40))
             client.acceptConnection(endpointId, centralPayloads)
+            // A phone that connects and then sends nothing is closed after a while.
+            val current = session
+            scope.launch {
+                delay(TeamLinkProtocol.IDLE_MS)
+                val p = ui.peers.firstOrNull { it.endpointId == endpointId }
+                if (current == session && p != null && p.phase == PeerPhase.CONNECTING) {
+                    client.disconnectFromEndpoint(endpointId); peer(endpointId, PeerPhase.ERROR, "Nessun dato ricevuto: collegamento chiuso")
+                }
+            }
         }
         override fun onConnectionResult(endpointId: String, resolution: ConnectionResolution) {
             if (!resolution.status.isSuccess) peer(endpointId, PeerPhase.ERROR, "Collegamento non riuscito")
@@ -185,8 +197,8 @@ class TeamLink(
         search(TeamLinkProtocol.tag(warehouseUid), null, "Satellite $letter")
     }
     /** First connection: any nearby central (the team password decides if the data can be read). */
-    fun startJoin(profileId: Long, password: String, letter: String) {
-        search(null, TeamLinkProtocol.Join(profileId, password, letter), "Satellite $letter (nuovo)")
+    fun startJoin(profileId: Long, secret: String, letter: String, viaCode: Boolean = false) {
+        search(null, TeamLinkProtocol.Join(profileId, secret, letter, viaCode), "Satellite $letter (nuovo)")
     }
 
     private fun search(tag: String?, joining: TeamLinkProtocol.Join?, name: String) {

@@ -19,7 +19,14 @@ object TeamLinkProtocol {
     private const val JOIN: Byte = 'J'.code.toByte()
     private const val STATE: Byte = 'S'.code.toByte()
     private const val ERROR: Byte = 'E'.code.toByte()
-    const val MAX_MESSAGE = 80L * 1024 * 1024
+    /** 4.11: answer to a phone that joined with the QR one-time code: team password (sealed with the code) + state. */
+    private const val KEYED_STATE: Byte = 'Q'.code.toByte()
+    /** 4.11: a stranger nearby must not be able to fill the central's memory. */
+    const val MAX_MESSAGE = 24L * 1024 * 1024
+    /** Satellites the central serves at the same time; more wait and retry. */
+    const val MAX_PEERS = 6
+    /** A connection that sends nothing within this time is closed. */
+    const val IDLE_MS = 60_000L
 
     /** Short public tag of the shared warehouse: satellites recognise their central by it. */
     fun tag(warehouseUid: String): String =
@@ -38,11 +45,12 @@ object TeamLinkProtocol {
 
     fun changesRequest(team: TeamSync): ByteArray =
         ByteArrayOutputStream().apply { write(CHANGES.toInt()); team.exportChanges(this) }.toByteArray()
-    /** First connection: the ticket proves the password and books the letter on the central. */
-    fun joinRequest(team: TeamSync, password: String, letter: String): ByteArray =
-        ByteArrayOutputStream().apply { write(JOIN.toInt()); team.joinTicket(this, password, letter) }.toByteArray()
+    /** First connection: the ticket proves the password (or the QR code) and books the letter on the central. */
+    fun joinRequest(team: TeamSync, secret: String, letter: String): ByteArray =
+        ByteArrayOutputStream().apply { write(JOIN.toInt()); team.joinTicket(this, secret, letter) }.toByteArray()
 
-    data class Join(val profileId: Long, val password: String, val letter: String)
+    /** [password] is the team password, or the one-time code from the central's QR when [viaCode]. */
+    data class Join(val profileId: Long, val password: String, val letter: String, val viaCode: Boolean = false)
     sealed interface Outcome {
         data class Done(val summary: String, val joinedWarehouseId: Long? = null) : Outcome
         data class Failed(val message: String) : Outcome
@@ -64,6 +72,15 @@ object TeamLinkProtocol {
                         (if (r.skipped > 0) " · ${r.skipped} modifiche ancora da confermare" else " · tutto confermato dal centrale"))
                 }
             }
+            KEYED_STATE -> {
+                require(join != null && join.viaCode) { "Risposta del centrale non attesa" }
+                require(answer.size > 5) { "Risposta del centrale incompleta" }
+                val length = java.nio.ByteBuffer.wrap(answer, 1, 4).int
+                require(length in 1..(answer.size - 5)) { "Risposta del centrale non valida" }
+                val password = team.openInviteKey(ByteArrayInputStream(answer, 5, length), join.password)
+                val r = team.joinAsSatellite(join.profileId, ByteArrayInputStream(answer, 5 + length, answer.size - 5 - length), password, join.letter)
+                Outcome.Done("Collegato come satellite ${join.letter}: ${r.articles} articoli ricevuti", team.status().warehouseId)
+            }
             else -> Outcome.Failed("Risposta del centrale non riconosciuta: aggiorna l'app su entrambi i telefoni")
         }
     } catch (e: Exception) { Outcome.Failed(e.message ?: "Sincronizzazione non riuscita") }
@@ -83,8 +100,16 @@ object TeamLinkProtocol {
             }
             JOIN -> {
                 require(request.size > 1) { "Aggiorna Ubicora sul telefono che si collega" }
-                val letter = team.acceptJoin(ByteArrayInputStream(request, 1, request.size - 1))
-                Answer(state(team), "Nuovo telefono collegato: archivio inviato", false, letter)
+                val accepted = team.acceptJoin(ByteArrayInputStream(request, 1, request.size - 1))
+                val bytes = accepted.inviteCode?.let { code ->
+                    // Joined with the QR code: the team password travels only encrypted with that code.
+                    val key = ByteArrayOutputStream().also { team.inviteKey(it, code) }.toByteArray()
+                    val archive = ByteArrayOutputStream().also { team.exportState(it) }.toByteArray()
+                    ByteArrayOutputStream().apply {
+                        write(KEYED_STATE.toInt()); write(java.nio.ByteBuffer.allocate(4).putInt(key.size).array()); write(key); write(archive)
+                    }.toByteArray()
+                } ?: state(team)
+                Answer(bytes, "Nuovo telefono collegato: archivio inviato", false, accepted.letter)
             }
             else -> throw IllegalArgumentException("Messaggio non riconosciuto: aggiorna l'app su entrambi i telefoni")
         }

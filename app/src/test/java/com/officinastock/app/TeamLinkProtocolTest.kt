@@ -85,6 +85,47 @@ class TeamLinkProtocolTest {
         } finally { other.close() }
     }
 
+    private fun joinWithCode(code: String): TeamLinkProtocol.Outcome {
+        val answer = TeamLinkProtocol.answer(TeamSync(central), TeamLinkProtocol.joinRequest(TeamSync(satellite), code, "B"))
+        return TeamLinkProtocol.finish(TeamSync(satellite), answer.bytes,
+            TeamLinkProtocol.Join(satellite.createProfile("Mario QR", "5678"), code, "B", viaCode = true))
+    }
+
+    @Test fun theQrCodeJoinsWithoutEverShowingThePassword() {
+        val code = TeamSync(central).createInvite()
+        assertNotEquals(pw, code)
+        val done = joinWithCode(code) as TeamLinkProtocol.Outcome.Done
+        val wh = done.joinedWarehouseId!!
+        assertEquals(10.0, satellite.items(wh).single().quantity, 0.0)
+        // The satellite received the real team password (encrypted with the code) and can sync normally.
+        assertFalse(TeamSync(satellite).status().needsPassword)
+        satellite.movement(satellite.items(wh).single().id, -2.0, "Prelievo")
+        val round = TeamLinkProtocol.answer(TeamSync(central), TeamLinkProtocol.changesRequest(TeamSync(satellite)))
+        assertFalse(round.failed)
+        assertEquals(8.0, central.items(warehouse).single().quantity, 0.0)
+    }
+
+    @Test fun anExpiredOrWrongCodeIsRefused() {
+        val code = TeamSync(central).createInvite()
+        assertTrue(joinWithCode("ZZZZZZZZZZ") is TeamLinkProtocol.Outcome.Failed)
+        central.writableDatabase.execSQL("UPDATE team_sync_settings SET value='1' WHERE key='invite_until'")
+        val expired = joinWithCode(code)
+        assertTrue(expired is TeamLinkProtocol.Outcome.Failed)
+        assertTrue((expired as TeamLinkProtocol.Outcome.Failed).message.contains("scaduto"))
+        assertEquals(TeamRole.NONE, TeamSync(satellite).status().role)
+    }
+
+    @Test fun aPasswordSealedOnAnotherPhoneIsAskedAgain() {
+        // As after restoring a backup on a new phone: the stored value cannot be opened here.
+        central.writableDatabase.execSQL("UPDATE team_sync_settings SET value='ks1:AAAA:BBBB' WHERE key='password'")
+        assertTrue(TeamSync(central).status().needsPassword)
+        val failed = TeamLinkProtocol.answer(TeamSync(central), TeamLinkProtocol.joinRequest(TeamSync(satellite), pw, "B"))
+        assertTrue(failed.failed)
+        TeamSync(central).restorePassword(pw)
+        assertFalse(TeamSync(central).status().needsPassword)
+        assertTrue(joinNearby() is TeamLinkProtocol.Outcome.Done)
+    }
+
     @Test fun satellitesRecogniseOnlyTheirCentral() {
         val uid = TeamSync(central).warehouseUid()!!
         val name = TeamLinkProtocol.endpointName(TeamLinkProtocol.tag(uid), "Officina|Rovigo")

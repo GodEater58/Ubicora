@@ -120,7 +120,9 @@ data class TeamSyncStatus(
     /** Satellite: its department (categories); empty = all. */
     val scope: List<String> = emptyList(),
     /** Central: departments per satellite letter. */
-    val scopes: Map<String, List<String>> = emptyMap()
+    val scopes: Map<String, List<String>> = emptyMap(),
+    /** 4.11: the team password is not readable on this phone (e.g. backup restored on a new phone). */
+    val needsPassword: Boolean = false
 )
 data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
                             val letter: String? = null)
@@ -130,6 +132,10 @@ class TeamSync(private val stock: StockDb) {
         const val SNAPSHOT = "UBICORA_SYNC_STATE"
         const val CHANGES = "UBICORA_SYNC_CHANGES"
         const val JOIN = "UBICORA_SYNC_JOIN"
+        const val KEY = "UBICORA_SYNC_KEY"
+        /** One-time invite codes shown in the central's QR: valid for 10 minutes. */
+        const val INVITE_MINUTES = 10
+        private const val INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
     }
@@ -147,7 +153,7 @@ class TeamSync(private val stock: StockDb) {
             buildList { while (c.moveToNext()) add(TeamConflict(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4))) } }
         return TeamSyncStatus(role, setting("warehouse_id")?.toLongOrNull(), setting("letter"),
             if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts,
-            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap())
+            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null)
     }
 
     // ---------------------------------------------------------------- set-up
@@ -165,7 +171,7 @@ class TeamSync(private val stock: StockDb) {
             TeamSyncSchema.put(sql, "role", "central")
             TeamSyncSchema.put(sql, "warehouse_id", warehouseId.toString())
             TeamSyncSchema.put(sql, "warehouse_uid", UUID.randomUUID().toString())
-            TeamSyncSchema.put(sql, "password", password)
+            TeamSyncSchema.put(sql, "password", DeviceSecrets.seal(password))
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
     }
@@ -194,7 +200,7 @@ class TeamSync(private val stock: StockDb) {
             TeamSyncSchema.put(sql, "letter", letter)
             TeamSyncSchema.put(sql, "warehouse_id", warehouseId.toString())
             TeamSyncSchema.put(sql, "warehouse_uid", state.getString("warehouse_uid"))
-            TeamSyncSchema.put(sql, "password", password)
+            TeamSyncSchema.put(sql, "password", DeviceSecrets.seal(password))
             val result = applyState(sql, warehouseId, state)
             sql.setTransactionSuccessful()
             return result
@@ -206,18 +212,28 @@ class TeamSync(private val stock: StockDb) {
      * central before any article is created, so two phones can never end up with the same letter.
      */
     fun joinTicket(out: OutputStream, password: String, letter: String) {
-        requirePassword(password)
+        requirePassword(password)   // the team password, or the one-time code read from the central's QR
         require(ArticleCodes.isSatelliteLetter(letter)) { "Scegli una lettera da B a Z" }
         require(setting("role") == null) { "Questo telefono è già collegato a una sincronizzazione" }
         write(out, JSONObject().put("format", JOIN).put("version", 1).put("device_uid", deviceUid())
             .put("letter", letter).put("created_at", System.currentTimeMillis()), password)
     }
 
-    /** Central: checks the password in the ticket and books the letter. Returns the letter. */
-    fun acceptJoin(input: InputStream): String {
+    data class JoinAccepted(val letter: String, val inviteCode: String?)
+
+    /**
+     * Central: checks the ticket (team password, or the QR one-time code while valid) and books the
+     * letter. [JoinAccepted.inviteCode] is set when the phone joined with the code.
+     */
+    fun acceptJoin(input: InputStream): JoinAccepted {
         require(setting("role") == "central") { "Questo telefono non è il centrale" }
-        val ticket = try { read(input, setting("password")!!, JOIN) }
-            catch (e: IllegalArgumentException) { throw IllegalArgumentException("Password della squadra errata: controlla e riprova") }
+        val bytes = input.readBytes()
+        require(bytes.size <= 64 * 1024) { "Richiesta di collegamento non valida" }
+        var usedCode: String? = null
+        val ticket = runCatching { read(bytes.inputStream(), requireTeamPw(), JOIN) }.getOrNull()
+            ?: activeInvite()?.let { code -> runCatching { read(bytes.inputStream(), code, JOIN) }.getOrNull()?.also { usedCode = code } }
+            ?: throw IllegalArgumentException(if (setting("invite_until") != null && activeInvite() == null)
+                "Password errata o QR scaduto: sul centrale mostra un QR nuovo" else "Password della squadra errata: controlla e riprova")
         val device = ticket.getString("device_uid"); val letter = ticket.getString("letter")
         require(ArticleCodes.isSatelliteLetter(letter) && device.isNotBlank()) { "Richiesta di collegamento non valida" }
         val sql = db
@@ -231,7 +247,7 @@ class TeamSync(private val stock: StockDb) {
             else sql.insertOrThrow("team_sync_peers", null, ContentValues().apply { put("device_uid", device); put("letter", letter) })
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
-        return letter
+        return JoinAccepted(letter, usedCode)
     }
 
     /**
@@ -301,7 +317,44 @@ class TeamSync(private val stock: StockDb) {
     }
 
     /** Central only: the team password, to show it as a QR for new phones. */
-    fun teamPassword(): String? = if (setting("role") == "central") setting("password") else null
+    fun teamPassword(): String? = if (setting("role") == "central") teamPw() else null
+
+    /** 4.11: the team password, kept sealed by the Android Keystore; legacy plain values get sealed here. */
+    private fun teamPw(): String? {
+        val raw = setting("password") ?: return null
+        val plain = DeviceSecrets.open(raw) ?: return null
+        if (!DeviceSecrets.isSealed(raw)) DeviceSecrets.seal(plain).takeIf { it != raw }?.let { TeamSyncSchema.put(db, "password", it) }
+        return plain
+    }
+    private fun requireTeamPw(): String = teamPw()
+        ?: throw IllegalArgumentException("Reinserisci la password della squadra: Impostazioni › Sincronizzazione")
+
+    /** After a backup restored on another phone: the password must be typed again (it is never exported readable). */
+    fun restorePassword(password: String) {
+        requirePassword(password)
+        require(setting("role") != null) { "Questo telefono non è collegato a una sincronizzazione" }
+        TeamSyncSchema.put(db, "password", DeviceSecrets.seal(password))
+    }
+
+    /** Central: a new one-time code for the join QR (valid [INVITE_MINUTES] minutes, any number of phones). */
+    fun createInvite(): String {
+        require(setting("role") == "central") { "Il QR lo mostra il telefono centrale" }
+        val random = java.security.SecureRandom()
+        val code = (1..10).map { INVITE_ALPHABET[random.nextInt(INVITE_ALPHABET.length)] }.joinToString("")
+        TeamSyncSchema.put(db, "invite_code", DeviceSecrets.seal(code))
+        TeamSyncSchema.put(db, "invite_until", (System.currentTimeMillis() + INVITE_MINUTES * 60_000L).toString())
+        return code
+    }
+    private fun activeInvite(): String? {
+        val until = setting("invite_until")?.toLongOrNull() ?: return null
+        if (System.currentTimeMillis() > until) return null
+        return setting("invite_code")?.let { DeviceSecrets.open(it) }
+    }
+    /** Central, answering a phone that joined with the QR code: the team password, encrypted with that code. */
+    fun inviteKey(out: OutputStream, code: String) =
+        write(out, JSONObject().put("format", KEY).put("version", 1).put("password", requireTeamPw()), code)
+    /** Satellite: the team password received after joining with the QR code. */
+    fun openInviteKey(input: InputStream, code: String): String = read(input, code, KEY).getString("password")
 
     /** Identifies the shared warehouse (the same on the central and on every satellite). */
     fun warehouseUid(): String? = if (setting("role") == null) null else setting("warehouse_uid")
@@ -357,7 +410,7 @@ class TeamSync(private val stock: StockDb) {
     /** Applies a satellite's changes. All or nothing; already processed changes are skipped. */
     fun importChanges(input: InputStream): TeamImportResult {
         require(setting("role") == "central") { "Le modifiche dei satelliti si importano sul telefono centrale" }
-        val changes = read(input, setting("password")!!, CHANGES)
+        val changes = read(input, requireTeamPw(), CHANGES)
         require(changes.getString("warehouse_uid") == setting("warehouse_uid")) { "Il file appartiene a un altro magazzino" }
         val device = changes.getString("device_uid"); val letter = changes.getString("letter")
         require(ArticleCodes.isSatelliteLetter(letter)) { "Lettera del telefono non valida" }
@@ -489,7 +542,7 @@ class TeamSync(private val stock: StockDb) {
     /** Central update on a satellite: map, articles and quantities, keeping unsent local changes. */
     fun importState(input: InputStream): TeamImportResult {
         require(setting("role") == "satellite") { "Collega prima il telefono come satellite" }
-        val state = read(input, setting("password")!!, SNAPSHOT)
+        val state = read(input, requireTeamPw(), SNAPSHOT)
         require(state.getString("warehouse_uid") == setting("warehouse_uid")) { "Il file appartiene a un altro magazzino" }
         val sql = db
         sql.beginTransaction()
@@ -677,7 +730,7 @@ class TeamSync(private val stock: StockDb) {
     private fun requirePassword(password: String) = require(password.length >= 8) { "La password della squadra deve avere almeno 8 caratteri" }
 
     private fun write(out: OutputStream, json: JSONObject, explicitPassword: String? = null) {
-        val password = explicitPassword ?: setting("password") ?: throw IllegalArgumentException("Password della squadra mancante")
+        val password = explicitPassword ?: requireTeamPw()
         BackupCipher.encrypt(out, password).use { enc -> GZIPOutputStream(enc).use { it.write(json.toString().toByteArray(Charsets.UTF_8)) } }
     }
     private fun read(input: InputStream, password: String, format: String): JSONObject {

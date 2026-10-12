@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.10.3
+# Ubicora — Android nativo 4.11.0
 
+> **4.11.0:** QR di collegamento con codice usa e getta, password della squadra nel portachiavi sicuro di Android, limiti sulla rete del centrale. Dettagli: [CHANGELOG 4.11.0](docs/CHANGELOG_4_11_0.md).
+>
 > **4.10.3:** il pulsante «Scansiona QR» non copre più l'ultimo elemento delle liste. Dettagli: [CHANGELOG 4.10.3](docs/CHANGELOG_4_10_3.md).
 >
 > **4.10.2:** prelievo a raffica che resta attivo, contatore sincronizzazione dopo gli spostamenti, carichi e prelievi più veloci. Dettagli: [CHANGELOG 4.10.2](docs/CHANGELOG_4_10_2.md).

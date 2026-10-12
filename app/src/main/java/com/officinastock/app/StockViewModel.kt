@@ -158,8 +158,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun teamInvite():String? {
         val t=ui.team
         if(t.role!=TeamRole.CENTRAL) return null
-        val password=team.teamPassword() ?: return null
-        return TeamQr.encode(password,t.peers.map { it.letter },ui.warehouse?.name ?: "")
+        // 4.11: a one-time code valid 10 minutes, never the team password itself.
+        val code=runCatching { team.createInvite() }.getOrNull() ?: return null
+        return TeamQr.encode(code,t.peers.map { it.letter },ui.warehouse?.name ?: "")
     }
 
     /**
@@ -774,10 +775,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         link.startSatellite(team.warehouseUid() ?: return,t.letter ?: return)
     }
     /** First connection without a file: the nearby central sends its archive. */
-    fun joinNearby(password:String,letter:String) {
+    fun joinNearby(password:String,letter:String,viaCode:Boolean=false) {
         val profileId=ui.profile?.id ?: return
         if(ui.team.role!=TeamRole.NONE || ui.sessionLocked) return
-        link.startJoin(profileId,password,letter.uppercase())
+        link.startJoin(profileId,password,letter.uppercase(),viaCode)
     }
     fun stopLink()=link.stop()
     private suspend fun refreshAfterLink(joinedWarehouse:Long?) {
@@ -788,6 +789,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     override fun onCleared() { link.stop();super.onCleared() }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
+    /** 4.11: the team password is device-sealed; after restoring a backup on a new phone it is typed again. */
+    fun restoreTeamPassword(password:String) = execute { team.restorePassword(password) }
     /** Central: departments of a satellite letter (empty = all categories). */
     fun setTeamScope(letter:String,categories:List<String>) = execute { team.setScope(letter,categories) }
     /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
