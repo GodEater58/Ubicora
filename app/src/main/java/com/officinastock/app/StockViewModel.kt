@@ -61,7 +61,15 @@ data class StockUiState(
     /** Items waiting for the user to tap a structure on the map ("Scegli sulla mappa"). */
     val locationPickItemIds: List<Long>? = null,
     val mapUndoLabel: String? = null,
-    val mapRedoLabel: String? = null
+    val mapRedoLabel: String? = null,
+    /** 4.10 burst picking: scanner reopens after every withdrawal until the user stops. */
+    val burstMode: Boolean = false,
+    val burstItemId: Long? = null,
+    val burstCount: Int = 0,
+    /** 4.10: a screen asks MainActivity to open the scanner (token, 0 = none). */
+    val scanRequest: Long = 0,
+    /** 4.10: team invite read from the central's QR, waiting for the join dialog. */
+    val teamQr: TeamQr.Invite? = null
 )
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
@@ -80,7 +88,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { link.stop();clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { link.stop();ui=ui.copy(burstMode=false,burstItemId=null,teamQr=null,scanRequest=0);clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -91,7 +99,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     /** Lookup locale. Nessuna movimentazione viene mai eseguita automaticamente da una scansione. */
     fun handleScannedCode(raw: String) {
+        TeamQr.parse(raw)?.let { invite ->
+            ui=if(ui.team.role!=TeamRole.NONE) ui.copy(message="Questo telefono è già collegato a una sincronizzazione",burstMode=false)
+            else ui.copy(teamQr=invite,message=null,burstMode=false,burstItemId=null)
+            return
+        }
         val warehouse=ui.warehouse ?: return
+        if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
         ArticleCodes.parseLocationScan(raw)?.let { location ->
             ui=when {
                 location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
@@ -113,6 +127,41 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=if(item!=null) ui.copy(scannedItemId=item.id,message=null)
         else ui.copy(scannedItemId=null,message="Articolo ${target.sku} non trovato in ${warehouse.name}.")
     }
+    // ---- 4.10 scanner requests, burst picking, team QR ----
+    fun requestScan() { ui=ui.copy(scanRequest=System.nanoTime()) }
+    fun consumeScanRequest() { ui=ui.copy(scanRequest=0) }
+    fun consumeTeamQr() { ui=ui.copy(teamQr=null) }
+    /** Scanner closed without reading: a burst session ends there. */
+    fun scanCancelled() { if(ui.burstMode) endBurst() }
+    fun startBurst() { if(!ui.busy) { ui=ui.copy(burstMode=true,burstItemId=null,burstCount=0,message=null); requestScan() } }
+    fun endBurst() { ui=ui.copy(burstMode=false,burstItemId=null) }
+    fun burstSkip() { ui=ui.copy(burstItemId=null); requestScan() }
+    fun burstPick(itemId:Long,quantity:Double) {
+        if(!(quantity>0.0)) return
+        execute(onSuccess={ ui=ui.copy(burstItemId=null,burstCount=ui.burstCount+1); if(ui.burstMode) requestScan() }) {
+            db.movement(itemId,-quantity,"Prelievo a raffica")
+        }
+    }
+    private fun handleBurstScan(raw:String,warehouse:Warehouse) {
+        val target=ArticleCodes.parseScan(raw)
+        val item=target?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+            ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
+        if(item==null) {
+            // Not an article of this warehouse: say so and keep scanning.
+            ui=ui.copy(message="Prelievo a raffica: inquadra l'etichetta di un articolo di ${warehouse.name}")
+            requestScan()
+        } else ui=ui.copy(burstItemId=item.id,message=null)
+    }
+    /** Text of the articles to reorder, for WhatsApp or email. */
+    fun reorderText():String=ReorderList.text(ui.warehouse?.name ?: "Magazzino",ui.items)
+    /** Central: QR that lets a new phone join without typing the password. */
+    fun teamInvite():String? {
+        val t=ui.team
+        if(t.role!=TeamRole.CENTRAL) return null
+        val password=team.teamPassword() ?: return null
+        return TeamQr.encode(password,t.peers.map { it.letter },ui.warehouse?.name ?: "")
+    }
+
     private fun execute(onSuccess: (() -> Unit)? = null, action: () -> Unit) {
         if(ui.busy) return
         val generation=backgroundGeneration

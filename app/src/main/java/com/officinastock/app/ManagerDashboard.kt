@@ -132,7 +132,7 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                         Text(euro(value),fontSize=12.sp,color=Mint)
                     }
                     LinearProgressIndicator(progress={if(total<=0.0)0f else (value/total).toFloat().coerceIn(0f,1f)},
-                        modifier=Modifier.fillMaxWidth().height(6.dp),color=Mint,trackColor=Color.White.copy(alpha=.08f))
+                        modifier=Modifier.fillMaxWidth().height(6.dp),color=Mint,trackColor=Hairline.copy(alpha=.08f))
                 }
                 if(report.pricedCount<report.itemCount) Text("${report.itemCount-report.pricedCount} articoli senza costo: totale parziale, non valore completo.",color=Amber,fontSize=11.sp)
             }
