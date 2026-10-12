@@ -222,3 +222,18 @@ test('Wall drawing closes shapes on nearby corners and walls',()=>{
  assert.equal(t.kind,'wall');assert.equal(t.x,0);assert.equal(t.y,2.5);
  assert.deepEqual(wallPoint({x:3.1,y:3.4},{x:1,y:0},[{x1:0,y1:0,x2:1,y2:0}],.3),{x:3,y:3.5,closes:false,kind:'grid'});
 });
+
+test('CSV carries shelf level and position; 11-column files from older versions still import',()=>{
+ let s=apply(empty(),{type:'warehouse',name:'Mag',width:12,depth:8});const wid=s.warehouses[0].id;
+ s=apply(s,{type:'placement',warehouseId:wid,name:'Scaffale A',x:1,y:1,width:2,depth:.8});
+ const head='Codice;Descrizione;Categoria;Quantità;Minimo;Unità;Ubicazione;Note;Costo unitario EUR;Fornitore;Consegna giorni';
+ const now=importCsv(s,head+';Ripiano;Posizione\nRIC-000001;Vite;Ricambi;5;1;pz;Scaffale A;;;;;2;3',wid);
+ assert.equal(now.items[0].shelfLevel,2);assert.equal(now.items[0].shelfSlot,3);
+ const out=exportCsv(now,wid);assert.match(out,/"Ripiano";"Posizione"/);assert.match(out,/"2";"3"$/);
+ assert.equal(parseCsv(out)[0].slot,'3');
+ const old=importCsv(s,head+'\nRIC-000001;Vite;Ricambi;5;1;pz;Scaffale A;;;;',wid);assert.equal(old.items[0].shelfLevel,null);
+ assert.throws(()=>importCsv(s,head+';Ripiano;Posizione\nRIC-000001;Vite;Ricambi;5;1;pz;Scaffale A;;;;;21;1',wid),/Ripiano/);
+ // Moving the item to another structure drops a shelf that no longer applies.
+ const b=apply(now,{type:'placement',warehouseId:wid,name:'Scaffale B',x:5,y:1,width:2,depth:.8});
+ const moved=apply(b,{type:'assignPlacement',placementId:b.placements[1].id,ids:[b.items[0].id]});assert.equal(moved.items[0].shelfLevel,null);
+});

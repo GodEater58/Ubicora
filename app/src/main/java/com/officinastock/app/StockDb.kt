@@ -920,7 +920,11 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 require(locations[row.location]?.size==1 && locations[row.location]!!.single().holdsStock) {
                     "Ubicazione non trovata o ambigua: ${row.location}. Prima dell’importazione crea nella Planimetria una struttura con questo nome esatto, oppure rinomina le strutture duplicate."
                 }
-            }
+                val target=locations[row.location]!!.single()
+                require((row.shelfLevel ?: 1)<=target.levels && (row.shelfSlot ?: 1)<=target.slots) {
+                    "${row.sku}: ${target.label} ha ${target.levels} ripiani e ${target.slots} posizioni. Imposta ripiani e posizioni della struttura prima di importare."
+                }
+            } else require(row.shelfLevel==null && row.shelfSlot==null) { "${row.sku}: ripiano senza ubicazione" }
         }
     }
 
@@ -938,6 +942,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                     put("quantity",row.quantity);put("minimum",row.minimum)
                     put("unit",row.unit);put("note",row.note)
                     if(row.location.isNotBlank())put("placement_id",locations[row.location]!!.id)
+                    row.shelfLevel?.let { put("shelf_level",it) }
+                    row.shelfSlot?.let { put("shelf_slot",it) }
                     if(row.cost!=null)put("unit_cost",row.cost)
                     put("supplier",row.supplier)
                     if(row.leadDays!=null)put("lead_days",row.leadDays)
@@ -961,12 +967,13 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             val neutral=if(s.trimStart().firstOrNull() in listOf('=','+','-','@','\t','\r')) "'$s" else s
             return "\"${neutral.replace("\"","\"\"")}\""
         }
-        val header=listOf("Codice","Descrizione","Categoria","Quantità","Minimo","Unità","Ubicazione","Note","Costo unitario EUR","Fornitore","Consegna giorni").joinToString(";") {field(it)}
+        val header=CsvImport.header.joinToString(";") {field(it)}
         val labels=placements(warehouseId).associateBy{it.id}
         return buildString {
             appendLine("\uFEFF$header")
             for(it in items(warehouseId)) appendLine(listOf(it.sku,it.name,it.category,it.quantity.toString(),it.minimum.toString(),it.unit,
-                labels[it.placementId]?.label ?: "",it.note,it.unitCost?.toString() ?: "",it.supplier,it.leadDays?.toString() ?: "").joinToString(";"){v->field(v)})
+                labels[it.placementId]?.label ?: "",it.note,it.unitCost?.toString() ?: "",it.supplier,it.leadDays?.toString() ?: "",
+                it.shelfLevel?.toString() ?: "",it.shelfSlot?.toString() ?: "").joinToString(";"){v->field(v)})
         }
     }
 

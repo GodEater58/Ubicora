@@ -4,15 +4,18 @@ package com.officinastock.app
 data class CsvImportRow(
     val sku: String, val name: String, val category: String, val quantity: Double,
     val minimum: Double, val unit: String, val location: String, val note: String,
-    val cost: Double?, val supplier: String, val leadDays: Int?
+    val cost: Double?, val supplier: String, val leadDays: Int?,
+    val shelfLevel: Int? = null, val shelfSlot: Int? = null
 )
 
 object CsvImport {
     const val MAX_BYTES = 8 * 1024 * 1024
     const val MAX_ITEMS = 20000
     private val textColumns=setOf(1,6,7,9) // descrizione, ubicazione, note, fornitore
-    private val header=listOf("Codice","Descrizione","Categoria","Quantità","Minimo",
+    private val legacyHeader=listOf("Codice","Descrizione","Categoria","Quantità","Minimo",
         "Unità","Ubicazione","Note","Costo unitario EUR","Fornitore","Consegna giorni")
+    /** 4.7.1 adds shelf level and position at the end; files from earlier versions (11 columns) still import. */
+    val header=legacyHeader+listOf("Ripiano","Posizione")
 
     /** Undo the apostrophe that StockDb.csv() / the web export prepend to neutralise spreadsheet formulas. */
     internal fun unformula(value: String): String =
@@ -72,14 +75,14 @@ object CsvImport {
         }
         require(!inQuotes) { "CSV non completo: virgolette aperte" }
         if(field.isNotEmpty() || fieldStarted || fields.isNotEmpty()) finishRow()
-        require(records.isNotEmpty() && records[0]==header) {
+        require(records.isNotEmpty() && (records[0]==header || records[0]==legacyHeader)) {
             "Intestazioni non riconosciute: esporta un CSV da Ubicora per ottenere il modello"
         }
         require(records.size>1) { "Il CSV non contiene articoli" }
         val seen=HashSet<String>()
         return records.drop(1).mapIndexed { index, raw ->
             val v=raw.mapIndexed { column, text -> if(column in textColumns) unformula(text) else text }
-            require(v.size==header.size) { "Riga ${index+2}: colonne CSV non valide" }
+            require(v.size==records[0].size) { "Riga ${index+2}: colonne CSV non valide" }
             val sku=v[0].trim().uppercase(java.util.Locale.ROOT)
             val prefix=sku.substringBefore('-')
             val serial=sku.substringAfter('-', "").toLongOrNull()
@@ -98,8 +101,18 @@ object CsvImport {
                 (v[10].isBlank() || (lead!=null && lead in 0..3650))) {
                 "Riga ${index+2}: dati non validi"
             }
+            fun shelf(column:Int,max:Int,label:String):Int? {
+                val raw=v.getOrNull(column)?.trim().orEmpty()
+                if(raw.isEmpty()) return null
+                val n=raw.toIntOrNull()
+                require(n!=null && n in 1..max) { "Riga ${index+2}: $label non valido (1–$max)" }
+                return n
+            }
+            val level=shelf(11,20,"ripiano")
+            val slot=shelf(12,50,"posizione")
+            require((level==null && slot==null) || v[6].isNotBlank()) { "Riga ${index+2}: ripiano senza ubicazione" }
             CsvImportRow(sku,v[1].trim(),v[2],qty!!,min!!,v[5].trim(),v[6],v[7],
-                cost,v[9],lead)
+                cost,v[9],lead,level,slot)
         }
     }
 }

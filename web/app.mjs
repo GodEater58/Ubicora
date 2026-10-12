@@ -1,4 +1,4 @@
-import {wallPoint,uid,empty,validate,apply,analytics,reserved,available,cost,number,optional,parseCsv,importCsv,exportCsv,exportAndroidCsv,demo} from './core.mjs';
+import {wallPoint,shelfCode,uid,empty,validate,apply,analytics,reserved,available,cost,number,optional,parseCsv,importCsv,exportCsv,exportAndroidCsv,demo} from './core.mjs';
 const $=s=>document.querySelector(s),esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=x=>new Intl.NumberFormat('it-IT',{maximumFractionDigits:2}).format(x),eur=x=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(x);
 const dates=x=>new Date(x).toLocaleString('it-IT',{dateStyle:'short',timeStyle:'short'});
@@ -11,7 +11,7 @@ let reservationCacheState=null,reservationCache=new Map();
 function uiReserved(s,id){if(reservationCacheState!==s){reservationCacheState=s;reservationCache=new Map();for(const r of s.reservations)if(r.status==='ACTIVE')reservationCache.set(r.itemId,(reservationCache.get(r.itemId)??0)+r.quantity);}return reservationCache.get(id)??0;}
 const uiAvailable=(s,i)=>i.quantity-uiReserved(s,i.id);
 const warehouse=()=>state.warehouses.find(w=>w.id===wid),items=()=>state.items.filter(i=>i.warehouseId===wid),item=id=>state.items.find(i=>i.id===id),rowItem=id=>item(id)||{name:'Articolo',sku:'',unit:'',warehouseId:null};
-const placeName=i=>state.placements.find(p=>p.id===i.placementId)?.name||i.location||'';
+const placeName=i=>{const base=state.placements.find(p=>p.id===i.placementId)?.name||i.location||'',code=base?shelfCode(i):'';return code?base+' · '+code:base;};
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000);}
 function status(message){$('#syncStatus').textContent=message;$('#saveStatus').textContent=message;}
 async function openDb(){return await new Promise((resolve,reject)=>{const r=indexedDB.open('ubicora-web',1);r.onupgradeneeded=()=>r.result.createObjectStore('archives');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(Error('Il browser non consente il salvataggio. Apri con Edge o Chrome e disattiva la navigazione privata.'));});}

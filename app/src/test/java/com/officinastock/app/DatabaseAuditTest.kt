@@ -109,6 +109,26 @@ class DatabaseAuditTest {
         rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
         assertEquals("Cuscinetto",db.item(id)!!.name)
     }
+    @Test fun csvExportAndImportKeepShelfLevelAndPosition(){
+        val shelf=db.addPlacement(warehouse,"Scaffale","Scaffale A",2f,2f)
+        db.updatePlacementLayout(shelf,4,6)
+        val id=item()
+        db.assignItem(id,shelf,3,5)
+        val exported=CsvImport.parse(db.csv(warehouse)).single()
+        assertEquals(3,exported.shelfLevel)
+        assertEquals(5,exported.shelfSlot)
+        val other=db.createWarehouse(profile,"B","")
+        val copy=db.addPlacement(other,"Scaffale","Scaffale A",2f,2f)
+        // The target structure is too small: the whole import is refused, nothing is written.
+        rejects { db.importCsv(other,listOf(exported)) }
+        assertTrue(db.items(other).isEmpty())
+        db.updatePlacementLayout(copy,4,6)
+        assertEquals(1,db.importCsv(other,listOf(exported)))
+        val imported=db.items(other).single()
+        assertEquals(copy,imported.placementId)
+        assertEquals(3,imported.shelfLevel)
+        assertEquals(5,imported.shelfSlot)
+    }
     @Test fun csvImportRollsBackDuplicateAndPreservesOriginal(){
         val original=item()
         val row=CsvImportRow("RIC-001201","Other","Ricambi",2.0,1.0,"pz","","",null,"",null)

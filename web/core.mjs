@@ -65,6 +65,7 @@ export function validate(s){
  const skus=new Set();for(const i of s.items){
   if(!warehouses.has(i.warehouseId))throw Error('Magazzino non valido');if(!storedText(i.name,180).trim())throw Error('Nome articolo mancante');name(storedText(i.sku,100));name(storedText(i.unit,24));storedText(i.category,100);storedText(i.location,160);storedText(i.note,3000);storedText(i.supplier,160);
   storedNumber(i.quantity);storedNumber(i.minimum);if(i.cost!==null)storedNumber(i.cost);deliveryDays(i.leadDays);
+  for(const [k,max] of [['shelfLevel',20],['shelfSlot',50]])if(i[k]!==undefined&&i[k]!==null&&(!Number.isInteger(i[k])||i[k]<1||i[k]>max))throw Error('Ripiano o posizione non validi');
   const k=i.warehouseId+'|'+i.sku.trim().toLowerCase();if(skus.has(k))throw Error('Codice articolo già presente');skus.add(k);if(i.quantity-(reservedTotals.get(i.id)??0)<-1e-7)throw Error('Le prenotazioni superano la giacenza');
  }
  for(const r of [...s.movements,...s.orders,...s.reservations])if(!itemIds.has(r.itemId))throw Error('Articolo non valido');
@@ -96,7 +97,7 @@ export function apply(state,action,at=Date.now()){
   if(item.leadDays!==null&&(!Number.isInteger(item.leadDays)||item.leadDays>3650))throw Error('Giorni di consegna non validi');
   s.items.push(item);if(item.quantity)s.movements.unshift({id:uid(),itemId:item.id,delta:item.quantity,note:'Giacenza iniziale',at});break;
  }
- case 'edit':{const i=find(s.items,a.id);Object.assign(i,{name:name(a.name),category:String(a.category||'Ricambi').trim(),minimum:number(a.minimum),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim()});i.placementId=placementByName(s,i.warehouseId,i.location);break;}
+ case 'edit':{const i=find(s.items,a.id);Object.assign(i,{name:name(a.name),category:String(a.category||'Ricambi').trim(),minimum:number(a.minimum),cost:optional(a.cost),supplier:String(a.supplier??'').trim(),leadDays:optional(a.leadDays),location:String(a.location??'').trim(),note:String(a.note??'').trim()});const was=i.placementId;i.placementId=placementByName(s,i.warehouseId,i.location);if(i.placementId!==was||!i.placementId){i.shelfLevel=null;i.shelfSlot=null;}break;}
  case 'move':{if(!['in','out','count'].includes(a.kind))throw Error('Tipo movimento non valido');const i=find(s.items,a.id);const q=a.kind==='count'?number(a.quantity):positive(a.quantity);move(s,i,a.kind==='in'?q:a.kind==='out'?-q:q-i.quantity,a.note,at);break;}
  case 'reserve':{const i=find(s.items,a.id),q=positive(a.quantity);if(q>available(s,i)+1e-7)throw Error('Quantità disponibile insufficiente');if(String(a.reference).trim().length<3)throw Error('Indica la commessa o attività');s.reservations.push({id:uid(),itemId:i.id,quantity:q,reference:String(a.reference).trim(),status:'ACTIVE',at});break;}
  case 'reservation':{const r=find(s.reservations,a.id);if(r.status!=='ACTIVE')throw Error('Prenotazione già chiusa');r.status=a.consume?'CONSUMED':'RELEASED';if(a.consume)move(s,find(s.items,r.itemId),-r.quantity,'Consumo prenotazione: '+r.reference,at);break;}
@@ -114,7 +115,7 @@ export function apply(state,action,at=Date.now()){
  case 'duplicatePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);let label=nextLabel(p.name);while(s.placements.some(x=>x.warehouseId===w.id&&x.name===label))label=nextLabel(label);
   const x=p.x+p.width+.25<=w.width-p.width?p.x+p.width+.25:p.x,y=x===p.x?Math.min(p.y+p.depth+.25,w.depth-p.depth):p.y;s.placements.push({...p,id:uid(),name:label,x:snap(x),y:snap(y)});break;}
  case 'assignPlacement':{const target=a.placementId?find(s.placements,a.placementId):null;const ids=[...new Set(a.ids??[])];if(!ids.length)throw Error('Seleziona almeno un articolo');
-  for(const id of ids){const i=find(s.items,id);if(target&&target.warehouseId!==i.warehouseId)throw Error('Struttura di un’altra sede');i.placementId=target?.id??null;i.location=target?.name??'';}break;}
+  for(const id of ids){const i=find(s.items,id);if(target&&target.warehouseId!==i.warehouseId)throw Error('Struttura di un’altra sede');if(i.placementId!==(target?.id??null)){i.shelfLevel=null;i.shelfSlot=null;}i.placementId=target?.id??null;i.location=target?.name??'';}break;}
  case 'wall':{const w=find(s.warehouses,a.warehouseId);const pts=['x1','y1','x2','y2'].map(k=>snap(number(a[k],-1e12)));const [x1,y1,x2,y2]=[clamp(pts[0],0,w.width),clamp(pts[1],0,w.depth),clamp(pts[2],0,w.width),clamp(pts[3],0,w.depth)];
   if(Math.hypot(x2-x1,y2-y1)<.2)throw Error('Parete troppo corta (minimo 20 cm)');s.walls.push({id:uid(),warehouseId:w.id,x1,y1,x2,y2});break;}
  case 'removeWall':{const wall=find(s.walls,a.id);s.walls=s.walls.filter(x=>x.id!==wall.id);break;}
@@ -136,28 +137,33 @@ export function analytics(s,wid,days=30,now=Date.now()){
   machines:Object.entries(works.reduce((a,w)=>{a[w.machine]=(a[w.machine]??0)+(cost(w)??0);return a;},Object.create(null))).sort((a,b)=>b[1]-a[1]).slice(0,6),
   moves:s.movements.filter(m=>ids.has(m.itemId)&&m.at>=now-days*86400000),orders,works};
 }
-export const CSV_HEADER=['Codice','Descrizione','Categoria','Quantità','Minimo','Unità','Ubicazione','Note','Costo unitario EUR','Fornitore','Consegna giorni'];
+// 4.7.1 adds Ripiano/Posizione at the end; the 11-column layout of earlier versions is still read.
+export const CSV_HEADER=['Codice','Descrizione','Categoria','Quantità','Minimo','Unità','Ubicazione','Note','Costo unitario EUR','Fornitore','Consegna giorni','Ripiano','Posizione'];
+const LEGACY_COLUMNS=11;
+/** Shelf level (1–20) or position (1–50) of an item, or null. */
+const shelfNumber=(v,max,label)=>{if(v===null||v===undefined||String(v).trim()==='')return null;const n=Number(String(v).trim());if(!Number.isInteger(n)||n<1||n>max)throw Error(label+' non valido (1–'+max+')');return n;};
+export const shelfCode=i=>[i.shelfLevel?'R'+i.shelfLevel:'',i.shelfSlot?'P'+i.shelfSlot:''].filter(Boolean).join(' ');
 export function parseCsv(text){
  if(new TextEncoder().encode(text).length>8*1024*1024)throw Error('CSV superiore a 8 MiB');
  text=text.replace(/^\uFEFF/,'');const rows=[];let row=[],field='',quote=false,closed=false;
  for(let i=0;i<text.length;i++){const ch=text[i];if(closed&&![';','\n','\r'].includes(ch))throw Error('Caratteri dopo la chiusura del campo CSV');if(ch==='"'){if(quote&&text[i+1]==='"'){field+='"';i++;}else if(quote||!field){if(quote)closed=true;quote=!quote;}else throw Error('Virgolette CSV non valide');}
  else if(ch===';'&&!quote){row.push(field);field='';closed=false;}else if((ch==='\n'||ch==='\r')&&!quote){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(Boolean))rows.push(row);row=[];field='';closed=false;}else field+=ch;}
  if(quote)throw Error('CSV incompleto');if(field||row.length){row.push(field);rows.push(row);}if(rows.length>20001)throw Error('Massimo 20.000 articoli');
- if(rows[0]?.length!==11||!rows[0].every((x,i)=>x===CSV_HEADER[i]))throw Error('Usa il CSV inventario esportato da Ubicora Android (11 colonne, separatore ;)');
- return rows.slice(1).map(r=>{if(r.length!==11)throw Error('Numero colonne non valido');return {sku:r[0],name:r[1],category:r[2],quantity:r[3],minimum:r[4],unit:r[5],location:r[6],note:r[7],cost:r[8],supplier:r[9],leadDays:r[10]};});
+ const width=rows[0]?.length;if((width!==CSV_HEADER.length&&width!==LEGACY_COLUMNS)||!rows[0].every((x,i)=>x===CSV_HEADER[i]))throw Error('Usa il CSV inventario esportato da Ubicora (13 o 11 colonne, separatore ;)');
+ return rows.slice(1).map(r=>{if(r.length!==width)throw Error('Numero colonne non valido');return {sku:r[0],name:r[1],category:r[2],quantity:r[3],minimum:r[4],unit:r[5],location:r[6],note:r[7],cost:r[8],supplier:r[9],leadDays:r[10],level:r[11]??'',slot:r[12]??''};});
 }
 // Undo the apostrophe added by exportCsv / Android csv() to neutralise spreadsheet formulas.
 const unformula=v=>{v=String(v??'');return /^'[\s]*[=+@-]/.test(v)||/^'[\t\r]/.test(v)?v.slice(1):v;};
 export function importCsv(state,text,wid){
  find(state.warehouses,wid);const s=structuredClone(state),at=Date.now();
  for(const a of parseCsv(text)){
-  const i={id:uid(),warehouseId:wid,sku:name(unformula(a.sku)),name:unformula(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:unformula(a.supplier),leadDays:optional(a.leadDays),location:unformula(a.location),note:unformula(a.note),placementId:null};i.placementId=placementByName(s,wid,i.location);
+  const i={id:uid(),warehouseId:wid,sku:name(unformula(a.sku)),name:unformula(a.name).trim(),category:a.category||'Ricambi',unit:name(a.unit),quantity:number(a.quantity),minimum:number(a.minimum),cost:optional(a.cost),supplier:unformula(a.supplier),leadDays:optional(a.leadDays),location:unformula(a.location),note:unformula(a.note),placementId:null,shelfLevel:shelfNumber(a.level,20,'Ripiano'),shelfSlot:shelfNumber(a.slot,50,'Posizione')};i.placementId=placementByName(s,wid,i.location);
   if(i.leadDays!==null&&(!Number.isInteger(i.leadDays)||i.leadDays>3650))throw Error('Giorni di consegna non validi');
   s.items.push(i);if(i.quantity)s.movements.push({id:uid(),itemId:i.id,delta:i.quantity,note:'Importazione inventario CSV Android',at});
  }return validate(s);
 }
 const csvField=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
-export function exportCsv(s,wid){return '\uFEFF'+[CSV_HEADER,...s.items.filter(i=>i.warehouseId===wid).map(i=>[i.sku,i.name,i.category,i.quantity,i.minimum,i.unit,i.location,i.note,i.cost,i.supplier,i.leadDays])].map(r=>r.map(x=>csvField(typeof x==='string'&&/^[\s]*[=+@-]/.test(x)?"'"+x:x)).join(';')).join('\r\n');}
+export function exportCsv(s,wid){return '\uFEFF'+[CSV_HEADER,...s.items.filter(i=>i.warehouseId===wid).map(i=>[i.sku,i.name,i.category,i.quantity,i.minimum,i.unit,i.location,i.note,i.cost,i.supplier,i.leadDays,i.shelfLevel??'',i.shelfSlot??''])].map(r=>r.map(x=>csvField(typeof x==='string'&&/^[\s]*[=+@-]/.test(x)?"'"+x:x)).join(';')).join('\r\n');}
 const ANDROID_CATEGORIES=new Set(['Ricambi','Utensili','Elettrico','Pneumatica','Idraulica','Consumabili','DPI','Meccanica','Altro']);
 export function exportAndroidCsv(s,wid){
  find(s.warehouses,wid);
