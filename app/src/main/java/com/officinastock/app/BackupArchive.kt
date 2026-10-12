@@ -25,7 +25,10 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         private val planningTables = listOf("stock_reservations")
         private val reservedTables = enterpriseTables + planningTables
         private val traceTables = listOf("stock_lots","stock_serials")
-        private val tables = reservedTables + traceTables
+        private val beforeTeamSync = reservedTables + traceTables
+        // 4.8: the phone's role in the sync travels with the backup (restoring it moves the phone).
+        private val teamTables = listOf("team_sync_settings","team_sync_peers","team_sync_outbox","team_sync_conflicts")
+        private val tables = beforeTeamSync + teamTables
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -205,7 +208,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             }
             val archiveTableCount=manifest.optInt("tables",-1)
             require(archiveTableCount in setOf(legacyTables.size,managerTables.size,
-                enterpriseTables.size,reservedTables.size,tables.size)) {
+                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
             val mandatory=when(archiveTableCount){
@@ -213,6 +216,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 managerTables.size -> managerTables
                 enterpriseTables.size -> enterpriseTables
                 reservedTables.size -> reservedTables
+                beforeTeamSync.size -> beforeTeamSync
                 else -> tables
             }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
@@ -248,6 +252,8 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             try {
                 db.delete("profiles",null,null) // On-delete cascade pulisce warehouse e dati dipendenti.
                 db.delete("sku_sequences",null,null)
+                // Cleared first, so no sync trigger fires while the archive is written back.
+                for(table in teamTables) db.delete(table,null,null)
                 for(table in tables) {
                     for(values in snapshots.getValue(table)) {
                         db.insertOrThrow(table,null,values)

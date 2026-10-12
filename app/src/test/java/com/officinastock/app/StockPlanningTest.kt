@@ -89,7 +89,7 @@ class StockPlanningTest {
         db.writableDatabase.version=8
         db.close()
         db=StockDb(context);planning=StockPlanningDb(db);ops=OperationsDb(db)
-        assertEquals(11,db.readableDatabase.version)
+        assertEquals(12,db.readableDatabase.version)
         assertEquals(old,db.item(item))
         assertEquals(baseline,db.movements(warehouse).size)
         assertTrue(db.authenticate(profile,"1234"))

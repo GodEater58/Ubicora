@@ -1,0 +1,153 @@
+package com.officinastock.app
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/** 4.8 Settings panel: central phone and satellites exchanging encrypted files, no server. */
+@Composable fun TeamSyncPanel(model: StockViewModel) {
+    val u = model.ui
+    val t = u.team
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<String?>(null) }
+    var askCentral by remember { mutableStateOf(false) }
+    var askJoin by remember { mutableStateOf(false) }
+    var askLeave by remember { mutableStateOf(false) }
+    var showConflicts by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var letter by remember { mutableStateOf("B") }
+    fun run(block: suspend () -> String) = scope.launch {
+        result = try { block() } catch (e: Exception) { e.message ?: "Operazione non riuscita" }
+    }
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        if (uri != null) run { model.teamExport(uri) }
+    }
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) run { model.teamImport(uri) }
+    }
+    val joiner = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) { val p = password; val l = letter; run { model.teamJoin(uri, p, l) } }
+        password = ""
+    }
+    val day = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ITALY).format(Date())
+    val synced = t.warehouseId != null && t.warehouseId == u.warehouse?.id
+
+    Panel(Modifier.fillMaxWidth()) {
+        Text("SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+        when (t.role) {
+            TeamRole.NONE -> {
+                Text("Più persone, nessun server", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("Un telefono centrale tiene l'archivio; gli altri (satelliti) lavorano offline e si scambiano file cifrati " +
+                    "con il centrale, via WhatsApp, email o USB. Le giacenze si uniscono sommando i movimenti.",
+                    fontSize = 12.sp, color = TextSecondary)
+                PrimaryAction("Rendi questo il telefono centrale", onClick = { password = ""; confirm = ""; askCentral = true },
+                    enabled = !u.busy && u.warehouse != null, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { password = ""; letter = "B"; askJoin = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("Collega a un telefono centrale")
+                }
+            }
+            TeamRole.CENTRAL -> {
+                Text("Telefono centrale", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name}" else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
+                    fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
+                if (synced) {
+                    PrimaryAction("Importa dai satelliti", onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { exporter.launch("Ubicora_aggiornamento_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Invia aggiornamento a tutti")
+                    }
+                }
+                if (t.peers.isEmpty()) Text("Nessun satellite ancora: invia l'aggiornamento e fallo importare con «Collega a un telefono centrale».",
+                    fontSize = 11.sp, color = TextSecondary)
+                t.peers.forEach { p ->
+                    Text("Satellite ${p.letter} · ultima importazione ${if (p.lastImport > 0) date(p.lastImport) else "—"} · ${p.processedSeq} modifiche ricevute",
+                        fontSize = 12.sp)
+                }
+            }
+            TeamRole.SATELLITE -> {
+                Text("Satellite ${t.letter}", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name} · la mappa la modifica solo il centrale"
+                    else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
+                    fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
+                Surface(color = (if (t.pending > 0) Amber else Mint).copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
+                    Text(if (t.pending > 0) "${t.pending} modifiche da inviare al centrale" else "Tutto inviato al centrale",
+                        Modifier.padding(10.dp).fillMaxWidth(), color = if (t.pending > 0) Amber else Mint, fontWeight = FontWeight.SemiBold)
+                }
+                if (synced) {
+                    PrimaryAction("Invia al centrale", onClick = { exporter.launch("Ubicora_${t.letter}_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("Importa aggiornamento dal centrale")
+                    }
+                }
+            }
+        }
+        if (t.lastSync > 0) Text("Ultimo scambio: ${date(t.lastSync)}", fontSize = 11.sp, color = TextSecondary)
+        if (t.conflicts.isNotEmpty()) OutlinedButton(onClick = { showConflicts = true }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.WarningAmber, null, tint = Amber); Spacer(Modifier.width(8.dp)); Text("${t.conflicts.size} conflitti da controllare", color = Amber)
+        }
+        if (t.role != TeamRole.NONE) TextButton(onClick = { askLeave = true }, enabled = !u.busy) { Text("Scollega questo telefono", color = TextSecondary) }
+    }
+
+    if (askCentral) AlertDialog(onDismissRequest = { askCentral = false }, title = { Text("Telefono centrale") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Il magazzino «${u.warehouse?.name}» diventa quello condiviso. Scegli la password della squadra: serve a cifrare i file e la useranno tutti i telefoni.",
+                fontSize = 13.sp)
+            Input(password, { password = it }, "Password della squadra (min. 8)", password = true)
+            Input(confirm, { confirm = it }, "Ripeti la password", password = true)
+            Text("Consiglio: prima fai un backup completo.", fontSize = 11.sp, color = TextSecondary)
+        }
+    }, confirmButton = { TextButton(onClick = { model.becomeTeamCentral(password); askCentral = false; password = ""; confirm = "" },
+        enabled = password.length >= 8 && password == confirm) { Text("Conferma") } },
+        dismissButton = { TextButton(onClick = { askCentral = false }) { Text("Annulla") } })
+
+    if (askJoin) AlertDialog(onDismissRequest = { askJoin = false }, title = { Text("Collega al centrale") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Ti serve il file «aggiornamento» inviato dal telefono centrale. Verrà creato un nuovo magazzino con i suoi articoli e la sua mappa.",
+                fontSize = 13.sp)
+            Input(password, { password = it }, "Password della squadra", password = true)
+            Text("Lettera di questo telefono (diversa per ogni persona)", fontSize = 12.sp, color = TextSecondary)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("B", "C", "D", "E", "F").forEach { l -> FilterChip(selected = letter == l, onClick = { letter = l }, label = { Text(l) }) }
+            }
+            Text("I codici degli articoli creati qui avranno la lettera: es. RIC-${letter}000001.", fontSize = 11.sp, color = TextSecondary)
+        }
+    }, confirmButton = { TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Scegli il file") } },
+        dismissButton = { TextButton(onClick = { askJoin = false; password = "" }) { Text("Annulla") } })
+
+    if (askLeave) AlertDialog(onDismissRequest = { askLeave = false }, title = { Text("Scollegare il telefono?") }, text = {
+        Text(if (t.role == TeamRole.CENTRAL) "Gli articoli restano su questo telefono, ma i satelliti non potranno più scambiare file con lui."
+            else "Gli articoli restano su questo telefono. Se ci sono modifiche non inviate, prima inviale al centrale.", fontSize = 13.sp)
+    }, confirmButton = { TextButton(onClick = { model.leaveTeam(); askLeave = false }) { Text("Scollega", color = Danger) } },
+        dismissButton = { TextButton(onClick = { askLeave = false }) { Text("Annulla") } })
+
+    if (showConflicts) AlertDialog(onDismissRequest = { showConflicts = false }, title = { Text("Conflitti") }, text = {
+        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Modifiche dei satelliti non applicate (per esempio un prelievo superiore alla giacenza). Controlla l'articolo e, se serve, fai una rettifica.",
+                fontSize = 12.sp, color = TextSecondary)
+            t.conflicts.forEach { c ->
+                Column { Text("${c.letter} · ${c.item}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(c.detail, fontSize = 12.sp, color = TextSecondary); Text(date(c.createdAt), fontSize = 10.sp, color = TextSecondary) }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { model.dismissTeamConflicts(); showConflicts = false }) { Text("Ho controllato, cancella elenco") } },
+        dismissButton = { TextButton(onClick = { showConflicts = false }) { Text("Chiudi") } })
+
+    result?.let { text -> AlertDialog(onDismissRequest = { result = null }, title = { Text("Sincronizzazione") }, text = { Text(text) },
+        confirmButton = { TextButton(onClick = { result = null }) { Text("OK") } }) }
+}
