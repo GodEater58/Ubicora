@@ -18,6 +18,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsActions
@@ -170,6 +172,9 @@ class GuideScreenshotsTest {
             model.cancelCsvImport(); settle(model)
             scrollTo("SINCRONIZZAZIONE TRA TELEFONI"); settle(model)
             shot("19_sync_inizio",model)
+            // 4.10: the central's QR read by a new phone opens the join dialog already filled in.
+            shot("37_collega_qr",model,dialog=true) { model.handleScannedCode(TeamQr.encode("squadra-2026",listOf("B"),"Magazzino officina")) }
+            runCatching { compose.onAllNodesWithText("Annulla").onLast().performClick() }.onFailure { log.appendLine("close join: ${it.message?.take(150)}") }; settle(model)
             model.becomeTeamCentral("squadra-2026"); settle(model)
             model.setTeamScope("B",listOf("Meccanica","Pneumatica")); settle(model)
             model.setTeamScope("C",listOf("Elettrico")); settle(model)
@@ -197,6 +202,31 @@ class GuideScreenshotsTest {
             linkShot("27_errore",LinkUi(LinkPhase.ERROR,message="Fuori dal tuo reparto: qui puoi solo prelevare. Per il resto chiedi al telefono centrale"))
             model.link.preview(LinkUi()); repeat(3) { compose.mainClock.advanceTimeBy(300); shadowOf(Looper.getMainLooper()).idle() }
             compose.mainClock.autoAdvance=true; settle(model)
+
+            // ---------------- 4.10 quality of life
+            scrollTo("QR per collegare un nuovo telefono"); settle(model)
+            shot("36_qr_invito",model,dialog=true) { compose.onNodeWithText("QR per collegare un nuovo telefono").performClick() }
+            runCatching { compose.onAllNodesWithText("Chiudi").onLast().performClick() }.onFailure { log.appendLine("close qr: ${it.message?.take(150)}") }; settle(model)
+            scrollTo("VISUALIZZAZIONE"); settle(model)
+            shot("33_visualizzazione",model)
+            shot("29_panoramica_sync",model) { compose.onNodeWithContentDescription("Panoramica").performClick() }
+            runCatching { compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Condividi lista da ordinare",substring=true)) }
+            settle(model)
+            shot("30_lista_ordine",model)
+            model.ui.items.sortedBy { it.name }.take(2).forEach { UiPrefs.toggleFavorite(it.warehouseId,it.id) }
+            shot("31_preferiti",model) { compose.onNodeWithContentDescription("Articoli").performClick() }
+            // Burst picking: the scanner is not available here, the scanned label is passed directly.
+            val burstItem=model.ui.items.first { it.quantity>=3.0 }
+            shot("32_raffica",model,dialog=true) {
+                model.startBurst(); model.consumeScanRequest()
+                model.handleScannedCode(ArticleCodes.payload(burstItem.warehouseId,burstItem.sku))
+            }
+            model.endBurst(); settle(model)
+            UiPrefs.updateLight(true)
+            shot("34_tema_chiaro",model) { compose.onNodeWithContentDescription("Panoramica").performClick() }
+            UiPrefs.updateGlove(true)
+            shot("35_modalita_guanti",model) { compose.onNodeWithContentDescription("Articoli").performClick() }
+            UiPrefs.updateGlove(false); UiPrefs.updateLight(false); settle(model)
 
             // ---------------- 4.7.4 unit of measure menu
             compose.onNodeWithContentDescription("Articoli").performClick(); settle(model)
