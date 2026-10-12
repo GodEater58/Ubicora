@@ -38,7 +38,9 @@ object TeamLinkProtocol {
 
     fun changesRequest(team: TeamSync): ByteArray =
         ByteArrayOutputStream().apply { write(CHANGES.toInt()); team.exportChanges(this) }.toByteArray()
-    fun joinRequest(): ByteArray = byteArrayOf(JOIN)
+    /** First connection: the ticket proves the password and books the letter on the central. */
+    fun joinRequest(team: TeamSync, password: String, letter: String): ByteArray =
+        ByteArrayOutputStream().apply { write(JOIN.toInt()); team.joinTicket(this, password, letter) }.toByteArray()
 
     data class Join(val profileId: Long, val password: String, val letter: String)
     sealed interface Outcome {
@@ -79,7 +81,11 @@ object TeamLinkProtocol {
                 Answer(state(team), "${r.movements} movimenti, ${r.articles} articoli nuovi, ${r.locations} spostamenti" +
                     (if (r.conflicts > 0) " · ${r.conflicts} conflitti" else ""), false, r.letter)
             }
-            JOIN -> Answer(state(team), "Nuovo telefono: archivio inviato", false)
+            JOIN -> {
+                require(request.size > 1) { "Aggiorna Ubicora sul telefono che si collega" }
+                val letter = team.acceptJoin(ByteArrayInputStream(request, 1, request.size - 1))
+                Answer(state(team), "Nuovo telefono collegato: archivio inviato", false, letter)
+            }
             else -> throw IllegalArgumentException("Messaggio non riconosciuto: aggiorna l'app su entrambi i telefoni")
         }
     } catch (e: Exception) {

@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +37,15 @@ import java.util.Locale
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var letter by remember { mutableStateOf("B") }
+    var invitedTo by remember { mutableStateOf<String?>(null) }
+    var showInvite by remember { mutableStateOf(false) }
+    // 4.10: the central's QR fills password and a free letter.
+    LaunchedEffect(u.teamQr) {
+        u.teamQr?.let { invite ->
+            password = invite.password; letter = invite.suggestedLetter; invitedTo = invite.warehouse
+            askJoin = true; model.consumeTeamQr()
+        }
+    }
     fun run(block: suspend () -> String) = scope.launch {
         result = try { block() } catch (e: Exception) { e.message ?: "Operazione non riuscita" }
     }
@@ -63,7 +73,10 @@ import java.util.Locale
                     fontSize = 12.sp, color = TextSecondary)
                 PrimaryAction("Rendi questo il telefono centrale", onClick = { password = ""; confirm = ""; askCentral = true },
                     enabled = !u.busy && u.warehouse != null, modifier = Modifier.fillMaxWidth())
-                OutlinedButton(onClick = { password = ""; letter = "B"; askJoin = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { model.requestScan() }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Collega con il QR del centrale")
+                }
+                OutlinedButton(onClick = { password = ""; letter = "B"; invitedTo = null; askJoin = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                     Text("Collega a un telefono centrale")
                 }
             }
@@ -74,6 +87,9 @@ import java.util.Locale
                 if (synced) {
                     PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
                         enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { showInvite = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.QrCode2, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("QR per collegare un nuovo telefono")
+                    }
                     Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
                     OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                         Text("Importa dai satelliti")
@@ -150,6 +166,7 @@ import java.util.Locale
 
     if (askJoin) AlertDialog(onDismissRequest = { askJoin = false }, title = { Text("Collega al centrale") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            invitedTo?.let { Text("QR letto: magazzino «$it». Password già inserita.", fontSize = 12.sp, color = Mint) }
             Text("Avvicinati al telefono centrale con la rete aperta, oppure usa il file «aggiornamento» che ti ha inviato. " +
                 "Verrà creato un nuovo magazzino con i suoi articoli e la sua mappa.", fontSize = 13.sp)
             Input(password, { password = it }, "Password della squadra", password = true)
@@ -192,7 +209,20 @@ import java.util.Locale
     }, confirmButton = { TextButton(onClick = { model.dismissTeamConflicts(); showConflicts = false }) { Text("Ho controllato, cancella elenco") } },
         dismissButton = { TextButton(onClick = { showConflicts = false }) { Text("Chiudi") } })
 
-    TeamLinkDialog(model)
+
+    if (showInvite) {
+        val invite = remember(t.peers, u.warehouse?.name) { model.teamInvite() }
+        val picture = remember(invite) { invite?.let { QrLabels.bitmap(it, 640).asImageBitmap() } }
+        AlertDialog(onDismissRequest = { showInvite = false }, title = { Text("Collega un nuovo telefono") }, text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                picture?.let { androidx.compose.foundation.Image(it, "QR di collegamento", Modifier.size(240.dp)) }
+                    ?: Text("QR non disponibile", color = Danger)
+                Text("Sull'altro telefono: Impostazioni › Sincronizzazione › «Collega con il QR del centrale», poi «Cerca il centrale vicino» " +
+                    "mentre qui la rete è aperta.", fontSize = 12.sp, color = TextSecondary)
+                Text("Il QR contiene la password della squadra: mostralo solo ai colleghi.", fontSize = 12.sp, color = Amber)
+            }
+        }, confirmButton = { TextButton(onClick = { showInvite = false }) { Text("Chiudi") } })
+    }
 
     editScope?.let { l -> AlertDialog(onDismissRequest = { editScope = null }, title = { Text("Reparto dell'operatore $l") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {

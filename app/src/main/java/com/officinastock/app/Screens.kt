@@ -30,7 +30,7 @@ fun amount(d:Double):String= if(d%1.0==0.0) d.toLong().toString() else String.fo
 fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format(Date(ts))
 
 @Composable fun Panel(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit) {
-    Surface(modifier=modifier,shape=RoundedCornerShape(22.dp),color=PanelBg,border=BorderStroke(1.dp,Color.White.copy(alpha=.06f))) {
+    Surface(modifier=modifier,shape=RoundedCornerShape(22.dp),color=PanelBg,border=BorderStroke(1.dp,Hairline.copy(alpha=.06f))) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
     }
 }
@@ -146,6 +146,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             }
+            // 4.10: a colleague's phone can join the team straight away, without creating a warehouse first.
+            if(model.ui.team.role==TeamRole.NONE) item { TeamSyncPanel(model) }
         }
         PrimaryAction("+  Crea nuovo magazzino",{show=true},modifier=Modifier.fillMaxWidth())
         TextButton(onClick=model::signOut){Text("Cambia profilo")}
@@ -178,6 +180,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 Text("${u.warehouse?.location?.ifBlank{"Area di lavoro"}}  ·  ${u.profile?.name}",color=TextSecondary,fontSize=13.sp)
             }
         }
+        // 4.10: sync status and one-tap exchange, without going into Settings.
+        if(u.team.role!=TeamRole.NONE && u.team.warehouseId==u.warehouse?.id) item { SyncCard(model) }
         item {
             Surface(shape=RoundedCornerShape(26.dp),color=Color.Transparent,
                 modifier=Modifier.fillMaxWidth().clickable {
@@ -193,7 +197,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     Text(if(critical==0) "Nessuna scorta sotto la soglia impostata." else "Controlla le giacenze per evitare fermi e mancanze.",color=TextSecondary,fontSize=13.sp)
                     Spacer(Modifier.height(18.dp))
                     LinearProgressIndicator(progress={ if(count==0)0f else (1f-critical.toFloat()/count).coerceIn(0f,1f) },
-                        modifier=Modifier.fillMaxWidth().height(7.dp),color=Mint,trackColor=Color.White.copy(alpha=.12f))
+                        modifier=Modifier.fillMaxWidth().height(7.dp),color=Mint,trackColor=Hairline.copy(alpha=.12f))
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Text("${count-critical} di $count referenze sopra la soglia",fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
@@ -208,6 +212,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                 SmallMetric("DA RIORDINARE",critical.toString(),"Sotto soglia",Amber,Modifier.weight(1f),onClick={onStockFocus(StockFocus.CRITICAL)})
             }
         }
+        if(critical>0) item { ReorderShareButton(model,Modifier.fillMaxWidth()) }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
                 SmallMetric("UBICAZIONI",u.placements.size.toString(),"Nella planimetria",Sky,Modifier.weight(1f),onClick=goMap)
@@ -365,7 +370,8 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             }
         }
     }
-    val filtered=remember(u.items,query,activeFocus,idleIds,sort,lastMoved) { sortStock(u.items.filter { item ->
+    val favorites=UiPrefs.favorites
+    val filtered=remember(u.items,query,activeFocus,idleIds,sort,lastMoved,favorites) { sortStock(u.items.filter { item ->
         val matches=when(activeFocus){
             StockFocus.ALL -> true
             StockFocus.CRITICAL -> item.lowStock
@@ -373,9 +379,10 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             StockFocus.PRICED -> item.unitCost!=null
             StockFocus.UNLOCATED -> item.placementId==null
             StockFocus.IDLE_90 -> item.id !in idleIds
+            StockFocus.FAVORITES -> UiPrefs.isFavorite(item.warehouseId,item.id)
         }
         matches && (query.isBlank()||listOf(item.name,item.sku,item.category).any{v->v.contains(query,true)})
-    },sort,lastMoved) }
+    },sort,lastMoved).sortedByDescending { UiPrefs.isFavorite(it.warehouseId,it.id) } }   // 4.10: favourites first, order kept
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
@@ -389,6 +396,9 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
                 leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                // 4.10: scan → quantity → next article, until "Fine".
+                AssistChip(onClick=model::startBurst,enabled=!u.busy,label={Text("Prelievo a raffica")},
+                    leadingIcon={Icon(Icons.Outlined.DocumentScanner,contentDescription=null,modifier=Modifier.size(18.dp))})
                 Box {
                     AssistChip(onClick={sortMenu=true},label={Text(sort.label)},
                         leadingIcon={Icon(Icons.Outlined.Sort,contentDescription="Ordina",modifier=Modifier.size(18.dp))})
@@ -400,7 +410,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                     }
                 }
                 listOf(
-                    StockFocus.ALL to "Tutti",StockFocus.CRITICAL to "Critici",
+                    StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
                     StockFocus.UNLOCATED to "Senza ubicazione",
                     StockFocus.IDLE_90 to "Fermi 90 gg"
@@ -419,7 +429,15 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(entry.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Text(entry.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f,fill=false))
+                                val star=entry.id.let { UiPrefs.isFavorite(entry.warehouseId,it) }
+                                IconButton(onClick={UiPrefs.toggleFavorite(entry.warehouseId,entry.id)},modifier=Modifier.size(30.dp)) {
+                                    Icon(if(star) Icons.Outlined.Star else Icons.Outlined.StarOutline,
+                                        contentDescription=if(star)"Togli dai preferiti" else "Aggiungi ai preferiti",
+                                        tint=if(star) Amber else TextSecondary.copy(alpha=.6f),modifier=Modifier.size(18.dp))
+                                }
+                            }
                             Text("${entry.sku}  ·  ${entry.category}",color=TextSecondary,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                             // 4.7.2: where to find it, without opening the item.
                             val place=entry.placementId?.let { placementById[it] }
@@ -489,7 +507,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
 
 @Composable fun NewItemDialog(onClose:()->Unit,allowed:List<String> = emptyList(),save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
     // A satellite with a department only sees its own categories (4.9).
-    val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }
+    val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }.ifEmpty { ArticleCodes.categoryPrefixes.keys.toList() }
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(if("Ricambi" in categories) "Ricambi" else categories.first()) }
     var qty by remember { mutableStateOf("0") }
@@ -818,6 +836,7 @@ private fun EditItemDetailsDialog(
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
         }}
         item { TeamSyncPanel(model) }
+        item { DisplayPanel() }
         item {Panel(Modifier.fillMaxWidth()) {
             Text("BACKUP COMPLETO CIFRATO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text("Esporta profili, articoli, foto, movimenti, prestiti, magazzini, codici e planimetrie in un unico file protetto da password.",fontSize=12.sp,color=TextSecondary)

@@ -28,11 +28,10 @@ class TeamLinkProtocolTest {
     }
     @After fun close() { central.close(); satellite.close() }
 
-    private fun joinNearby(letter: String = "B", password: String = pw): TeamLinkProtocol.Outcome {
-        val answer = TeamLinkProtocol.answer(TeamSync(central), TeamLinkProtocol.joinRequest())
-        assertFalse(answer.failed)
-        return TeamLinkProtocol.finish(TeamSync(satellite), answer.bytes,
-            TeamLinkProtocol.Join(satellite.createProfile("Mario", "5678"), password, letter))
+    private fun joinNearby(db: StockDb = satellite, letter: String = "B", password: String = pw): TeamLinkProtocol.Outcome {
+        val answer = TeamLinkProtocol.answer(TeamSync(central), TeamLinkProtocol.joinRequest(TeamSync(db), password, letter))
+        return TeamLinkProtocol.finish(TeamSync(db), answer.bytes,
+            TeamLinkProtocol.Join(db.createProfile("Mario $letter ${password.length}", "5678"), password, letter))
     }
 
     @Test fun aNewPhoneJoinsFromTheNearbyCentral() {
@@ -59,13 +58,31 @@ class TeamLinkProtocolTest {
     }
 
     @Test fun wrongPasswordAndGarbageAreReportedNotCrashing() {
-        assertTrue(joinNearby(password = "sbagliata!!") is TeamLinkProtocol.Outcome.Failed)
+        val refused = joinNearby(password = "sbagliata!!")
+        assertTrue(refused is TeamLinkProtocol.Outcome.Failed)
+        assertTrue((refused as TeamLinkProtocol.Outcome.Failed).message.contains("Password"))
+        assertTrue(TeamSync(central).status().peers.isEmpty())   // a wrong password books nothing
         assertEquals(TeamRole.NONE, TeamSync(satellite).status().role)
         val bad = TeamLinkProtocol.answer(TeamSync(central), byteArrayOf(1, 2, 3))
         assertTrue(bad.failed)
         val out = TeamLinkProtocol.finish(TeamSync(satellite), bad.bytes, null)
         assertTrue(out is TeamLinkProtocol.Outcome.Failed)
         assertTrue(TeamLinkProtocol.finish(TeamSync(satellite), ByteArray(0), null) is TeamLinkProtocol.Outcome.Failed)
+    }
+
+    @Test fun theLetterIsBookedAtTheFirstNearbyConnection() {
+        val c = RuntimeEnvironment.getApplication()
+        c.deleteDatabase("link_other.db")
+        val other = StockDb(c, "link_other.db")
+        try {
+            assertTrue(joinNearby() is TeamLinkProtocol.Outcome.Done)
+            assertEquals(listOf("B"), TeamSync(central).status().peers.map { it.letter })
+            // A second phone asking for B is stopped before creating anything.
+            val second = joinNearby(other, "B")
+            assertTrue(second is TeamLinkProtocol.Outcome.Failed)
+            assertEquals(TeamRole.NONE, TeamSync(other).status().role)
+            assertTrue(joinNearby(other, "C") is TeamLinkProtocol.Outcome.Done)
+        } finally { other.close() }
     }
 
     @Test fun satellitesRecogniseOnlyTheirCentral() {

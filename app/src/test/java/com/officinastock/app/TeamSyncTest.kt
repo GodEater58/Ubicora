@@ -227,6 +227,18 @@ class TeamSyncTest {
         assertTrue(TeamSync(satellite).status().scope.isEmpty())
     }
 
+    @Test fun aBadArticleBecomesAConflictInsteadOfBlockingThePhone() {
+        val wh = join(satellite, "B")
+        val mine = satellite.addItem(wh, "Guanti", "DPI", 0.0, 0.0, "paia", "")
+        // The same code already exists on the central (e.g. an old CSV): before 4.9.1 every file was refused.
+        central.addItem(warehouse, "Altro", "DPI", 0.0, 0.0, "pz", "")
+        central.writableDatabase.execSQL("UPDATE items SET sku=? WHERE name='Altro'", arrayOf(satellite.item(mine)!!.sku))
+        satellite.movement(satellite.items(wh).single { it.name == "Vite M8" }.id, -1.0, "Prelievo")
+        val r = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(1, r.conflicts)
+        assertEquals(9.0, qty(central, warehouse, "Vite M8"), 0.0)          // the rest went through
+    }
+
     @Test fun backupsKeepTheSyncRoleAndOldBackupsGetGlobalIds() {
         val wh = join(satellite, "B")
         assertTrue(satellite.items(wh).all { it.id > 0 })
