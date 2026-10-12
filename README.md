@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.7.4 (Mappa e ubicazioni Alpha)
+# Ubicora — Android nativo 4.7.5 (Mappa e ubicazioni Alpha)
+
+> **4.7.5:** anagrafica iniziale da Excel: modello con menù a tendina e importazione CSV che accetta codici vuoti, file di Excel e righe vuote. Dettagli: [CHANGELOG 4.7.5](docs/CHANGELOG_4_7_5.md).
 
 > **4.7.4:** unità di misura scelta da un menù, con le unità adatte alla categoria in cima. Dettagli: [CHANGELOG 4.7.4](docs/CHANGELOG_4_7_4.md).
 

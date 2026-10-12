@@ -604,7 +604,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                             bytes.write(chunk,0,count)
                         }
                     }
-                    val parsed=CsvImport.parse(bytes.toString(Charsets.UTF_8.name()))
+                    val parsed=CsvImport.parse(CsvImport.decode(bytes.toByteArray()))
                     db.validateCsvImport(warehouseId,parsed)
                     parsed
                 }

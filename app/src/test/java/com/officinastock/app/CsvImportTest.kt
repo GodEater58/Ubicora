@@ -57,4 +57,25 @@ class CsvImportTest {
         assertEquals("'normale",CsvImport.unformula("'normale"))
         assertEquals("'",CsvImport.unformula("'"))
     }
+    @Test fun excelFilesImport() {
+        val full=header+";\"Ripiano\";\"Posizione\""
+        // Blank code (assigned on import), blank quantity/minimum/unit, and blank spreadsheet rows.
+        val excel=full+"\r\n;Guanti nitrile;DPI;;;;;;;;;;\r\n;;;;;;;;;;;;\r\n;Cavo 3x1,5;Elettrico;25,5;5;m;;;;;;;\r\n"
+        val rows=CsvImport.parse(excel)
+        assertEquals(2,rows.size)
+        assertEquals("",rows[0].sku)
+        assertEquals(0.0,rows[0].quantity,0.0)
+        assertEquals("pz",rows[0].unit)
+        assertEquals(25.5,rows[1].quantity,0.0)
+        // Excel with non-Italian regional settings separates with commas.
+        val comma=header.replace(";",",")+"\nRIC-000321,Vite,Ricambi,3,1,pz,,,,,\n"
+        assertEquals("Vite",CsvImport.parse(comma).single().name)
+        rejects(full+"\n;Vite;Inventata;1;0;pz;;;;;;;")
+    }
+    @Test fun excelWindowsEncodingIsDecoded() {
+        val text=header+"\n;Vite già zincata;Ricambi;1;0;pz;;;;;\n"
+        val parsed=CsvImport.parse(CsvImport.decode(text.toByteArray(charset("windows-1252"))))
+        assertEquals("Vite già zincata",parsed.single().name)
+        assertEquals("Vite già zincata",CsvImport.parse(CsvImport.decode(text.toByteArray(Charsets.UTF_8))).single().name)
+    }
 }
