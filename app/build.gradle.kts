@@ -12,8 +12,8 @@ android {
         applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 473
-        versionName = "4.7.3-map-alpha"
+        versionCode = 474
+        versionName = "4.7.4-map-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

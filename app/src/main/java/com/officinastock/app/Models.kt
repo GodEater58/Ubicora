@@ -114,3 +114,41 @@ object ArticleCodes {
     }
 }
 
+
+/**
+ * 4.7.4: units are chosen from a list instead of typed, so "pz", "Pz" and "pezzi" can no longer
+ * coexist. Each category shows its likely units first; every unit stays available for the rest.
+ */
+object MeasureUnits {
+    /** Stored code to label shown in the menu. Codes are what the database and CSV keep. */
+    val all: LinkedHashMap<String, String> = linkedMapOf(
+        "pz" to "pezzi", "paia" to "paia", "set" to "set / kit", "conf" to "confezioni",
+        "scatole" to "scatole", "rotoli" to "rotoli", "m" to "metri", "cm" to "centimetri",
+        "mm" to "millimetri", "m²" to "metri quadri", "kg" to "chilogrammi", "g" to "grammi",
+        "l" to "litri", "ml" to "millilitri"
+    )
+    private val byCategory = mapOf(
+        "Ricambi" to listOf("pz", "set", "paia", "conf"),
+        "Utensili" to listOf("pz", "set"),
+        "Elettrico" to listOf("pz", "m", "rotoli", "conf"),
+        "Pneumatica" to listOf("pz", "m", "set", "conf"),
+        "Idraulica" to listOf("pz", "m", "l", "set"),
+        "Consumabili" to listOf("conf", "pz", "kg", "l", "rotoli", "g", "ml", "m"),
+        "DPI" to listOf("paia", "pz", "conf"),
+        "Meccanica" to listOf("pz", "kg", "m", "set"),
+        "Altro" to listOf("pz")
+    )
+    /** Units suggested for [category], most likely first. */
+    fun suggested(category: String): List<String> = byCategory[category] ?: listOf("pz")
+    /** Suggested units first, then all the others. A legacy free-text unit is kept at the top. */
+    fun options(category: String, current: String = ""): List<String> {
+        val first = suggested(category)
+        val rest = all.keys.filter { it !in first }
+        val legacy = current.trim().takeIf { it.isNotEmpty() && it !in all.keys }
+        return listOfNotNull(legacy) + first + rest
+    }
+    fun label(code: String): String = all[code]?.let { "$code · $it" } ?: code
+    /** When the category changes, keep the unit if it still fits, otherwise use the category default. */
+    fun afterCategoryChange(category: String, current: String): String =
+        if (current in suggested(category)) current else suggested(category).first()
+}

@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.7.3 (Mappa e ubicazioni Alpha)
+# Ubicora — Android nativo 4.7.4 (Mappa e ubicazioni Alpha)
+
+> **4.7.4:** unità di misura scelta da un menù, con le unità adatte alla categoria in cima. Dettagli: [CHANGELOG 4.7.4](docs/CHANGELOG_4_7_4.md).
 
 > **4.7.3 / Web 1.0.6:** debug completo: Annulla della mappa sicuro (niente più elementi fuori pianta che bloccavano il ripristino del backup), pareti veloci senza tocchi persi, CSV Web sempre compatibile con Android. Dettagli: [CHANGELOG 4.7.3](docs/CHANGELOG_4_7_3.md).
 
