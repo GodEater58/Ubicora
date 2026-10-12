@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.7.2 (Mappa e ubicazioni Alpha)
+# Ubicora — Android nativo 4.7.3 (Mappa e ubicazioni Alpha)
+
+> **4.7.3 / Web 1.0.6:** debug completo: Annulla della mappa sicuro (niente più elementi fuori pianta che bloccavano il ripristino del backup), pareti veloci senza tocchi persi, CSV Web sempre compatibile con Android. Dettagli: [CHANGELOG 4.7.3](docs/CHANGELOG_4_7_3.md).
 
 > **4.7.2:** ordinamento articoli, ubicazione nella riga, carico/prelievo rapido ±1, barra «Annulla» dopo i movimenti, tasto Indietro tra le sezioni. Dettagli: [CHANGELOG 4.7.2](docs/CHANGELOG_4_7_2.md).
 

@@ -237,3 +237,16 @@ test('CSV carries shelf level and position; 11-column files from older versions 
  const b=apply(now,{type:'placement',warehouseId:wid,name:'Scaffale B',x:5,y:1,width:2,depth:.8});
  const moved=apply(b,{type:'assignPlacement',placementId:b.placements[1].id,ids:[b.items[0].id]});assert.equal(moved.items[0].shelfLevel,null);
 });
+
+test('Removing a structure clears shelves so the CSV stays importable on Android; names stay unique',()=>{
+ let s=apply(empty(),{type:'warehouse',name:'Mag',width:12,depth:8});const wid=s.warehouses[0].id;
+ s=apply(s,{type:'placement',warehouseId:wid,name:'Scaffale A',x:1,y:1,width:2,depth:.8});
+ const head='Codice;Descrizione;Categoria;Quantità;Minimo;Unità;Ubicazione;Note;Costo unitario EUR;Fornitore;Consegna giorni;Ripiano;Posizione';
+ s=importCsv(s,head+'\nRIC-000001;Vite;Ricambi;5;1;pz;Scaffale A;;;;;2;3',wid);
+ s=apply(s,{type:'removePlacement',id:s.placements[0].id});
+ assert.equal(s.items[0].shelfLevel,null);assert.equal(s.items[0].shelfSlot,null);
+ assert.match(exportCsv(s,wid),/"Vite";"Ricambi";"5";"1";"pz";"";"";"";"";"";"";""$/);
+ // An old archive that still has a shelf without location never exports it.
+ const old=structuredClone(s);old.items[0].shelfLevel=4;assert.match(exportCsv(old,wid),/;"";""$/);
+ assert.throws(()=>apply(apply(s,{type:'placement',warehouseId:wid,name:'B',x:5,y:1,width:1,depth:1}),{type:'placement',warehouseId:wid,name:'B',x:8,y:1,width:1,depth:1}),/già una struttura/);
+});

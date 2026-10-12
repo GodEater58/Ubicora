@@ -107,7 +107,7 @@ export function apply(state,action,at=Date.now()){
  case 'receive':{const o=find(s.orders,a.id);if(o.status!=='ORDERED')throw Error('Ordine non inviato o già chiuso');const q=positive(a.quantity);if(q>o.quantity-o.received+1e-7)throw Error('Arrivo superiore al residuo');const residual=o.quantity-o.received,applied=Math.min(q,residual);if(applied<=0)throw Error('Ordine già ricevuto');move(s,find(s.items,o.itemId),applied,'Ricezione ordine '+o.id.slice(0,8),at);o.received=applied===residual?o.quantity:Math.min(o.quantity,o.received+applied);if(o.received===o.quantity)o.status='RECEIVED';break;}
  case 'work':{find(s.warehouses,a.warehouseId);const item=a.id?find(s.items,a.id):null;s.works.unshift({id:uid(),warehouseId:a.warehouseId,machine:name(a.machine),description:String(a.description).trim(),itemId:item?.id??null,quantity:item?positive(a.quantity):0,hours:number(a.hours||0),rate:optional(a.rate),partsCost:null,status:'OPEN',at,completedAt:null});if(!s.works[0].description)throw Error('Descrivi il lavoro');break;}
  case 'finish':{const w=find(s.works,a.id);if(w.status!=='OPEN')throw Error('Intervento già chiuso');w.status=a.cancel?'CANCELLED':'DONE';if(!a.cancel){const i=w.itemId?find(s.items,w.itemId):null;if(i)move(s,i,-w.quantity,'Manutenzione: '+w.machine,at);w.partsCost=i?(i.cost===null?null:i.cost*w.quantity):0;w.completedAt=at;}break;}
- case 'placement':{const w=find(s.warehouses,a.warehouseId);const p={id:uid(),warehouseId:w.id,name:name(a.name),x:number(a.x),y:number(a.y),width:positive(a.width),depth:positive(a.depth)};if(p.x+p.width>w.width+1e-6||p.y+p.depth>w.depth+1e-6)throw Error('La struttura esce dalla pianta');s.placements.push(p);break;}
+ case 'placement':{const w=find(s.warehouses,a.warehouseId);if(s.placements.some(x=>x.warehouseId===w.id&&x.name===String(a.name??'').trim()))throw Error('Esiste già una struttura con questo nome');const p={id:uid(),warehouseId:w.id,name:name(a.name),x:number(a.x),y:number(a.y),width:positive(a.width),depth:positive(a.depth)};if(p.x+p.width>w.width+1e-6||p.y+p.depth>w.depth+1e-6)throw Error('La struttura esce dalla pianta');s.placements.push(p);break;}
  case 'movePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);p.x=clamp(snap(number(a.x,-1e12)),0,w.width-p.width);p.y=clamp(snap(number(a.y,-1e12)),0,w.depth-p.depth);break;}
  case 'resizePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);const width=positive(a.width),depth=positive(a.depth);if(width<.2||depth<.2||width>w.width||depth>w.depth)throw Error('Dimensioni: da 0,2 m fino alla pianta');p.width=width;p.depth=depth;p.x=clamp(p.x,0,w.width-width);p.y=clamp(p.y,0,w.depth-depth);break;}
  case 'rotatePlacement':{const p=find(s.placements,a.id),w=find(s.warehouses,p.warehouseId);if(p.depth>w.width||p.width>w.depth)throw Error('Ruotata non entrerebbe nella pianta');const cx=p.x+p.width/2,cy=p.y+p.depth/2;[p.width,p.depth]=[p.depth,p.width];p.x=clamp(cx-p.width/2,0,w.width-p.width);p.y=clamp(cy-p.depth/2,0,w.depth-p.depth);break;}
@@ -119,7 +119,7 @@ export function apply(state,action,at=Date.now()){
  case 'wall':{const w=find(s.warehouses,a.warehouseId);const pts=['x1','y1','x2','y2'].map(k=>snap(number(a[k],-1e12)));const [x1,y1,x2,y2]=[clamp(pts[0],0,w.width),clamp(pts[1],0,w.depth),clamp(pts[2],0,w.width),clamp(pts[3],0,w.depth)];
   if(Math.hypot(x2-x1,y2-y1)<.2)throw Error('Parete troppo corta (minimo 20 cm)');s.walls.push({id:uid(),warehouseId:w.id,x1,y1,x2,y2});break;}
  case 'removeWall':{const wall=find(s.walls,a.id);s.walls=s.walls.filter(x=>x.id!==wall.id);break;}
- case 'removePlacement':{const p=find(s.placements,a.id);for(const i of s.items)if(i.placementId===p.id){i.placementId=null;i.location='';}s.placements=s.placements.filter(x=>x.id!==p.id);break;}
+ case 'removePlacement':{const p=find(s.placements,a.id);for(const i of s.items)if(i.placementId===p.id){i.placementId=null;i.location='';i.shelfLevel=null;i.shelfSlot=null;}s.placements=s.placements.filter(x=>x.id!==p.id);break;}
  case 'budget':s.budget=optional(a.value);break;
  default:throw Error('Operazione sconosciuta');
  }return validate(s);
@@ -163,7 +163,7 @@ export function importCsv(state,text,wid){
  }return validate(s);
 }
 const csvField=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
-export function exportCsv(s,wid){return '\uFEFF'+[CSV_HEADER,...s.items.filter(i=>i.warehouseId===wid).map(i=>[i.sku,i.name,i.category,i.quantity,i.minimum,i.unit,i.location,i.note,i.cost,i.supplier,i.leadDays,i.shelfLevel??'',i.shelfSlot??''])].map(r=>r.map(x=>csvField(typeof x==='string'&&/^[\s]*[=+@-]/.test(x)?"'"+x:x)).join(';')).join('\r\n');}
+export function exportCsv(s,wid){return '\uFEFF'+[CSV_HEADER,...s.items.filter(i=>i.warehouseId===wid).map(i=>[i.sku,i.name,i.category,i.quantity,i.minimum,i.unit,i.location,i.note,i.cost,i.supplier,i.leadDays,String(i.location??'').trim()?i.shelfLevel??'':'',String(i.location??'').trim()?i.shelfSlot??'':''])].map(r=>r.map(x=>csvField(typeof x==='string'&&/^[\s]*[=+@-]/.test(x)?"'"+x:x)).join(';')).join('\r\n');}
 const ANDROID_CATEGORIES=new Set(['Ricambi','Utensili','Elettrico','Pneumatica','Idraulica','Consumabili','DPI','Meccanica','Altro']);
 export function exportAndroidCsv(s,wid){
  find(s.warehouses,wid);
