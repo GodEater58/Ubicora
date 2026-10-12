@@ -489,7 +489,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
 
 @Composable fun NewItemDialog(onClose:()->Unit,allowed:List<String> = emptyList(),save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
     // A satellite with a department only sees its own categories (4.9).
-    val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }
+    val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }.ifEmpty { ArticleCodes.categoryPrefixes.keys.toList() }
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(if("Ricambi" in categories) "Ricambi" else categories.first()) }
     var qty by remember { mutableStateOf("0") }

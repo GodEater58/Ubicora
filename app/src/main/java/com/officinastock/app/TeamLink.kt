@@ -131,9 +131,10 @@ class TeamLink(
                             TeamLinkProtocol.answer(team, request) }
                     }
                 }
+                // The archive changed even if the network was closed meanwhile: refresh the screens anyway.
+                if (answer != null && !answer.failed) onDataChanged(null)
                 if (current != session) return@launch
                 if (answer == null) { peer(endpointId, PeerPhase.ERROR, "Trasferimento interrotto"); return@launch }
-                if (!answer.failed) onDataChanged(null)
                 val name = answer.letter?.let { "Satellite $it" }
                 peerSummary[endpointId] = answer.summary
                 if (answer.failed) peer(endpointId, PeerPhase.ERROR, answer.summary, name)
@@ -168,7 +169,12 @@ class TeamLink(
         }
         override fun onDisconnected(endpointId: String) {
             val p = ui.peers.firstOrNull { it.endpointId == endpointId } ?: return
-            if (p.phase != PeerPhase.DONE && p.phase != PeerPhase.ERROR) peer(endpointId, PeerPhase.ERROR, "Collegamento interrotto")
+            when (p.phase) {
+                PeerPhase.DONE, PeerPhase.ERROR -> {}
+                // Its changes are already merged here; the satellite's own screen says if it got the answer.
+                PeerPhase.SENDING -> peer(endpointId, PeerPhase.DONE, peerSummary[endpointId] ?: "Sincronizzato")
+                else -> peer(endpointId, PeerPhase.ERROR, "Collegamento interrotto: il satellite può riprovare")
+            }
         }
     }
 
@@ -218,7 +224,7 @@ class TeamLink(
             ui = ui.copy(phase = LinkPhase.TRANSFER, message = "Invio le mie modifiche…")
             scope.launch {
                 val request = withContext(Dispatchers.IO) {
-                    runCatching { if (join != null) TeamLinkProtocol.joinRequest() else TeamLinkProtocol.changesRequest(team) }
+                    runCatching { join?.let { TeamLinkProtocol.joinRequest(team, it.password, it.letter) } ?: TeamLinkProtocol.changesRequest(team) }
                 }
                 if (current != session) return@launch
                 request.onSuccess { client.sendPayload(endpointId, Payload.fromStream(ByteArrayInputStream(it))) }

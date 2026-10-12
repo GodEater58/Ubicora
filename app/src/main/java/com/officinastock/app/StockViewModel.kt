@@ -669,6 +669,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun confirmCsvImport() = execute {
         val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
+        // On a satellite an explicit central-style code could clash with the central's own codes.
+        val t=ui.team
+        if(t.role==TeamRole.SATELLITE && t.warehouseId==warehouseId) rows.firstOrNull { it.sku.isNotEmpty() && ArticleCodes.parseCode(it.sku)?.letter!=t.letter }?.let {
+            throw IllegalArgumentException("${it.sku}: su questo telefono lascia vuota la colonna Codice, l'app assegna codici con la lettera ${t.letter}")
+        }
         rows.firstOrNull { outsideDepartment(it.category) }?.let { throw IllegalArgumentException("${it.name}: categoria ${it.category} fuori dal tuo reparto (${department()})") }
         require(warehouseId==requireWarehouse() && !ui.sessionLocked) { "Magazzino cambiato" }
         db.importCsv(warehouseId,rows)
