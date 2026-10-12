@@ -35,6 +35,11 @@ https://policies.google.com/terms
 https://policies.google.com/privacy
 Informazioni su ARCore e i dati: https://support.google.com/ar/answer/12148145
 
+SQLCIPHER FOR ANDROID (archivio cifrato, 4.12)
+net.zetetic:sqlcipher-android:4.6.1 — Copyright (c) Zetetic LLC.
+Licenza BSD-style: https://www.zetetic.net/sqlcipher/license/
+Basato su SQLite (pubblico dominio).
+
 GOOGLE NEARBY CONNECTIONS (sincronizzazione tra telefoni vicini, 4.9)
 Google Play services Nearby, com.google.android.gms:play-services-nearby:19.3.0 — Google LLC.
 Soggetto ai Termini di Google APIs e alla licenza Android SDK:

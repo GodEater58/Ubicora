@@ -1,7 +1,7 @@
 package com.officinastock.app
 
 import android.content.ContentValues
-import android.database.sqlite.SQLiteDatabase
+import com.officinastock.app.AppDatabase as SQLiteDatabase
 
 /** Workflows locali di magazzino. La conferma non e' un'autorizzazione multiutente remota. */
 data class PurchaseRequest(

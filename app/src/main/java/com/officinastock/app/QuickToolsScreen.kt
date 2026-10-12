@@ -103,6 +103,25 @@ import androidx.compose.ui.unit.sp
 }
 
 /** 4.10 Settings: how the app looks on this phone. */
+@Composable fun SecurityPanel(model: StockViewModel) {
+    val encrypted = remember { model.archiveEncrypted }
+    Panel(Modifier.fillMaxWidth()) {
+        Text("SICUREZZA DELL'ARCHIVIO", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (encrypted) Icons.Outlined.Lock else Icons.Outlined.LockOpen, null, tint = if (encrypted) Mint else Amber)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (encrypted) "Archivio cifrato su questo telefono" else "Archivio non cifrato", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(if (encrypted) "AES-256: anche copiando i file dal telefono i dati non si leggono senza la chiave, custodita dal portachiavi sicuro di Android."
+                    else (model.archiveProblem ?: "Questo telefono non offre un portachiavi sicuro: i dati restano protetti dal blocco schermo di Android."),
+                    fontSize = 11.sp, color = TextSecondary)
+            }
+        }
+        Text("Il backup completo resta il modo per portare i dati su un altro telefono: la chiave dell'archivio non lascia mai questo.",
+            fontSize = 11.sp, color = TextSecondary)
+    }
+}
+
 @Composable fun DisplayPanel() {
     Panel(Modifier.fillMaxWidth()) {
         Text("VISUALIZZAZIONE", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)

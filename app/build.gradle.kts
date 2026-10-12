@@ -12,8 +12,8 @@ android {
         applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4110
-        versionName = "4.11.0"
+        versionCode = 4120
+        versionName = "4.12.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -63,6 +63,9 @@ dependencies {
     implementation("com.google.ar:core:1.56.0")
     // 4.9: phone-to-phone network without router (Bluetooth + Wi-Fi Direct) for team sync.
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
+    // 4.12: archive encrypted on the phone (AES-256), key sealed by the Android Keystore.
+    implementation("net.zetetic:sqlcipher-android:4.6.1@aar")
+    implementation("androidx.sqlite:sqlite:2.4.0")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("com.google.zxing:core:3.5.3")

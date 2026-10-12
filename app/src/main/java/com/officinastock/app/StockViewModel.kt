@@ -781,6 +781,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         link.startJoin(profileId,password,letter.uppercase(),viaCode)
     }
     fun stopLink()=link.stop()
+    /** 4.12: whether the archive on this phone is encrypted, and why not if a migration was postponed. */
+    val archiveEncrypted:Boolean get()=runCatching { db.encrypted }.getOrDefault(false)
+    val archiveProblem:String? get()=DbCipher.lastProblem
     private suspend fun refreshAfterLink(joinedWarehouse:Long?) {
         if(ui.sessionLocked) return
         if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse

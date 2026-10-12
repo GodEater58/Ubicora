@@ -1,7 +1,7 @@
 package com.officinastock.app
 
 import android.content.ContentValues
-import android.database.sqlite.SQLiteDatabase
+import com.officinastock.app.AppDatabase as SQLiteDatabase
 
 data class StockReservation(val id:Long,val warehouseId:Long,val itemId:Long,
     val quantity:Double,val reference:String,val requestedBy:String,val status:String,val createdAt:Long)
