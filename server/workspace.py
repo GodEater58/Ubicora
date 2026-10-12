@@ -44,6 +44,9 @@ class Item(Strict):
     note: str = Field(default="", max_length=3000)
     # Web 1.0.4: stable link to a structure; absent in older clients.
     placementId: uuid.UUID | None = None
+    # Web 1.0.5: shelf level and position carried through the Android CSV; absent in older clients.
+    shelfLevel: int | None = Field(default=None, ge=1, le=20)
+    shelfSlot: int | None = Field(default=None, ge=1, le=50)
 
 class Movement(Strict):
     id: uuid.UUID

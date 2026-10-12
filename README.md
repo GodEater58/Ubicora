@@ -1,4 +1,6 @@
-# Ubicora — Android nativo 4.7.0 (Mappa e ubicazioni Alpha)
+# Ubicora — Android nativo 4.7.1 (Mappa e ubicazioni Alpha)
+
+> **4.7.1 / Web 1.0.5:** le pareti si agganciano agli angoli e chiudono la forma da sole (quadrati, triangoli, colonne), CSV con ripiano e posizione, schede articolo a pagina intera. Dettagli: [CHANGELOG 4.7.1](docs/CHANGELOG_4_7_1.md).
 
 > **4.7.0 / Web 1.0.4:** mappa con ripiani e posizioni, QR delle strutture, annulla/ripeti, viste a colori, PDF della pianta; editor mappa nel browser. Dettagli: [CHANGELOG 4.7.0](docs/CHANGELOG_4_7_0.md).
 

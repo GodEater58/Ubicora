@@ -8,6 +8,8 @@ import kotlin.math.hypot
 
 /** The entire plan is defined in metres, independent of device pixels or screen ratio. */
 data class PointMetres(val x: Float, val y: Float)
+enum class WallSnapKind { NONE, VERTEX, SEGMENT }
+data class WallSnap(val point: PointMetres, val kind: WallSnapKind) { val closes: Boolean get() = kind != WallSnapKind.NONE }
 data class PlanViewport(
     val widthPx: Float, val heightPx: Float,
     val roomWidth: Float, val roomHeight: Float,
@@ -45,6 +47,41 @@ object PlanGeometry {
     fun snapToWallEndpoint(p:PointMetres,walls:List<Wall>,tolerance:Float=.22f):PointMetres {
         val endpoints=walls.flatMap { listOf(PointMetres(it.x1,it.y1),PointMetres(it.x2,it.y2)) }
         return endpoints.minByOrNull{distance(it,p)}?.takeIf{distance(it,p)<=tolerance}?:p
+    }
+    /**
+     * Where a wall point lands while drawing. An existing vertex within [tolerance] wins over grid
+     * and orthogonal mode (the raw finger position is used, so a diagonal can close a triangle);
+     * next comes a point on an existing wall; otherwise grid and orthogonal apply. Landing on
+     * existing geometry ([WallSnap.closes]) ends the chain: the shape is closed.
+     */
+    fun wallPoint(raw:PointMetres,from:PointMetres?,walls:List<Wall>,tolerance:Float,grid:Boolean,orthogonal:Boolean):WallSnap {
+        // Going back along the wall just drawn would make a zero-area shape, so its far end is skipped.
+        val leaving=if(from==null) emptyList() else walls.filter { distanceToWall(from,it)<1e-3f }
+        val vertex=walls.asSequence().filter { it !in leaving }
+            .flatMap { sequenceOf(PointMetres(it.x1,it.y1),PointMetres(it.x2,it.y2)) }
+            .filter { from==null || distance(it,from)>1e-3f }
+            .minByOrNull { distance(it,raw) }
+            ?.takeIf { distance(it,raw)<=tolerance }
+        if(vertex!=null) return WallSnap(vertex,WallSnapKind.VERTEX)
+        val base=if(grid) snap(raw) else raw
+        val shaped=if(orthogonal && from!=null) orthogonal(from,base) else base
+        var best:PointMetres?=null
+        var bestDistance=tolerance
+        for(w in walls) {
+            val vx=w.x2-w.x1; val vy=w.y2-w.y1; val len2=vx*vx+vy*vy
+            if(len2<1e-6f) continue
+            // The wall we are leaving and walls parallel to the stroke cannot be "closed onto".
+            if(w in leaving) continue
+            if(from!=null) {
+                val dx=shaped.x-from.x; val dy=shaped.y-from.y; val dl=hypot(dx,dy)
+                if(dl>1e-3f && abs(dx*vy-dy*vx)/(dl*kotlin.math.sqrt(len2))<.17f) continue
+            }
+            val t=(((shaped.x-w.x1)*vx+(shaped.y-w.y1)*vy)/len2).coerceIn(0f,1f)
+            val p=PointMetres(w.x1+t*vx,w.y1+t*vy)
+            val d=distance(p,shaped)
+            if(d<=bestDistance) { best=p; bestDistance=d }
+        }
+        return best?.let { WallSnap(it,WallSnapKind.SEGMENT) } ?: WallSnap(shaped,WallSnapKind.NONE)
     }
     fun orthogonal(start:PointMetres,end:PointMetres):PointMetres = if(abs(start.x-end.x)>abs(start.y-end.y)) PointMetres(end.x,start.y) else PointMetres(start.x,end.y)
     fun validWall(a:PointMetres,b:PointMetres):Boolean = distance(a,b)>=.2f

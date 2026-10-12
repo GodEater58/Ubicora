@@ -72,6 +72,14 @@ private val ShelfTeal = Color(0xFF267C80)
 private val CabinetBlue = Color(0xFF48668D)
 private val BenchGold = Color(0xFFA47745)
 private val DrawingCyan = Color(0xFF7DE8E3)
+private val ClosingGreen = Color(0xFF6EE7A0)
+
+/** Hook radius for wall corners: about a fingertip on screen, never more than 35 cm or 45% of the stroke. */
+private fun snapTolerance(hookPx: Float, scale: Float, from: PointMetres?, raw: PointMetres): Float {
+    var t = minOf(hookPx / scale.coerceAtLeast(1f), .35f)
+    if (from != null) t = minOf(t, PlanGeometry.distance(from, raw) * .45f)
+    return t
+}
 private val DoorBrown = Color(0xFF8B6B4A)
 private val ColumnGrey = Color(0xFF59646E)
 private val Idle = Color(0xFF2B3A47)
@@ -107,6 +115,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var highlightId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var wallAnchor by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftEnd by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
+    var draftCloses by remember(warehouse.id){mutableStateOf(false)}
     var showNewObject by remember {mutableStateOf(false)}
     var showDimensions by remember {mutableStateOf(false)}
     var showRowFor by remember {mutableStateOf<Long?>(null)}
@@ -306,6 +315,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             if(e.changes.count{it.pressed}>1) {
                                 transforming=true
                                 draftEnd=null
+                                draftCloses=false
                                 val pivot=e.calculateCentroid(useCurrent=false)
                                 val shift=e.calculatePan()
                                 val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
@@ -325,10 +335,11 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             if(!dragged && PlanGeometry.distance(initial,last)>minDrag) dragged=true
                             if(dragged && change.pressed){
                                 if(mode==EditorTool.WALL && !picking){
-                                    val snap=cameraNow.bounded(cameraNow.toWorld(last))
-                                    val endpoint=if(snapGrid) PlanGeometry.snap(snap) else snap
-                                    draftEnd=if(orthogonal) PlanGeometry.orthogonal(wallAnchor?:startWorld,endpoint) else endpoint
-                                    if(wallAnchor==null) wallAnchor=PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
+                                    if(wallAnchor==null) wallAnchor=PlanGeometry.wallPoint(startWorld,null,liveWalls,snapTolerance(14.dp.toPx(),cameraNow.scale,null,startWorld),snapGrid,false).point
+                                    val raw=cameraNow.bounded(cameraNow.toWorld(last))
+                                    val landed=PlanGeometry.wallPoint(raw,wallAnchor,liveWalls,snapTolerance(14.dp.toPx(),cameraNow.scale,wallAnchor,raw),snapGrid,orthogonal)
+                                    draftEnd=landed.point
+                                    draftCloses=landed.closes
                                 }else if(target!=null && !target.locked && initialFurniture!=null){
                                     val dx=(last.x-initial.x)/cameraNow.scale
                                     val dy=(last.y-initial.y)/cameraNow.scale
@@ -353,20 +364,22 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             liveWalls.minByOrNull{PlanGeometry.distanceToWall(startWorld,it)}
                                 ?.takeIf{PlanGeometry.distanceToWall(startWorld,it)*cameraNow.scale<=wallTapPx} else null
                         if(mode==EditorTool.WALL){
-                            val from=wallAnchor ?: PlanGeometry.snapToWallEndpoint(if(snapGrid)PlanGeometry.snap(startWorld) else startWorld,liveWalls)
+                            val from=wallAnchor ?: PlanGeometry.wallPoint(startWorld,null,liveWalls,snapTolerance(14.dp.toPx(),cameraNow.scale,null,startWorld),snapGrid,false).point
                             val point=cameraNow.bounded(cameraNow.toWorld(last))
-                            val clean=if(snapGrid) PlanGeometry.snap(point) else point
-                            val finish=PlanGeometry.snapToWallEndpoint(if(orthogonal) PlanGeometry.orthogonal(from,clean) else clean,liveWalls)
-                            if(dragged){
-                                if(PlanGeometry.validWall(from,finish))model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
-                                wallAnchor=finish
-                            }else if(wallAnchor==null){
+                            val first=wallAnchor==null && !dragged
+                            val landed=if(first) PlanGeometry.wallPoint(point,null,liveWalls,snapTolerance(14.dp.toPx(),cameraNow.scale,null,point),snapGrid,false)
+                                else PlanGeometry.wallPoint(point,from,liveWalls,snapTolerance(14.dp.toPx(),cameraNow.scale,from,point),snapGrid,orthogonal)
+                            val finish=landed.point
+                            if(first){
                                 wallAnchor=finish
                             }else if(PlanGeometry.validWall(from,finish)){
                                 model.addWall(floatArrayOf(from.x,from.y,finish.x,finish.y))
-                                wallAnchor=finish
+                                // Landing on an existing corner or wall closes the shape: the next tap starts a new one.
+                                wallAnchor=if(landed.closes) null else finish
+                                if(landed.closes) Toast.makeText(context,"Forma chiusa",Toast.LENGTH_SHORT).show()
                             }
                             draftEnd=null
+                            draftCloses=false
                         }else if(tappedWall!=null){
                             selectedWallId=tappedWall.id;selectedId=null
                         }else if(mode==EditorTool.FURNITURE){
@@ -424,7 +437,11 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         draftEnd?.let { finish ->
                             val a=Offset(start.x,start.y);val end=camera.toScreen(finish);val b=Offset(end.x,end.y)
                             drawLine(Amber,a,b,strokeWidth=3.8f,cap=StrokeCap.Round)
-                            drawCircle(Amber,5f,b)
+                            if(draftCloses){
+                                // The end will hook onto existing geometry and close the shape.
+                                drawCircle(ClosingGreen.copy(alpha=.25f),18f,b)
+                                drawCircle(ClosingGreen,6.5f,b)
+                            } else drawCircle(Amber,5f,b)
                             // Live measurement while drawing.
                             drawIntoCanvas { cv ->
                                 cv.nativeCanvas.drawText(numberM(PlanGeometry.distance(wallAnchor!!,finish)),(a.x+b.x)/2f,(a.y+b.y)/2f-14f,measurePaint)
@@ -552,7 +569,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                     Text(when{
                         state.locationPickItemIds!=null -> "Trascina per spostarti, tocca una struttura per sceglierla"
                         layer!=MapLayer.NORMAL && mode==EditorTool.VIEW -> layer.legend+if(layer!=MapLayer.EMPTY) " · rosso = massimo" else ""
-                        mode==EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else "Tocca per continuare le pareti · Fine per chiudere"
+                        mode==EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else if(draftCloses) "Rilascia: la forma si chiude" else "Tocca per continuare · vicino a un angolo la forma si chiude"
                         mode==EditorTool.FURNITURE -> "Tocca una struttura; trascina solo se sbloccata"
                         else -> "Tocca una struttura per il contenuto, una parete per misurarla"
                     },Modifier.padding(horizontal=11.dp,vertical=8.dp),fontSize=10.sp,color=TextSecondary)

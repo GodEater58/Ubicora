@@ -18,7 +18,9 @@ checks={
     'wall tool': 'EditorTool.WALL' in ui and 'PlanGeometry.validWall' in ui,
     'furniture tool': 'EditorTool.FURNITURE' in ui,
     'grid snapping': 'PlanGeometry.snap' in ui,
-    'right-angle snapping': 'PlanGeometry.orthogonal' in ui,
+    # 4.7.1: wall points go through PlanGeometry.wallPoint, which applies orthogonal mode unless a corner is hooked.
+    'right-angle snapping': 'PlanGeometry.wallPoint' in ui and 'orthogonal(from,base)' in geom,
+    'shape closing on corners': 'landed.closes' in ui and 'WallSnapKind.VERTEX' in geom,
     'metric measurement labels': 'numberM(roomWidth)' in ui,
     'independent physical geometry': 'data class PlanViewport' in geom and 'fun toWorld' in geom,
     'model preserves furniture orientation': 'rotation: Float = 0f' in model

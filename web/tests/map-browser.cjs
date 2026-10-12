@@ -40,6 +40,12 @@ const {chromium}=require('playwright');const http=require('node:http');const fs=
   await page.mouse.click(...at(0.5,7.5));await page.mouse.move(...at(6.5,7.5),{steps:4});await page.locator('#measure',{hasText:'6 m'}).waitFor();
   await page.mouse.click(...at(6.5,7.5));await page.waitForTimeout(250);await page.mouse.click(...at(6.5,5.5));await page.waitForTimeout(250);await page.keyboard.press('Escape');
   s=await archive();assert.equal(s.walls.length,2);assert.equal(Math.hypot(s.walls[0].x2-s.walls[0].x1,s.walls[0].y2-s.walls[0].y1),6);
+  // Closing a shape: a triangle whose last click lands near the first corner hooks onto it and ends the chain.
+  await page.mouse.click(...at(8,1));await page.waitForTimeout(200);await page.mouse.click(...at(11,1));await page.waitForTimeout(250);await page.mouse.click(...at(11,3));await page.waitForTimeout(250);
+  await page.mouse.move(...at(8.08,1.07),{steps:4});await page.locator('#measure',{hasText:'chiude la forma'}).waitFor();assert.equal(await page.locator('#wallDraft.closing').count(),1);
+  await page.mouse.click(...at(8.08,1.07));await page.locator('#toast',{hasText:'Forma chiusa'}).waitFor();await page.waitForTimeout(250);
+  s=await archive();assert.equal(s.walls.length,5);const last=s.walls[4];assert.deepEqual([last.x1,last.y1,last.x2,last.y2],[11,3,8,1]);
+  await page.locator('p.subtle',{hasText:'Clic sul punto iniziale della parete.'}).waitFor();
   // Item linked by ID: create, assign from the structure panel, rename structure, link survives.
   await page.getByRole('button',{name:'Inventario',exact:false}).first().click();
   await page.getByRole('button',{name:'+ Articolo',exact:true}).click();await page.getByLabel('Codice articolo').fill('VIT-001');await page.getByLabel('Descrizione',{exact:true}).fill('Vite M8');await page.getByRole('button',{name:'Salva',exact:true}).click();await page.locator('#editor').waitFor({state:'hidden'});
@@ -55,8 +61,8 @@ const {chromium}=require('playwright');const http=require('node:http');const fs=
   assert.equal(await page.locator('.map-panel h2').textContent(),'Scaffale Nord');
   // Everything survives a reload.
   await page.reload();await page.getByRole('button',{name:'Planimetria',exact:false}).click();
-  await page.getByRole('button',{name:'Scaffale Nord, 1 articoli'}).waitFor();assert.equal(await page.locator('svg.walls line:not(.draft)').count(),2);
+  await page.getByRole('button',{name:'Scaffale Nord, 1 articoli'}).waitFor();assert.equal(await page.locator('svg.walls line:not(.draft)').count(),5);
   await page.screenshot({path:process.env.UBICORA_MAP_SCREENSHOT||'/tmp/ubicora-map.png',fullPage:true});
-  assert.deepEqual(errors,[]);console.log('Map editor: drag, resize, keyboard, rotate, duplicate, walls, ID links, show on map and reload passed');
+  assert.deepEqual(errors,[]);console.log('Map editor: drag, resize, keyboard, rotate, duplicate, walls, closed shapes, ID links, show on map and reload passed');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

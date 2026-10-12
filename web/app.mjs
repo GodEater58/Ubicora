@@ -1,4 +1,4 @@
-import {uid,empty,validate,apply,analytics,reserved,available,cost,number,optional,parseCsv,importCsv,exportCsv,exportAndroidCsv,demo} from './core.mjs';
+import {wallPoint,shelfCode,uid,empty,validate,apply,analytics,reserved,available,cost,number,optional,parseCsv,importCsv,exportCsv,exportAndroidCsv,demo} from './core.mjs';
 const $=s=>document.querySelector(s),esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=x=>new Intl.NumberFormat('it-IT',{maximumFractionDigits:2}).format(x),eur=x=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(x);
 const dates=x=>new Date(x).toLocaleString('it-IT',{dateStyle:'short',timeStyle:'short'});
@@ -11,7 +11,7 @@ let reservationCacheState=null,reservationCache=new Map();
 function uiReserved(s,id){if(reservationCacheState!==s){reservationCacheState=s;reservationCache=new Map();for(const r of s.reservations)if(r.status==='ACTIVE')reservationCache.set(r.itemId,(reservationCache.get(r.itemId)??0)+r.quantity);}return reservationCache.get(id)??0;}
 const uiAvailable=(s,i)=>i.quantity-uiReserved(s,i.id);
 const warehouse=()=>state.warehouses.find(w=>w.id===wid),items=()=>state.items.filter(i=>i.warehouseId===wid),item=id=>state.items.find(i=>i.id===id),rowItem=id=>item(id)||{name:'Articolo',sku:'',unit:'',warehouseId:null};
-const placeName=i=>state.placements.find(p=>p.id===i.placementId)?.name||i.location||'';
+const placeName=i=>{const base=state.placements.find(p=>p.id===i.placementId)?.name||i.location||'',code=base?shelfCode(i):'';return code?base+' · '+code:base;};
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000);}
 function status(message){$('#syncStatus').textContent=message;$('#saveStatus').textContent=message;}
 async function openDb(){return await new Promise((resolve,reject)=>{const r=indexedDB.open('ubicora-web',1);r.onupgradeneeded=()=>r.result.createObjectStore('archives');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(Error('Il browser non consente il salvataggio. Apri con Edge o Chrome e disattiva la navigazione privata.'));});}
@@ -87,7 +87,7 @@ function map(){const w=warehouse(),ps=state.placements.filter(p=>p.warehouseId==
  const editable=canWrite&&!pending,count=id=>state.items.filter(i=>i.placementId===id).length;if(!editable&&mapTool!=='view')mapTool='view';
  const tools=[['view','Esplora'],['edit','Sposta e ridimensiona'],['walls','Disegna pareti']].map(([t,l])=>`<button class="${mapTool===t?'primary':'secondary'}" data-map-tool="${t}" aria-pressed="${mapTool===t}" ${t!=='view'&&!editable?'disabled':''}>${l}</button>`).join('');
  const sel=ps.find(p=>p.id===selPlacement),wall=ws.find(x=>x.id===selWall);
- const hint={view:'Clic su una struttura per vederne il contenuto, su una parete per misurarla.',edit:'Trascina per spostare (passo 25 cm), trascina l’angolo arancione per ridimensionare. Frecce da tastiera: sposta di 25 cm.',walls:wallStart?'Clic per il punto successivo · Esc per terminare la parete.':'Clic sul punto iniziale della parete.'}[mapTool];
+ const hint={view:'Clic su una struttura per vederne il contenuto, su una parete per misurarla.',edit:'Trascina per spostare (passo 25 cm), trascina l’angolo arancione per ridimensionare. Frecce da tastiera: sposta di 25 cm.',walls:wallStart?'Clic per il punto successivo · vicino a un angolo o a una parete la forma si chiude · Esc per terminare.':'Clic sul punto iniziale della parete.'}[mapTool];
  return `<div class="mapbox"><div class="panel-heading"><div><h2>${esc(w.name)} · Piano 2D</h2><p class="subtle">${fmt(w.width)} × ${fmt(w.depth)} m · ${ps.length} strutture · ${ws.length} pareti</p></div><div class="toolbar">${tools}${action('+ Struttura','placement')}</div></div>
  <div class="floor tool-${mapTool}" id="floor" style="aspect-ratio:${w.width}/${w.depth}" data-w="${w.width}" data-d="${w.depth}">
  <svg class="walls" viewBox="0 0 ${w.width} ${w.depth}" preserveAspectRatio="none" aria-hidden="true">${ws.map(x=>`<line x1="${x.x1}" y1="${x.y1}" x2="${x.x2}" y2="${x.y2}" class="${x.id===selWall?'sel':''}"/>`).join('')}<line id="wallDraft" class="draft" x1="0" y1="0" x2="0" y2="0" visibility="hidden"/>${wallStart&&mapTool==='walls'?`<circle cx="${wallStart.x}" cy="${wallStart.y}" r="${Math.max(w.width,w.depth)/90}"/>`:''}</svg>
@@ -100,6 +100,8 @@ function placementPanel(p){const inside=state.items.filter(i=>i.placementId===p.
  ${inside.length?`<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Articolo</th><th>Disponibile</th><th></th></tr></thead><tbody>${inside.slice(0,100).map(i=>`<tr><td><strong>${esc(i.name)}</strong><small>${esc(i.sku)}</small></td><td><span class="badge ${uiAvailable(state,i)<=i.minimum?'amber':''}">${fmt(uiAvailable(state,i))} ${esc(i.unit)}</span></td><td>${action('Scollega','unassign',i.id)}</td></tr>`).join('')}</tbody></table></div>${inside.length>100?`<p class="search-summary">Primi 100 di ${inside.length}</p>`:''}`:'<p class="subtle" style="margin-top:12px">Nessun articolo in questa struttura.</p>'}</div>`;}
 function wallPanel(x){return `<div class="panel map-panel"><div class="panel-heading"><div><span class="eyebrow">PARETE</span><h2>${fmt(Math.hypot(x.x2-x.x1,x.y2-x.y1))} m</h2><p class="subtle">Da ${fmt(x.x1)} / ${fmt(x.y1)} a ${fmt(x.x2)} / ${fmt(x.y2)} m</p></div><button class="icon-button" data-action="closeMapPanel" aria-label="Chiudi">×</button></div>${action('Elimina parete','removeWall',x.id,'danger')}</div>`;}
 function bindMap(){const floor=$('#floor');if(!floor)return;const W=Number(floor.dataset.w),D=Number(floor.dataset.d),sn=v=>Math.round(v/.25)*.25;
+ // Hook radius: about 14 screen pixels, at most 35 cm and 45% of the current stroke.
+ const landing=(m,from)=>{const r=floor.getBoundingClientRect();let tol=Math.min(14/r.width*W,.35);if(from)tol=Math.min(tol,Math.hypot(m.x-from.x,m.y-from.y)*.45);return wallPoint(m,from,state.walls.filter(x=>x.warehouseId===wid),tol);};
  const toM=e=>{const r=floor.getBoundingClientRect();return {x:Math.min(Math.max((e.clientX-r.left)/r.width*W,0),W),y:Math.min(Math.max((e.clientY-r.top)/r.height*D,0),D)};};
  const measure=$('#measure'),show=(e,text)=>{const r=floor.getBoundingClientRect();measure.textContent=text;measure.style.left=(e.clientX-r.left)+'px';measure.style.top=(e.clientY-r.top)+'px';measure.hidden=false;},hide=()=>{measure.hidden=true;};
  $('#content').querySelectorAll('[data-map-tool]').forEach(b=>b.addEventListener('click',()=>{mapTool=b.dataset.mapTool;wallStart=null;render();}));
@@ -111,16 +113,18 @@ function bindMap(){const floor=$('#floor');if(!floor)return;const W=Number(floor
    if(drag.resize){const side=(v,d,max)=>Math.abs(d)<.12?v:Math.min(Math.max(.25,sn(v+d)),max),width=side(drag.p.width,dx,W-drag.p.x),depth=side(drag.p.depth,dy,D-drag.p.y);drag.next={width,depth};drag.el.style.width=width/W*100+'%';drag.el.style.height=depth/D*100+'%';show(e,`${fmt(width)} × ${fmt(depth)} m`);}
    else{const x=Math.min(Math.max(sn(drag.p.x+dx),0),W-drag.p.width),y=Math.min(Math.max(sn(drag.p.y+dy),0),D-drag.p.depth);drag.next={x,y};drag.el.style.left=x/W*100+'%';drag.el.style.top=y/D*100+'%';show(e,`x ${fmt(x)} · y ${fmt(y)} m`);}
    return;}
-  if(mapTool==='walls'&&wallStart){const end={x:sn(m.x),y:sn(m.y)},line=$('#wallDraft');line.setAttribute('x1',wallStart.x);line.setAttribute('y1',wallStart.y);line.setAttribute('x2',end.x);line.setAttribute('y2',end.y);line.setAttribute('visibility','visible');show(e,fmt(Math.hypot(end.x-wallStart.x,end.y-wallStart.y))+' m');}});
+  if(mapTool==='walls'&&wallStart){const end=landing(m,wallStart),line=$('#wallDraft');line.setAttribute('x1',wallStart.x);line.setAttribute('y1',wallStart.y);line.setAttribute('x2',end.x);line.setAttribute('y2',end.y);line.setAttribute('visibility','visible');line.classList.toggle('closing',end.closes);show(e,fmt(Math.hypot(end.x-wallStart.x,end.y-wallStart.y))+' m'+(end.closes?' · chiude la forma':''));}});
  floor.addEventListener('pointerleave',()=>{if(!drag)hide();});
  floor.addEventListener('pointerup',async e=>{if(!drag)return;const d=drag;drag=null;hide();selPlacement=d.p.id;selWall=null;
   if(!d.moved||!d.next){render();return;}
   try{await commit(d.resize?{type:'resizePlacement',id:d.p.id,...d.next}:{type:'movePlacement',id:d.p.id,...d.next});}catch(err){toast(err.message);render();}});
  floor.addEventListener('click',async e=>{if(mapTool==='edit')return; // selection is handled on pointerdown/up: a drag's click lands on the captured floor
   const m=toM(e);
-  if(mapTool==='walls'){if(busy||pending||!canWrite)return;const point={x:sn(m.x),y:sn(m.y)};if(!wallStart){wallStart=point;render();return;}
-   if(Math.hypot(point.x-wallStart.x,point.y-wallStart.y)<.2)return;const from=wallStart;wallStart=point;
-   try{await commit({type:'wall',warehouseId:wid,x1:from.x,y1:from.y,x2:point.x,y2:point.y});}catch(err){wallStart=from;toast(err.message);render();}return;}
+  if(mapTool==='walls'){if(busy||pending||!canWrite)return;if(!wallStart){const p=landing(m,null);wallStart={x:p.x,y:p.y};render();return;}
+   const point=landing(m,wallStart);if(Math.hypot(point.x-wallStart.x,point.y-wallStart.y)<.2)return;const from=wallStart;
+   // Ending on an existing corner or wall closes the shape: the next click starts a new one.
+   wallStart=point.closes?null:{x:point.x,y:point.y};
+   try{await commit({type:'wall',warehouseId:wid,x1:from.x,y1:from.y,x2:point.x,y2:point.y});if(point.closes)toast('Forma chiusa');}catch(err){wallStart=from;toast(err.message);render();}return;}
   const el=e.target.closest('[data-placement]');if(el){selPlacement=el.dataset.placement;selWall=null;render();return;}
   const r=floor.getBoundingClientRect(),tol=14/r.width*W;let best=null;
   for(const x of state.walls.filter(x=>x.warehouseId===wid)){const vx=x.x2-x.x1,vy=x.y2-x.y1,len=vx*vx+vy*vy,t=len?Math.min(Math.max(((m.x-x.x1)*vx+(m.y-x.y1)*vy)/len,0),1):0,dist=Math.hypot(m.x-(x.x1+t*vx),m.y-(x.y1+t*vy));if(dist<=tol&&(!best||dist<best[1]))best=[x,dist];}

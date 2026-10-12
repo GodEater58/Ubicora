@@ -30,6 +30,22 @@ class CsvImportTest {
         rejects(header+"\n"+row().dropLast(1))
         rejects(header+"\n"+row().replace("3.5","-9"))
     }
+    @Test fun shelfColumnsAreReadAndOldElevenColumnFilesStillImport() {
+        val full=header+";\"Ripiano\";\"Posizione\""
+        fun shelfRow(level:String,slot:String,location:String="Scaffale A") =
+            listOf("RIC-000321","Vite","Ricambi","3","1","pz",location,"","","","",level,slot).joinToString(";") { "\""+it+"\"" }
+        val parsed=CsvImport.parse(full+"\n"+shelfRow("2","3")).single()
+        assertEquals(2,parsed.shelfLevel)
+        assertEquals(3,parsed.shelfSlot)
+        val empty=CsvImport.parse(full+"\n"+shelfRow("","")).single()
+        assertNull(empty.shelfLevel)
+        assertNull(CsvImport.parse(header+"\n"+row()).single().shelfLevel)
+        rejects(full+"\n"+shelfRow("21","1"))
+        rejects(full+"\n"+shelfRow("1","51"))
+        rejects(full+"\n"+shelfRow("x","1"))
+        rejects(full+"\n"+shelfRow("2","3",location=""))
+        rejects(full+"\n"+row())
+    }
     @Test fun formulaApostropheAddedOnExportIsRemovedOnImport() {
         val values=listOf("RIC-000321","'=Vite","Ricambi","3","1","pz","'@Scaffale","'-10% sconto","2","'+Fornitore","5")
         val csv=header+"\n"+values.joinToString(";"){"\""+it+"\""}+"\n"

@@ -114,3 +114,12 @@ def test_workspace_map_walls_and_placement_links():
         bad=document(); bad["walls"]=[{"id":str(uuid.uuid4()),"warehouseId":wid,**wall}]
         bad["warehouses"][0]["id"]=wid
         with pytest.raises(ValidationError): Document.model_validate(bad)
+
+def test_workspace_items_carry_optional_shelf_level_and_position():
+    d=document(); d["items"][0]["shelfLevel"]=2; d["items"][0]["shelfSlot"]=3
+    doc=Document.model_validate(d)
+    assert doc.items[0].shelfLevel==2 and doc.items[0].shelfSlot==3
+    assert Document.model_validate(document()).items[0].shelfLevel is None
+    for field,value in (("shelfLevel",21),("shelfSlot",0),("shelfLevel",1.5)):
+        bad=document(); bad["items"][0][field]=value
+        with pytest.raises(ValidationError): Document.model_validate(bad)
