@@ -172,9 +172,6 @@ class GuideScreenshotsTest {
             model.cancelCsvImport(); settle(model)
             scrollTo("SINCRONIZZAZIONE TRA TELEFONI"); settle(model)
             shot("19_sync_inizio",model)
-            // 4.10: the central's QR read by a new phone opens the join dialog already filled in.
-            shot("37_collega_qr",model,dialog=true) { model.handleScannedCode(TeamQr.encode("squadra-2026",listOf("B"),"Magazzino officina")) }
-            runCatching { compose.onAllNodesWithText("Annulla").onLast().performClick() }.onFailure { log.appendLine("close join: ${it.message?.take(150)}") }; settle(model)
             model.becomeTeamCentral("squadra-2026"); settle(model)
             model.setTeamScope("B",listOf("Meccanica","Pneumatica")); settle(model)
             model.setTeamScope("C",listOf("Elettrico")); settle(model)
@@ -236,6 +233,19 @@ class GuideScreenshotsTest {
                 compose.onNode(SemanticsMatcher("unit picker") { it.config.getOrNull(SemanticsActions.OnClick)?.label=="Scegli l'unità di misura" })
                     .performScrollTo().performClick()
             }
+            // 4.10 join with the central's QR: last, with the clock driven by hand (diagnostic if it never settles).
+            try {
+                runCatching { compose.onAllNodesWithText("Annulla").onLast().performClick() }
+                model.leaveTeam(); settle(model)
+                compose.onNodeWithContentDescription("Impostazioni").performClick(); settle(model)
+                compose.mainClock.autoAdvance=false
+                model.handleScannedCode(TeamQr.encode("squadra-2026",listOf("B"),"Magazzino officina"))
+                repeat(8) { compose.mainClock.advanceTimeBy(250); shadowOf(Looper.getMainLooper()).idle() }
+                log.appendLine("teamQr after=${model.ui.teamQr} role=${model.ui.team.role}")
+                save("37_collega_qr")
+                repeat(8) { compose.mainClock.advanceTimeBy(250); shadowOf(Looper.getMainLooper()).idle() }
+                save("37b_collega_qr_dopo")
+            } catch(e:Throwable) { log.appendLine("FAIL 37: ${e::class.simpleName}: ${e.message?.take(300)}") }
         } finally {
             File(out,"log.txt").writeText(log.toString())
         }
