@@ -3,9 +3,8 @@ package com.officinastock.app
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
-import android.database.sqlite.SQLiteConstraintException
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
+import com.officinastock.app.AppDatabase as SQLiteDatabase
+import com.officinastock.app.AppOpenHelper as SQLiteOpenHelper
 import org.json.JSONObject
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
@@ -330,7 +329,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             if(quantity > 0) recordMovement(db,id,quantity,"Carico iniziale")
             db.setTransactionSuccessful()
             return id
-        } catch(e: SQLiteConstraintException) {
+        } catch(e: RuntimeException) {
+            if(!isConstraintViolation(e)) throw e
             val department=e.message?.takeIf { it.contains("reparto") }?.substringBefore(" (code ")
             throw IllegalArgumentException(department ?: "Codice già utilizzato. Riprova.",e)
         }

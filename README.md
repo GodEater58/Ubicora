@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.11.0
+# Ubicora — Android nativo 4.12.0
 
+> **4.12.0:** archivio cifrato sul telefono (SQLCipher AES-256, chiave nel portachiavi sicuro di Android) con migrazione automatica verificata. Dettagli: [CHANGELOG 4.12.0](docs/CHANGELOG_4_12_0.md).
+>
 > **4.11.0:** QR di collegamento con codice usa e getta, password della squadra nel portachiavi sicuro di Android, limiti sulla rete del centrale. Dettagli: [CHANGELOG 4.11.0](docs/CHANGELOG_4_11_0.md).
 >
 > **4.10.3:** il pulsante «Scansiona QR» non copre più l'ultimo elemento delle liste. Dettagli: [CHANGELOG 4.10.3](docs/CHANGELOG_4_10_3.md).

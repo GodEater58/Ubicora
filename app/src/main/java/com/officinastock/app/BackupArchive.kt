@@ -3,7 +3,7 @@ package com.officinastock.app
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
-import android.database.sqlite.SQLiteDatabase
+import com.officinastock.app.AppDatabase as SQLiteDatabase
 import android.net.Uri
 import org.json.JSONObject
 import java.io.*

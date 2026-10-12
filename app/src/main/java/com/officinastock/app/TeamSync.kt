@@ -1,7 +1,7 @@
 package com.officinastock.app
 
 import android.content.ContentValues
-import android.database.sqlite.SQLiteDatabase
+import com.officinastock.app.AppDatabase as SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
