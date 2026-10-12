@@ -1,0 +1,4 @@
+10-12 18:41:41.618  7185  7211 I TestRunner: started: aNewArchiveIsEncryptedFromTheStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:41.627  7185  7211 I SQLiteConnection: Database keying operation returned:0
+10-12 18:41:42.031   858   858 D StatusBarIconController: ignoring old pipeline callback because the new wifi icon is enabled
+10-12 18:41:42.919  7185  7211 I TestRunner: finished: aNewArchiveIsEncryptedFromTheStart(com.officinastock.app.EncryptedArchiveTest)

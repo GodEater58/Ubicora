@@ -1,0 +1,5 @@
+10-12 18:41:40.020  7185  7211 I TestRunner: started: anInterruptedMigrationIsCompletedAtTheNextStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:40.940  7185  7219 D ProfileInstaller: Installing profile for com.ubicora.app
+10-12 18:41:41.599  7185  7211 I SQLiteConnection: Database keying operation returned:0
+10-12 18:41:41.611  7185  7211 I SQLiteConnection: Database keying operation returned:0
+10-12 18:41:41.616  7185  7211 I TestRunner: finished: anInterruptedMigrationIsCompletedAtTheNextStart(com.officinastock.app.EncryptedArchiveTest)

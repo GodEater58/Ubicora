@@ -1,0 +1,15 @@
+10-12 18:30:35.418   335   335 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+10-12 18:30:35.450   335   335 I AndroidRuntime: Using default boot image
+10-12 18:30:35.450   335   335 I AndroidRuntime: Leaving lock profiling enabled
+10-12 18:31:18.893   983   983 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+10-12 18:41:31.888  7163  7163 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-12 18:41:31.918  7163  7163 I AndroidRuntime: Using default boot image
+10-12 18:41:31.918  7163  7163 I AndroidRuntime: Leaving lock profiling enabled
+10-12 18:41:32.452  7163  7163 D AndroidRuntime: Calling main entry com.android.commands.am.Am
+10-12 18:41:35.102  7185  7211 I TestRunner: started: anArchiveFrom411IsMigratedWithEverything(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:40.017  7185  7211 I TestRunner: finished: anArchiveFrom411IsMigratedWithEverything(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:40.020  7185  7211 I TestRunner: started: anInterruptedMigrationIsCompletedAtTheNextStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:41.616  7185  7211 I TestRunner: finished: anInterruptedMigrationIsCompletedAtTheNextStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:41.618  7185  7211 I TestRunner: started: aNewArchiveIsEncryptedFromTheStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:42.919  7185  7211 I TestRunner: finished: aNewArchiveIsEncryptedFromTheStart(com.officinastock.app.EncryptedArchiveTest)
+10-12 18:41:42.941  7163  7163 I AndroidRuntime: VM exiting with result code 0.

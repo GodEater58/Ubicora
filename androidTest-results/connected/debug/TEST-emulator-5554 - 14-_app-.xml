@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="com.officinastock.app.EncryptedArchiveTest" tests="3" failures="0" errors="0" skipped="0" time="8.786" timestamp="2026-10-12T18:41:44" hostname="localhost">
+  <properties>
+    <property name="device" value="emulator-5554 - 14" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="anArchiveFrom411IsMigratedWithEverything" classname="com.officinastock.app.EncryptedArchiveTest" time="4.795" />
+  <testcase name="anInterruptedMigrationIsCompletedAtTheNextStart" classname="com.officinastock.app.EncryptedArchiveTest" time="1.581" />
+  <testcase name="aNewArchiveIsEncryptedFromTheStart" classname="com.officinastock.app.EncryptedArchiveTest" time="1.271" />
+</testsuite>

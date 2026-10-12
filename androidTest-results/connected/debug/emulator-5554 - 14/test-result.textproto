@@ -1,0 +1,189 @@
+# proto-message: google.testing.platform.proto.api.core.TestSuiteResult
+# 2026-10-12T18:41:44.585270344Z:
+test_suite_meta_data {
+  scheduled_test_case_count: 3
+  device {
+    id: "emulator-5554"
+    friendly_name: "primary"
+  }
+}
+test_status: PASSED
+test_result {
+  test_case {
+    test_class: "EncryptedArchiveTest"
+    test_package: "com.officinastock.app"
+    test_method: "anArchiveFrom411IsMigratedWithEverything"
+    start_time {
+      seconds: 1791830495
+      nanos: 573000000
+    }
+    end_time {
+      seconds: 1791830500
+      nanos: 469000000
+    }
+    device {
+      id: "emulator-5554"
+      friendly_name: "primary"
+    }
+  }
+  test_status: PASSED
+  output_artifact {
+    label {
+      label: "logcat"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/logcat-com.officinastock.app.EncryptedArchiveTest-anArchiveFrom411IsMigratedWithEverything.txt"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/device-info.pb"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.meminfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/meminfo"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.cpuinfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/cpuinfo"
+    }
+  }
+}
+test_result {
+  test_case {
+    test_class: "EncryptedArchiveTest"
+    test_package: "com.officinastock.app"
+    test_method: "anInterruptedMigrationIsCompletedAtTheNextStart"
+    start_time {
+      seconds: 1791830500
+      nanos: 497000000
+    }
+    end_time {
+      seconds: 1791830502
+      nanos: 80000000
+    }
+    device {
+      id: "emulator-5554"
+      friendly_name: "primary"
+    }
+  }
+  test_status: PASSED
+  output_artifact {
+    label {
+      label: "logcat"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/logcat-com.officinastock.app.EncryptedArchiveTest-anInterruptedMigrationIsCompletedAtTheNextStart.txt"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/device-info.pb"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.meminfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/meminfo"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.cpuinfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/cpuinfo"
+    }
+  }
+}
+test_result {
+  test_case {
+    test_class: "EncryptedArchiveTest"
+    test_package: "com.officinastock.app"
+    test_method: "aNewArchiveIsEncryptedFromTheStart"
+    start_time {
+      seconds: 1791830502
+      nanos: 85000000
+    }
+    end_time {
+      seconds: 1791830503
+      nanos: 366000000
+    }
+    device {
+      id: "emulator-5554"
+      friendly_name: "primary"
+    }
+  }
+  test_status: PASSED
+  output_artifact {
+    label {
+      label: "logcat"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/logcat-com.officinastock.app.EncryptedArchiveTest-aNewArchiveIsEncryptedFromTheStart.txt"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/device-info.pb"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.meminfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/meminfo"
+    }
+  }
+  output_artifact {
+    label {
+      label: "device-info.cpuinfo"
+      namespace: "android"
+    }
+    source_path {
+      path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/cpuinfo"
+    }
+  }
+}
+output_artifact {
+  label {
+    label: "test-results.log"
+    namespace: "com.google.testing.platform.runtime.android.driver.AndroidInstrumentationDriver"
+  }
+  source_path {
+    path: "/home/runner/work/OfficinaStock-Android/OfficinaStock-Android/app/build/outputs/androidTest-results/connected/debug/emulator-5554 - 14/testlog/test-results.log"
+  }
+  type: TEST_DATA
+  mime_type: "text/plain"
+}
