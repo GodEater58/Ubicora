@@ -35,6 +35,13 @@ https://policies.google.com/terms
 https://policies.google.com/privacy
 Informazioni su ARCore e i dati: https://support.google.com/ar/answer/12148145
 
+GOOGLE NEARBY CONNECTIONS (sincronizzazione tra telefoni vicini, 4.9)
+Google Play services Nearby, com.google.android.gms:play-services-nearby:19.3.0 — Google LLC.
+Soggetto ai Termini di Google APIs e alla licenza Android SDK:
+https://developers.google.com/terms
+I dati scambiati viaggiano cifrati con la password della squadra; nessun
+server Ubicora è coinvolto.
+
 NOTA SULL'INVENTARIO DELLE LICENZE
 Questa è una distinta preliminare delle dipendenze principali, non certifica
 la licenza di tutte le dipendenze indirette (transitive). Prima della vendita

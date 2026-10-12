@@ -70,6 +70,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private val planning = StockPlanningDb(db)
     private val trace = StockTraceDb(db)
     private val team = TeamSync(db)
+    /** 4.9: automatic exchange with nearby phones (the central's own network). */
+    val link = TeamLink(app.applicationContext, viewModelScope, team) { joined -> refreshAfterLink(joined) }
     var ui by mutableStateOf(StockUiState())
         private set
     private var operationalRowLimit=250
@@ -78,7 +80,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { link.stop();clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -652,7 +654,33 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     // ---- 4.8 phone-to-phone sync ----
     fun becomeTeamCentral(password:String) = execute { team.becomeCentral(requireWarehouse(),password) }
-    fun leaveTeam(force:Boolean=false) = execute { team.leave(force) }
+    fun leaveTeam(force:Boolean=false) { link.stop();execute { team.leave(force) } }
+    /** Central: opens the short-range network for the synced warehouse. */
+    fun startCentralLink() {
+        val t=ui.team; val w=ui.warehouse
+        if(t.role!=TeamRole.CENTRAL || w==null || t.warehouseId!=w.id || ui.sessionLocked) return
+        link.startCentral(team.warehouseUid() ?: return,w.name)
+    }
+    /** Satellite: looks for its central and exchanges on its own. */
+    fun startSatelliteLink() {
+        val t=ui.team
+        if(t.role!=TeamRole.SATELLITE || ui.sessionLocked) return
+        link.startSatellite(team.warehouseUid() ?: return,t.letter ?: return)
+    }
+    /** First connection without a file: the nearby central sends its archive. */
+    fun joinNearby(password:String,letter:String) {
+        val profileId=ui.profile?.id ?: return
+        if(ui.team.role!=TeamRole.NONE || ui.sessionLocked) return
+        link.startJoin(profileId,password,letter.uppercase())
+    }
+    fun stopLink()=link.stop()
+    private suspend fun refreshAfterLink(joinedWarehouse:Long?) {
+        if(ui.sessionLocked) return
+        if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse
+        clearMapHistory()
+        reloadAfterSelection(null,backgroundGeneration)
+    }
+    override fun onCleared() { link.stop();super.onCleared() }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
     /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
     private suspend fun teamFile(block:()->String):String {

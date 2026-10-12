@@ -91,7 +91,8 @@ data class TeamSyncStatus(
     val pending: Int = 0, val lastSync: Long = 0, val peers: List<TeamPeer> = emptyList(),
     val conflicts: List<TeamConflict> = emptyList()
 )
-data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int)
+data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
+                            val letter: String? = null)
 
 class TeamSync(private val stock: StockDb) {
     companion object {
@@ -200,6 +201,9 @@ class TeamSync(private val stock: StockDb) {
             "Su questo telefono (satellite ${setting("letter")}) i dati dell'articolo si modificano dal telefono centrale. Carichi, prelievi e ubicazione invece sì."
         }
     }
+
+    /** Identifies the shared warehouse (the same on the central and on every satellite). */
+    fun warehouseUid(): String? = if (setting("role") == null) null else setting("warehouse_uid")
 
     fun dismissConflicts() { db.delete("team_sync_conflicts", null, null) }
 
@@ -310,7 +314,7 @@ class TeamSync(private val stock: StockDb) {
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))
             sql.setTransactionSuccessful()
-            return TeamImportResult(articles, moves, locations, skipped, conflicts)
+            return TeamImportResult(articles, moves, locations, skipped, conflicts, letter)
         } finally { sql.endTransaction() }
     }
 

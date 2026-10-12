@@ -12,8 +12,8 @@ android {
         applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 481
-        versionName = "4.8.1-sync-alpha"
+        versionCode = 490
+        versionName = "4.9.0-sync-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -61,6 +61,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.0")
     implementation("com.google.ar:core:1.56.0")
+    // 4.9: phone-to-phone network without router (Bluetooth + Wi-Fi Direct) for team sync.
+    implementation("com.google.android.gms:play-services-nearby:19.3.0")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("com.google.zxing:core:3.5.3")

@@ -46,6 +46,7 @@ import java.util.Locale
         if (uri != null) { val p = password; val l = letter; run { model.teamJoin(uri, p, l) } }
         password = ""
     }
+    val nearby = rememberNearbyAccess { result = it }
     val day = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ITALY).format(Date())
     val synced = t.warehouseId != null && t.warehouseId == u.warehouse?.id
 
@@ -68,7 +69,12 @@ import java.util.Locale
                 Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name}" else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
                 if (synced) {
-                    PrimaryAction("Importa dai satelliti", onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
+                        enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
+                    OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("Importa dai satelliti")
+                    }
                     OutlinedButton(onClick = { exporter.launch("Ubicora_aggiornamento_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Invia aggiornamento a tutti")
                     }
@@ -90,7 +96,12 @@ import java.util.Locale
                         Modifier.padding(10.dp).fillMaxWidth(), color = if (t.pending > 0) Amber else Mint, fontWeight = FontWeight.SemiBold)
                 }
                 if (synced) {
-                    PrimaryAction("Invia al centrale", onClick = { exporter.launch("Ubicora_${t.letter}_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    PrimaryAction("Sincronizza con il centrale vicino", onClick = { nearby { model.startSatelliteLink() } },
+                        enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
+                    OutlinedButton(onClick = { exporter.launch("Ubicora_${t.letter}_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("Invia al centrale")
+                    }
                     OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                         Text("Importa aggiornamento dal centrale")
                     }
@@ -118,8 +129,8 @@ import java.util.Locale
 
     if (askJoin) AlertDialog(onDismissRequest = { askJoin = false }, title = { Text("Collega al centrale") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ti serve il file «aggiornamento» inviato dal telefono centrale. Verrà creato un nuovo magazzino con i suoi articoli e la sua mappa.",
-                fontSize = 13.sp)
+            Text("Avvicinati al telefono centrale con la rete aperta, oppure usa il file «aggiornamento» che ti ha inviato. " +
+                "Verrà creato un nuovo magazzino con i suoi articoli e la sua mappa.", fontSize = 13.sp)
             Input(password, { password = it }, "Password della squadra", password = true)
             Text("Lettera di questo telefono (diversa per ogni persona)", fontSize = 12.sp, color = TextSecondary)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -127,8 +138,14 @@ import java.util.Locale
             }
             Text("I codici degli articoli creati qui avranno la lettera: es. RIC-${letter}000001.", fontSize = 11.sp, color = TextSecondary)
         }
-    }, confirmButton = { TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Scegli il file") } },
-        dismissButton = { TextButton(onClick = { askJoin = false; password = "" }) { Text("Annulla") } })
+    }, confirmButton = {
+        Column(horizontalAlignment = Alignment.End) {
+            TextButton(onClick = { askJoin = false; val p = password; val l = letter; password = ""; nearby { model.joinNearby(p, l) } },
+                enabled = password.length >= 8) { Text("Cerca il centrale vicino") }
+            TextButton(onClick = { askJoin = false; joiner.launch(arrayOf("*/*")) }, enabled = password.length >= 8) { Text("Usa un file") }
+            TextButton(onClick = { askJoin = false; password = "" }) { Text("Annulla") }
+        }
+    })
 
     val unsent = t.role == TeamRole.SATELLITE && t.pending > 0
     if (askLeave) AlertDialog(onDismissRequest = { askLeave = false }, title = { Text("Scollegare il telefono?") }, text = {
@@ -153,6 +170,8 @@ import java.util.Locale
         }
     }, confirmButton = { TextButton(onClick = { model.dismissTeamConflicts(); showConflicts = false }) { Text("Ho controllato, cancella elenco") } },
         dismissButton = { TextButton(onClick = { showConflicts = false }) { Text("Chiudi") } })
+
+    TeamLinkDialog(model)
 
     result?.let { text -> AlertDialog(onDismissRequest = { result = null }, title = { Text("Sincronizzazione") }, text = { Text(text) },
         confirmButton = { TextButton(onClick = { result = null }) { Text("OK") } }) }
