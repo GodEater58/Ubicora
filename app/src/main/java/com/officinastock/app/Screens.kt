@@ -655,7 +655,8 @@ private fun EditItemDetailsDialog(
             if(storage.isEmpty()) Text("Nessuna struttura trovata. Creala nella Mappa → Strutture.",fontSize=12.sp,color=TextSecondary)
         }
     },confirmButton={TextButton(onClick=onClose){Text("Chiudi")}})
-    positionFor?.let { p -> PositionDialog(p,"Ripiano e posizione",onClose={positionFor=null}) { level,slot ->
+    positionFor?.let { p -> PositionDialog(p,"Ripiano e posizione",onClose={positionFor=null},
+        initialLevel=item.shelfLevel.takeIf{p.id==item.placementId},initialSlot=item.shelfSlot.takeIf{p.id==item.placementId}) { level,slot ->
         positionFor=null;onChoose(p.id,level,slot)
     } }
 }

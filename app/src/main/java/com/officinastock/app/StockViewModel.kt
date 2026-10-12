@@ -75,7 +75,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { clearMapHistory();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -101,7 +101,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             return
         }
         if(target.warehouseId != null && target.warehouseId != warehouse.id) {
-            ui=ui.copy(scannedItemId=null,message="Questo QR appartiene al magazzino ${target.warehouseId}. Cambia magazzino e riprova.")
+            ui=ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
             return
         }
         val item=ui.items.firstOrNull { it.sku.equals(target.sku,ignoreCase=true) }
@@ -122,7 +122,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 if(failure==null && generation==backgroundGeneration) onSuccess?.invoke()
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
-            finally { ui=ui.copy(busy=false) }
+            finally { ui=ui.copy(busy=false); drainWalls() }
         }
     }
     private suspend fun reload(error: String? = null) {
@@ -179,7 +179,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     // ---- Map: targeted reload, undo/redo, focus, camera ----
     private val mapUndo=ArrayDeque<MapEdit>()
     private val mapRedo=ArrayDeque<MapEdit>()
-    private fun clearMapHistory() { mapUndo.clear();mapRedo.clear() }
+    private val pendingWalls=ArrayDeque<Pair<Long,FloatArray>>()
+    private fun clearMapHistory() { mapUndo.clear();mapRedo.clear();ui=ui.copy(mapUndoLabel=null,mapRedoLabel=null) }
     private val mapCameras=mutableMapOf<Long,Triple<Float,Float,Float>>()
     /** Zoom/pan survive tab switches; reset when the room is resized. */
     fun mapCamera(warehouseId:Long):Triple<Float,Float,Float> = mapCameras[warehouseId] ?: Triple(1f,0f,0f)
@@ -221,7 +222,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 reloadMap(failure)
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
-            finally { ui=ui.copy(busy=false,mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label) }
+            finally {
+                ui=ui.copy(busy=false,mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
+                drainWalls()
+            }
         }
     }
     private suspend fun reloadMap(error:String?) {
@@ -239,11 +243,15 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=ui.copy(warehouses=fresh[0] as List<Warehouse>,warehouse=fresh[1] as Warehouse,items=fresh[2] as List<StockItem>,
             placements=fresh[3] as List<Placement>,walls=fresh[4] as List<Wall>,placementActivity=fresh[5] as Map<Long,Int>,message=error)
     }
+    // An edit leaves its stack only when the revert really runs; a double tap while saving does not
+    // lose it. If the revert fails (e.g. the structure was deleted meanwhile) it is dropped on purpose.
     fun undoMap() {
+        if(ui.busy) return
         val edit=mapUndo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapRedo.addLast(inverse) }
     }
     fun redoMap() {
+        if(ui.busy) return
         val edit=mapRedo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapUndo.addLast(inverse) }
     }
@@ -262,7 +270,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
     }
-    fun signOut() { if(!ui.busy) {archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
+    fun signOut() { if(!ui.busy) {clearMapHistory();archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
     fun leaveWarehouse() { if(!ui.busy) {clearMapHistory();pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
@@ -271,7 +279,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=ui.copy(warehouse=w)
         execute {} // ricarica tutte le liste per il magazzino scelto
     }
-    fun createWarehouse(name: String,location: String) = execute {
+    fun createWarehouse(name: String,location: String) {
+        if(!ui.busy) clearMapHistory()
+        createWarehouseNow(name,location)
+    }
+    private fun createWarehouseNow(name: String,location: String) = execute {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
@@ -440,7 +452,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun resizeMap(width:Float,height:Float) {
         val warehouseId=ui.warehouse?.id ?: return
+        if(ui.busy) return
         mapCameras.remove(warehouseId)
+        // Older edits refer to the previous room size: undoing them could put things outside it.
+        clearMapHistory()
         executeMap(record=false) { db.updateMapSize(warehouseId,width,height);null }
     }
     fun resizePlacement(id:Long,width:Float,depth:Float,rotation:Float)=executeMap {
@@ -477,7 +492,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         executeMap(record=false){db.assignItems(listOf(itemId),placementId,level,slot);null}
     fun assignItems(itemIds:List<Long>,placementId:Long?,level:Int?=null,slot:Int?=null)=
         executeMap(record=false){db.assignItems(itemIds,placementId,level,slot);null}
-    fun addWall(coords:FloatArray)=executeMap{MapEdit.WallsAdded(listOf(db.addWall(requireWarehouse(),coords)))}
+    /** Walls drawn faster than they are saved are queued, never dropped: the chain stays closed. */
+    fun addWall(coords:FloatArray) {
+        val warehouseId=ui.warehouse?.id ?: return
+        pendingWalls.addLast(warehouseId to coords.copyOf())
+        drainWalls()
+    }
+    private fun drainWalls() {
+        if(ui.busy) return
+        val (warehouseId,coords)=pendingWalls.removeFirstOrNull() ?: return
+        if(ui.warehouse?.id!=warehouseId) { pendingWalls.clear(); return }
+        executeMap { MapEdit.WallsAdded(listOf(db.addWall(warehouseId,coords))) }
+    }
     fun deleteWall(id:Long)=executeMap{
         val wall=requireNotNull(db.wall(id)){"Parete non trovata"}
         db.deleteWall(id)
@@ -489,13 +515,16 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         MapEdit.WallChanged(id,floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
     }
     fun importAr(json:String)=execute{clearMapHistory();db.importArScan(requireWarehouse(),json)}
-    fun seedDemo() = execute { db.seedDemo(requireWarehouse()) }
-    fun refreshDemo() = execute {
+    // Map history is touched on the main thread only, before the work starts.
+    fun seedDemo() { if(!ui.busy) clearMapHistory(); execute { db.seedDemo(requireWarehouse()) } }
+    fun refreshDemo() { if(!ui.busy) clearMapHistory(); refreshDemoNow() }
+    private fun refreshDemoNow() = execute {
         val names=db.removeDemo(requireWarehouse())
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
         db.seedDemo(requireWarehouse())
     }
-    fun removeDemo() = execute {
+    fun removeDemo() { if(!ui.busy) clearMapHistory(); removeDemoNow() }
+    private fun removeDemoNow() = execute {
         val names=db.removeDemo(requireWarehouse())
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
     }
@@ -534,6 +563,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=ui.copy(busy=true)
         try {
             withContext(Dispatchers.IO){BackupArchive(getApplication(),db).restore(uri,password)}
+            clearMapHistory();pendingWalls.clear()
             val profiles=withContext(Dispatchers.IO){db.profiles()}
             pendingNewItem=null;pendingProfileId=null;pendingWarehouseId=null
             ui=StockUiState(profiles=profiles,initialized=true,message="Backup ripristinato. Seleziona il profilo e inserisci il relativo PIN.")

@@ -4,6 +4,13 @@ package com.officinastock.app
  * Reversible map edits. [revert] undoes the edit on the database and returns the edit that redoes it,
  * so undo and redo share one code path. Ids are preserved on restore (AUTOINCREMENT never reuses them).
  */
+/** Multi-element edits are all-or-nothing: either every structure/wall comes back or none does. */
+internal inline fun <T> StockDb.atomically(block: () -> T): T {
+    val sql = writableDatabase
+    sql.beginTransaction()
+    try { val result = block(); sql.setTransactionSuccessful(); return result } finally { sql.endTransaction() }
+}
+
 sealed class MapEdit {
     abstract val label: String
     abstract fun revert(db: StockDb): MapEdit
@@ -12,14 +19,14 @@ sealed class MapEdit {
         override val label get() = if(ids.size == 1) "creazione struttura" else "creazione di ${ids.size} strutture"
         override fun revert(db: StockDb): MapEdit {
             val snapshots = ids.mapNotNull { id -> db.placement(id)?.let { it to db.itemSpots(id) } }
-            snapshots.forEach { db.deletePlacement(it.first.id) }
+            db.atomically { snapshots.forEach { db.deletePlacement(it.first.id) } }
             return Deleted(snapshots)
         }
     }
     data class Deleted(val snapshots: List<Pair<Placement, List<StockDb.ItemSpot>>>) : MapEdit() {
         override val label get() = "eliminazione struttura"
         override fun revert(db: StockDb): MapEdit {
-            snapshots.forEach { (p, spots) -> db.restorePlacement(p, spots) }
+            db.atomically { snapshots.forEach { (p, spots) -> db.restorePlacement(p, spots) } }
             return Created(snapshots.map { it.first.id })
         }
     }
@@ -43,14 +50,14 @@ sealed class MapEdit {
         override val label get() = "nuova parete"
         override fun revert(db: StockDb): MapEdit {
             val walls = ids.mapNotNull { db.wall(it) }
-            walls.forEach { db.deleteWall(it.id) }
+            db.atomically { walls.forEach { db.deleteWall(it.id) } }
             return WallsDeleted(walls)
         }
     }
     data class WallsDeleted(val walls: List<Wall>) : MapEdit() {
         override val label get() = "eliminazione parete"
         override fun revert(db: StockDb): MapEdit {
-            walls.forEach { db.restoreWall(it) }
+            db.atomically { walls.forEach { db.restoreWall(it) } }
             return WallsAdded(walls.map { it.id })
         }
     }

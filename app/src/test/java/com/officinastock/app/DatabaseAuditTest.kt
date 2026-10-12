@@ -109,6 +109,32 @@ class DatabaseAuditTest {
         rejects {db.updateItemDetails(warehouse,id,"Bad","Ricambi",Double.NaN,"pz","",null,"",null)}
         assertEquals("Cuscinetto",db.item(id)!!.name)
     }
+    @Test fun mapUndoNeverPutsThingsOutsideAShrunkRoomSoBackupsStayRestorable(){
+        // A structure and a wall near the far edge of a 12 x 8 m room.
+        val far=db.addPlacement(warehouse,"Scaffale","Lontano",11f,7f)
+        val wallId=db.addWall(warehouse,floatArrayOf(10f,7.5f,11.5f,7.5f))
+        val deleted=MapEdit.Deleted(listOf(db.placement(far)!! to db.itemSpots(far)))
+        db.deletePlacement(far)
+        val removedWall=MapEdit.WallsDeleted(listOf(db.wall(wallId)!!))
+        db.deleteWall(wallId)
+        db.updateMapSize(warehouse,6f,5f)
+        // Before 4.7.3 undo brought them back outside the room and the backup check then refused the archive.
+        rejects { deleted.revert(db) }
+        rejects { removedWall.revert(db) }
+        assertNull(db.placement(far))
+        assertNull(db.wall(wallId))
+        db.validateRestoredData()
+    }
+    @Test fun undoOfSeveralStructuresIsAllOrNothing(){
+        val inside=db.addPlacement(warehouse,"Scaffale","Dentro",2f,2f)
+        val outside=db.addPlacement(warehouse,"Scaffale","Fuori",11f,7f)
+        val snapshot=listOf(inside,outside).map { db.placement(it)!! to db.itemSpots(it) }
+        listOf(inside,outside).forEach { db.deletePlacement(it) }
+        db.updateMapSize(warehouse,6f,5f)
+        rejects { MapEdit.Deleted(snapshot).revert(db) }
+        // The one that would fit is not restored alone: the edit applies completely or not at all.
+        assertNull(db.placement(inside))
+    }
     @Test fun undoRecordsTheOppositeMovementAndKeepsHistory(){
         val id=item(10.0)
         db.movement(id,-1.0,"Prelievo rapido")

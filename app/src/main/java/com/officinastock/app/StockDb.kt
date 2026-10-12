@@ -641,6 +641,11 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         if(c.isNull(1)) null else c.getInt(1),if(c.isNull(2)) null else c.getInt(2))) } }
     /** Undo of a delete: same id, same geometry, items put back where they were (if still unplaced). */
     fun restorePlacement(p: Placement, spots: List<ItemSpot>) {
+        // A structure brought back must still fit the room: otherwise the backup could not be restored.
+        val (mapWidth,mapHeight)=mapBounds(p.warehouseId)
+        require(PlanGeometry.placementFitsRoom(p,mapWidth,mapHeight)) {
+            "La struttura non entra più nella pianta: impossibile annullare."
+        }
         val db=writableDatabase
         db.beginTransaction()
         try {
@@ -660,6 +665,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     }
     /** Undo/redo position: ignores the lock (it restores a previous state) but never leaves the room. */
     fun setPlacementPosition(id: Long, x: Float, y: Float) {
+        // Bounded below, so a stale undo can never move a structure outside the room.
         require(x.isFinite() && y.isFinite()) { "Coordinate non valide" }
         val p=requireNotNull(placement(id)) { "Struttura non trovata" }
         val (mapWidth,mapHeight)=mapBounds(p.warehouseId)
@@ -711,6 +717,10 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     }
     /** Undo of a wall delete: same id and source (manual or AR). */
     fun restoreWall(w: Wall) {
+        val (mapWidth,mapHeight)=mapBounds(w.warehouseId)
+        require(w.x1 in 0f..mapWidth && w.x2 in 0f..mapWidth && w.y1 in 0f..mapHeight && w.y2 in 0f..mapHeight) {
+            "La parete non entra più nella pianta: impossibile annullare."
+        }
         writableDatabase.insertOrThrow("walls",null,ContentValues().apply {
             put("id",w.id);put("warehouse_id",w.warehouseId);put("x1",w.x1);put("y1",w.y1)
             put("x2",w.x2);put("y2",w.y2);put("source",w.source)

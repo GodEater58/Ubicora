@@ -118,6 +118,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var draftCloses by remember(warehouse.id){mutableStateOf(false)}
     // 4.7.2: Back while drawing ends the current chain of walls instead of leaving the map.
     androidx.activity.compose.BackHandler(enabled=wallAnchor!=null) { wallAnchor=null;draftEnd=null;draftCloses=false }
+    // Back while choosing a location on the map cancels the choice instead of leaving it pending.
+    androidx.activity.compose.BackHandler(enabled=state.locationPickItemIds!=null) { model.cancelLocationPick() }
     var showNewObject by remember {mutableStateOf(false)}
     var showDimensions by remember {mutableStateOf(false)}
     var showRowFor by remember {mutableStateOf<Long?>(null)}
@@ -767,9 +769,10 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
 }
 
 /** Level/position choice; 0 = not specified. */
-@Composable fun PositionDialog(p:Placement,title:String,onClose:()->Unit,onConfirm:(Int?,Int?)->Unit){
-    var level by remember{mutableIntStateOf(0)}
-    var slot by remember{mutableIntStateOf(0)}
+@Composable fun PositionDialog(p:Placement,title:String,onClose:()->Unit,initialLevel:Int?=null,initialSlot:Int?=null,onConfirm:(Int?,Int?)->Unit){
+    // Opens on the current shelf/position when the item is already in this structure.
+    var level by remember(p.id){mutableIntStateOf((initialLevel ?: 0).coerceIn(0,p.levels))}
+    var slot by remember(p.id){mutableIntStateOf((initialSlot ?: 0).coerceIn(0,p.slots))}
     AlertDialog(onDismissRequest=onClose,title={Text(title)},text={
         Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Text(p.label,fontWeight=FontWeight.Bold)
