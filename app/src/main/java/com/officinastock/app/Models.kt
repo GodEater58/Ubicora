@@ -81,9 +81,26 @@ object ArticleCodes {
     )
     fun prefix(category: String): String = categoryPrefixes[category]
         ?: throw IllegalArgumentException("Categoria non riconosciuta")
-    fun format(prefix: String, serial: Long): String {
+    fun format(prefix: String, serial: Long, letter: String? = null): String {
         require(prefix in categoryPrefixes.values && serial in 1..999999999L) { "Codice articolo non valido" }
-        return "%s-%06d".format(java.util.Locale.ROOT, prefix, serial)
+        require(letter == null || isSatelliteLetter(letter)) { "Lettera telefono non valida" }
+        return "%s-%s%06d".format(java.util.Locale.ROOT, prefix, letter.orEmpty(), serial)
+    }
+    /** 4.8: satellite phones are B…Z; the central phone keeps codes without a letter. */
+    fun isSatelliteLetter(letter: String): Boolean = letter.length == 1 && letter[0] in 'B'..'Z'
+    /**
+     * "RIC-000012" or, from a satellite, "RIC-B000012". The letter keeps a separate numbering per
+     * phone, so codes created offline on different phones can never collide.
+     */
+    data class Code(val prefix: String, val letter: String?, val serial: Long) {
+        val sequenceKey: String get() = if (letter == null) prefix else "$prefix:$letter"
+    }
+    fun parseCode(sku: String): Code? {
+        val m = Regex("^([A-Z]{3})-([B-Z])?([0-9]{6,9})$").matchEntire(sku) ?: return null
+        val prefix = m.groupValues[1]
+        val serial = m.groupValues[3].toLongOrNull() ?: return null
+        if (prefix !in categoryPrefixes.values || serial !in 1..999999999L) return null
+        return Code(prefix, m.groupValues[2].ifEmpty { null }, serial)
     }
     fun payload(warehouseId: Long, sku: String): String =
         "OFFICINA-STOCK:1:W$warehouseId:$sku"

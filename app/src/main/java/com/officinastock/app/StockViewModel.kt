@@ -34,6 +34,8 @@ data class StockUiState(
     val csvPreviewCount: Int? = null,
     /** 4.7.2: last carico/prelievo, offered for a few seconds as "Annulla". */
     val movementUndo: MovementUndo? = null,
+    /** 4.8: role of this phone in the phone-to-phone sync. */
+    val team: TeamSyncStatus = TeamSyncStatus(),
     val orders: List<PurchaseRequest> = emptyList(),
     val stockCounts: List<StockCount> = emptyList(),
     val stockTransfers: List<StockTransfer> = emptyList(),
@@ -67,6 +69,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private val enterprise = EnterpriseDb(db)
     private val planning = StockPlanningDb(db)
     private val trace = StockTraceDb(db)
+    private val team = TeamSync(db)
     var ui by mutableStateOf(StockUiState())
         private set
     private var operationalRowLimit=250
@@ -164,6 +167,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     operationsLimit=operationalRowLimit,
                     reservedByItem=warehouse?.let {planning.reservedByItem(it.id)} ?: emptyMap(),
                     placementActivity=warehouse?.let {db.placementActivity(it.id,System.currentTimeMillis()-30*86_400_000L)} ?: emptyMap(),
+                    team=team.status(),
                     operationalReports=warehouse?.takeIf{profile!=null && operations.businessMode(profile.id)}?.let {w->
                         val now=System.currentTimeMillis()
                         listOf(7,30,90).associateWith{OperationalAnalytics(db).report(w.id,it,now)}
@@ -203,6 +207,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
      * Map edits reload only rooms, structures, walls and items instead of the whole archive
      * (orders, analytics, lots…), so dragging and assigning stay fast with large inventories.
      */
+    /** On a satellite the map belongs to the central phone: it arrives with each update. */
+    private fun requireMapEditable() {
+        val t=ui.team
+        require(!(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id)) {
+            "Su questo telefono (satellite ${t.letter}) la mappa si modifica solo dal telefono centrale"
+        }
+    }
     private fun executeMap(record:Boolean=true,action:()->MapEdit?) = runMap(action) { edit ->
         if(record) { mapUndo.addLast(edit);while(mapUndo.size>50)mapUndo.removeFirst();mapRedo.clear() }
     }
@@ -439,15 +450,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         operations.finishMaintenance(requireWarehouse(),id,complete,managerActor())
     }
     fun addPlacement(kind:String,label:String,x:Float?=null,y:Float?=null) = executeMap {
+        requireMapEditable()
         val wh=requireNotNull(ui.warehouse){"Seleziona un magazzino"}
         MapEdit.Created(listOf(db.addPlacement(wh.id,kind,label,x ?: wh.mapWidth/2f,y ?: wh.mapHeight/2f)))
     }
     fun duplicatePlacement(id:Long) = executeMap {
+        requireMapEditable()
         val src=requireNotNull(ui.placements.firstOrNull{it.id==id}){"Struttura non trovata"}
         val e=PlanGeometry.extents(src)
         MapEdit.Created(listOf(db.duplicatePlacement(id,src.x+e.x*2+.3f,src.y)))
     }
     fun createPlacementRow(id:Long,count:Int,gap:Float,vertical:Boolean) = executeMap {
+        requireMapEditable()
         MapEdit.Created(db.createPlacementRow(id,count,gap,vertical))
     }
     fun resizeMap(width:Float,height:Float) {
@@ -456,9 +470,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         mapCameras.remove(warehouseId)
         // Older edits refer to the previous room size: undoing them could put things outside it.
         clearMapHistory()
-        executeMap(record=false) { db.updateMapSize(warehouseId,width,height);null }
+        executeMap(record=false) { requireMapEditable();db.updateMapSize(warehouseId,width,height);null }
     }
     fun resizePlacement(id:Long,width:Float,depth:Float,rotation:Float)=executeMap {
+        requireMapEditable()
         val before=requireNotNull(db.placement(id)){"Struttura non trovata"}
         db.updatePlacementGeometry(id,width,depth,rotation)
         MapEdit.Reshaped(before)
@@ -475,14 +490,16 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         })
     }
     fun commitMove(id:Long,fromX:Float,fromY:Float,x:Float,y:Float) = executeMap {
+        requireMapEditable()
         require(db.movePlacement(id,x,y)){"Struttura bloccata o non trovata"}
         val after=requireNotNull(db.placement(id))
         MapEdit.Moved(id,fromX,fromY,after.x,after.y)
     }
-    fun lockPlacement(id:Long,locked:Boolean)=executeMap(record=false){db.lockPlacement(id,locked);null}
-    fun renamePlacement(id:Long,label:String)=executeMap(record=false){db.renamePlacement(id,label);null}
-    fun updatePlacementLayout(id:Long,levels:Int,slots:Int)=executeMap(record=false){db.updatePlacementLayout(id,levels,slots);null}
+    fun lockPlacement(id:Long,locked:Boolean)=executeMap(record=false){requireMapEditable();db.lockPlacement(id,locked);null}
+    fun renamePlacement(id:Long,label:String)=executeMap(record=false){requireMapEditable();db.renamePlacement(id,label);null}
+    fun updatePlacementLayout(id:Long,levels:Int,slots:Int)=executeMap(record=false){requireMapEditable();db.updatePlacementLayout(id,levels,slots);null}
     fun deletePlacement(id:Long)=executeMap {
+        requireMapEditable()
         val snapshot=requireNotNull(db.placement(id)){"Struttura non trovata"}
         val spots=db.itemSpots(id)
         db.deletePlacement(id)
@@ -502,23 +519,27 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.busy) return
         val (warehouseId,coords)=pendingWalls.removeFirstOrNull() ?: return
         if(ui.warehouse?.id!=warehouseId) { pendingWalls.clear(); return }
-        executeMap { MapEdit.WallsAdded(listOf(db.addWall(warehouseId,coords))) }
+        executeMap { requireMapEditable();MapEdit.WallsAdded(listOf(db.addWall(warehouseId,coords))) }
     }
     fun deleteWall(id:Long)=executeMap{
+        requireMapEditable()
         val wall=requireNotNull(db.wall(id)){"Parete non trovata"}
         db.deleteWall(id)
         MapEdit.WallsDeleted(listOf(wall))
     }
     fun setWallLength(id:Long,length:Float)=executeMap{
+        requireMapEditable()
         val wall=requireNotNull(db.wall(id)){"Parete non trovata"}
         db.updateWall(id,PlanGeometry.withLength(wall,length))
         MapEdit.WallChanged(id,floatArrayOf(wall.x1,wall.y1,wall.x2,wall.y2))
     }
-    fun importAr(json:String)=execute{clearMapHistory();db.importArScan(requireWarehouse(),json)}
+    fun importAr(json:String) { if(!ui.busy) clearMapHistory(); execute{requireMapEditable();db.importArScan(requireWarehouse(),json)} }
     // Map history is touched on the main thread only, before the work starts.
-    fun seedDemo() { if(!ui.busy) clearMapHistory(); execute { db.seedDemo(requireWarehouse()) } }
+    private fun requireNoSync() = require(ui.team.role==TeamRole.NONE) { "Con la sincronizzazione attiva i dati dimostrativi non sono disponibili" }
+    fun seedDemo() { if(!ui.busy) clearMapHistory(); execute { requireNoSync();db.seedDemo(requireWarehouse()) } }
     fun refreshDemo() { if(!ui.busy) clearMapHistory(); refreshDemoNow() }
     private fun refreshDemoNow() = execute {
+        requireNoSync()
         val names=db.removeDemo(requireWarehouse())
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
         db.seedDemo(requireWarehouse())
@@ -626,6 +647,53 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(warehouseId==requireWarehouse() && !ui.sessionLocked) { "Magazzino cambiato" }
         db.importCsv(warehouseId,rows)
         pendingCsvImport=null
+    }
+    // ---- 4.8 phone-to-phone sync ----
+    fun becomeTeamCentral(password:String) = execute { team.becomeCentral(requireWarehouse(),password) }
+    fun leaveTeam() = execute { team.leave() }
+    fun dismissTeamConflicts() = execute { team.dismissConflicts() }
+    /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
+    private suspend fun teamFile(block:()->String):String {
+        require(!ui.busy && ui.profile!=null && !ui.sessionLocked) { "Attendi il completamento dell'operazione in corso" }
+        val generation=backgroundGeneration
+        ui=ui.copy(busy=true,message=null)
+        try {
+            val text=withContext(Dispatchers.IO) { block() }
+            clearMapHistory()
+            reloadAfterSelection(null,generation)
+            return text
+        } finally { ui=ui.copy(busy=false) }
+    }
+    suspend fun teamExport(uri:Uri):String = teamFile {
+        val resolver=getApplication<Application>().contentResolver
+        (resolver.openOutputStream(uri) ?: error("Impossibile creare il file")).use { out ->
+            if(team.status().role==TeamRole.CENTRAL) { team.exportState(out); "Aggiornamento pronto: invialo agli altri telefoni" }
+            else { val n=team.exportChanges(out); if(n==0) "Nessuna modifica nuova: il file serve solo a confermare" else "$n modifiche pronte: invia il file al telefono centrale" }
+        }
+    }
+    suspend fun teamImport(uri:Uri):String = teamFile {
+        val resolver=getApplication<Application>().contentResolver
+        (resolver.openInputStream(uri) ?: error("Impossibile leggere il file")).use { input ->
+            if(team.status().role==TeamRole.CENTRAL) {
+                val r=team.importChanges(input)
+                "Importati: ${r.articles} articoli nuovi, ${r.movements} movimenti, ${r.locations} spostamenti" +
+                    (if(r.skipped>0) " · ${r.skipped} già importati" else "") + (if(r.conflicts>0) " · ${r.conflicts} conflitti da controllare" else "")
+            } else {
+                val r=team.importState(input)
+                "Aggiornato dal centrale: ${r.articles} articoli" + (if(r.skipped>0) " · ${r.skipped} tue modifiche ancora da inviare" else "")
+            }
+        }
+    }
+    suspend fun teamJoin(uri:Uri,password:String,letter:String):String {
+        val profileId=requireNotNull(ui.profile?.id) { "Accedi prima a un profilo" }
+        return teamFile {
+            val resolver=getApplication<Application>().contentResolver
+            (resolver.openInputStream(uri) ?: error("Impossibile leggere il file")).use { input ->
+                val r=team.joinAsSatellite(profileId,input,password,letter.uppercase())
+                pendingWarehouseId=team.status().warehouseId
+                "Collegato come satellite $letter: ${r.articles} articoli ricevuti"
+            }
+        }
     }
     fun exportCsv(): String=ui.warehouse?.let{db.csv(it.id)}?:""
     fun loadMoreOperations() = execute {

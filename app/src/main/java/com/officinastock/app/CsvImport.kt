@@ -106,10 +106,7 @@ object CsvImport {
             val sku=v[0].trim().uppercase(java.util.Locale.ROOT)
             require(ArticleCodes.categoryPrefixes.containsKey(v[2].trim())) { "Riga ${index+2}: categoria «${v[2]}» non valida" }
             if(sku.isNotEmpty()) {
-                val prefix=sku.substringBefore('-')
-                val serial=sku.substringAfter('-', "").toLongOrNull()
-                require(prefix in ArticleCodes.categoryPrefixes.values && serial!=null && serial in 1..999999999L &&
-                    Regex("^[A-Z]{3}-[0-9]{6,9}$").matches(sku)) { "Riga ${index+2}: codice non valido (lascialo vuoto per farlo assegnare all'app)" }
+                require(ArticleCodes.parseCode(sku)!=null) { "Riga ${index+2}: codice non valido (lascialo vuoto per farlo assegnare all'app)" }
                 require(seen.add(sku)) { "Codice duplicato nel CSV" }
             }
             // Empty quantity/minimum mean zero, an empty unit means pieces (spreadsheet friendly).

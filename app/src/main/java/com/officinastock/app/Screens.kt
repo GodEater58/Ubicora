@@ -816,6 +816,7 @@ private fun EditItemDetailsDialog(
             OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
         }}
+        item { TeamSyncPanel(model) }
         item {Panel(Modifier.fillMaxWidth()) {
             Text("BACKUP COMPLETO CIFRATO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text("Esporta profili, articoli, foto, movimenti, prestiti, magazzini, codici e planimetrie in un unico file protetto da password.",fontSize=12.sp,color=TextSecondary)

@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_native4.db", null, 11) {
+class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQLiteOpenHelper(context, name, null, 12) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -67,6 +67,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
         db.execSQL("CREATE INDEX idx_movements_item ON movements(item_id,created_at DESC)")
         db.execSQL("CREATE INDEX idx_movements_date ON movements(created_at)")
         db.execSQL("CREATE INDEX idx_loans_item ON loans(item_id,returned_at)")
+        TeamSyncSchema.create(db)
     }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -136,6 +137,8 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             addColumn("items","shelf_level","INTEGER DEFAULT NULL CHECK(shelf_level BETWEEN 1 AND 20)")
             addColumn("items","shelf_slot","INTEGER DEFAULT NULL CHECK(shelf_slot BETWEEN 1 AND 50)")
         }
+        // 4.8: phone-to-phone sync. Additive: global ids for items and structures, and the outbox.
+        if (oldVersion < 12 && newVersion >= 12) TeamSyncSchema.create(db)
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (
@@ -195,14 +198,23 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
     /** Riserva il progressivo nella stessa transazione che inserisce l'articolo. */
     private fun nextSku(db: SQLiteDatabase, category: String): String {
         val prefix = ArticleCodes.prefix(category)
-        db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)", arrayOf(prefix))
-        val number = db.rawQuery("SELECT next_value FROM sku_sequences WHERE prefix=?", arrayOf(prefix)).use {
+        // A satellite numbers its own codes (RIC-B000001…): no collision with the other phones.
+        val letter = TeamSyncSchema.satelliteLetter(db)
+        val key = if (letter == null) prefix else "$prefix:$letter"
+        db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)", arrayOf(key))
+        val number = db.rawQuery("SELECT next_value FROM sku_sequences WHERE prefix=?", arrayOf(key)).use {
             require(it.moveToFirst()) { "Numerazione non disponibile" }
             it.getLong(0)
         }
-        val code = ArticleCodes.format(prefix,number)
-        db.execSQL("UPDATE sku_sequences SET next_value=? WHERE prefix=?", arrayOf(number+1,prefix))
+        val code = ArticleCodes.format(prefix,number,letter)
+        db.execSQL("UPDATE sku_sequences SET next_value=? WHERE prefix=?", arrayOf(number+1,key))
         return code
+    }
+    /** Keeps the numbering of [sku]'s series above [sku], whatever phone created it. */
+    internal fun bumpSequence(db: SQLiteDatabase, sku: String) {
+        val code = ArticleCodes.parseCode(sku) ?: return
+        db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)", arrayOf(code.sequenceKey))
+        db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?", arrayOf(code.serial+1,code.sequenceKey))
     }
     private fun salt() = ByteArray(16).also { SecureRandom().nextBytes(it) }
     private fun proof(pin: String, salt: ByteArray): String {
@@ -425,6 +437,23 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
             recordMovement(db,itemId,delta,note)
         }
+    }
+    /** Stock change received from another phone: same checks as a local movement, original date kept. */
+    internal fun applyTeamMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, at: Long) {
+        require(delta.isFinite() && delta != 0.0) { "quantità nulla" }
+        db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { cursor ->
+            require(cursor.moveToFirst()) { "articolo non trovato" }
+            val next=StockRules.applyDelta(cursor.getDouble(0),delta)
+            StockPlanningDb.assertUnreservedStock(db,itemId,next)
+            StockTraceDb.assertPhysicalFloor(db,itemId,next)
+            db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
+            recordTeamMovement(db,itemId,delta,note,at)
+        }
+    }
+    internal fun recordTeamMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, at: Long) {
+        db.insertOrThrow("movements",null,ContentValues().apply {
+            put("item_id",itemId);put("delta",delta);put("note",note.ifBlank{"Sincronizzazione"});put("created_at",at.coerceIn(0L,4102444800000L))
+        })
     }
     fun movement(itemId: Long, delta: Double, note: String) {
         require(delta.isFinite() && delta != 0.0) { "Inserisci una quantità diversa da zero" }
@@ -949,12 +978,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             val locations=placements(warehouseId).associateBy { it.label }
             // Codes written in the file reserve their numbers first, so an automatic code given to
             // another row can never collide with one that appears later in the same file.
-            for(row in rows.filter { it.sku.isNotEmpty() }) {
-                val prefix=row.sku.substringBefore('-')
-                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
-                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
-                    arrayOf(row.sku.substringAfter('-').toLong()+1,prefix))
-            }
+            for(row in rows.filter { it.sku.isNotEmpty() }) bumpSequence(db,row.sku)
             for(row in rows) {
                 // No code in the file: the next one of the category, as when the article is created in the app.
                 val sku=row.sku.ifEmpty { nextSku(db,row.category) }
@@ -972,11 +996,7 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
                 }
                 val id=db.insertOrThrow("items",null,values)
                 if(row.quantity>0)recordMovement(db,id,row.quantity,"Carico iniziale da CSV")
-                val prefix=sku.substringBefore('-')
-                val serial=sku.substringAfter('-').toLong()
-                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
-                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",
-                    arrayOf(serial+1,prefix))
+                bumpSequence(db,sku)
             }
             db.setTransactionSuccessful()
             return rows.size
@@ -1089,13 +1109,9 @@ class StockDb(context: Context): SQLiteOpenHelper(context, "officina_stock_nativ
             require(!it.moveToFirst()){"Trasferimento non coerente nel backup"}
         }
         // Restoring stale counters must not make the next insert collide with an existing SKU.
-        db.rawQuery("SELECT sku FROM items",null).use { c -> while(c.moveToNext()) {
-            val sku=c.getString(0);val prefix=sku.substringBefore('-');val serial=sku.substringAfter('-').toLongOrNull()
-            if(prefix in ArticleCodes.categoryPrefixes.values && serial!=null && serial in 1..999999999L) {
-                db.execSQL("INSERT OR IGNORE INTO sku_sequences(prefix,next_value) VALUES(?,1)",arrayOf(prefix))
-                db.execSQL("UPDATE sku_sequences SET next_value=max(next_value,?) WHERE prefix=?",arrayOf(serial+1,prefix))
-            }
-        } }
+        db.rawQuery("SELECT sku FROM items",null).use { c -> while(c.moveToNext()) bumpSequence(db,c.getString(0)) }
+        // Archives from before 4.8 have no global ids: give them one now.
+        TeamSyncSchema.backfillIds(db)
     }
 }
 
