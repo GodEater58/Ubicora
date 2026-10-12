@@ -34,4 +34,28 @@ class QualityOfLifeTest {
         assertEquals("Carico 2,50 pz · Anello",MovementUndo.label(2.5,b))
         assertEquals("Carico 3",MovementUndo.label(3.0,null))
     }
+    @Test fun unitMenuPutsTheCategoryUnitsFirstAndKeepsEveryUnit() {
+        assertEquals(listOf("paia","pz","conf"),MeasureUnits.suggested("DPI"))
+        val dpi=MeasureUnits.options("DPI")
+        assertEquals(listOf("paia","pz","conf"),dpi.take(3))
+        assertEquals(MeasureUnits.all.keys.toSet(),dpi.toSet())
+        assertEquals(dpi.size,dpi.distinct().size)
+        // Every category has a default, and an unknown category still gets "pz".
+        ArticleCodes.categoryPrefixes.keys.forEach { assertTrue(MeasureUnits.suggested(it).isNotEmpty()) }
+        assertEquals("pz",MeasureUnits.suggested("Sconosciuta").first())
+    }
+    @Test fun changingCategoryKeepsAFittingUnitOtherwiseUsesTheDefault() {
+        assertEquals("pz",MeasureUnits.afterCategoryChange("Utensili","pz"))
+        assertEquals("paia",MeasureUnits.afterCategoryChange("DPI","kg"))
+        assertEquals("conf",MeasureUnits.afterCategoryChange("Consumabili","set"))
+    }
+    @Test fun aLegacyTypedUnitStaysSelectable() {
+        val options=MeasureUnits.options("Ricambi","bobine")
+        assertEquals("bobine",options.first())
+        assertEquals("bobine",MeasureUnits.label("bobine"))
+        assertEquals("pz · pezzi",MeasureUnits.label("pz"))
+    }
+    @Test fun everyUnitFitsTheDatabaseLimit() {
+        MeasureUnits.all.keys.forEach { assertTrue(it.length in 1..24) }
+    }
 }

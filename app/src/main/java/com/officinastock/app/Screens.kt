@@ -285,6 +285,30 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
     }
 }
 
+/** Unit of measure chosen from a menu: the category's usual units first, then all the others. */
+@Composable fun UnitPicker(value:String,category:String,onChange:(String)->Unit) {
+    var open by remember { mutableStateOf(false) }
+    val options=MeasureUnits.options(category,value)
+    val suggested=MeasureUnits.suggested(category)
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedTextField(MeasureUnits.label(value),onValueChange={},readOnly=true,singleLine=true,
+            label={Text("Unità di misura")},
+            trailingIcon={Icon(if(open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,contentDescription=null)},
+            modifier=Modifier.fillMaxWidth())
+        // The read-only field does not open menus by itself: a transparent layer takes the tap.
+        Box(Modifier.matchParentSize().clickable(onClickLabel="Scegli l'unità di misura") { open=true })
+        DropdownMenu(expanded=open,onDismissRequest={open=false}) {
+            options.forEachIndexed { index,code ->
+                if(index>0 && code !in suggested && options[index-1] in suggested) HorizontalDivider()
+                DropdownMenuItem(
+                    text={Text(MeasureUnits.label(code),fontWeight=if(code==value) FontWeight.Bold else FontWeight.Normal,
+                        color=if(code in suggested || code==value) TextPrimary else TextSecondary)},
+                    onClick={onChange(code);open=false})
+            }
+        }
+    }
+}
+
 /** Small ±1 button on an inventory row (40 dp touch target). */
 @Composable fun QuickStep(icon:androidx.compose.ui.graphics.vector.ImageVector,description:String,enabled:Boolean,onClick:()->Unit) {
     FilledTonalIconButton(onClick=onClick,enabled=enabled,modifier=Modifier.size(40.dp)) {
@@ -489,7 +513,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             Column { categories.chunked(3).forEach { group->
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                     group.forEach { cat ->
-                        FilterChip(selected=category==cat,onClick={category=cat},label={Text(cat,fontSize=10.sp)})
+                        FilterChip(selected=category==cat,onClick={category=cat;unit=MeasureUnits.afterCategoryChange(cat,unit)},label={Text(cat,fontSize=10.sp)})
                     }
                 }
             } }
@@ -502,7 +526,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
             Input(note,{note=it},"Descrizione (facoltativa)")
             Input(qty,{qty=it},"Quantità iniziale",number=true)
             Input(min,{min=it},"Soglia minima",number=true)
-            Input(unit,{unit=it},"Unità (pz, m, kg...)")
+            UnitPicker(unit,category,{unit=it})
             Text("DATI PER IL CONTROLLO MANAGERIALE · FACOLTATIVI",fontSize=10.sp,color=Mint,fontWeight=FontWeight.Bold)
             Input(unitCost,{unitCost=it},"Costo unitario (€)",number=true)
             Input(supplier,{supplier=it},"Fornitore")
@@ -551,7 +575,8 @@ private fun EditItemDetailsDialog(
                 }
             }
             Input(minimum,{minimum=it},"Scorta minima",number=true)
-            Input(unit,{unit=it},"Unità di misura")
+            UnitPicker(unit,category,{unit=it})
+            if(unit!=item.unit) Text("L'unità si può cambiare solo con giacenza zero e senza operazioni aperte.",fontSize=11.sp,color=Amber)
             Input(note,{note=it},"Descrizione")
             Input(cost,{cost=it},"Costo unitario EUR",number=true)
             Input(supplier,{supplier=it},"Fornitore")
