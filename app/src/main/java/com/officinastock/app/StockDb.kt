@@ -70,6 +70,17 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         TeamSyncSchema.create(db)
     }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
+    /**
+     * 4.10.2: indexes for lookups that grew with the map and the sync (articles of a structure,
+     * walls of a warehouse). IF NOT EXISTS: created once, on any database version, no migration needed.
+     */
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        if (!db.isReadOnly) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_items_placement ON items(placement_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
+        }
+    }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // Aggiornamento additivo: conserva articoli, movimenti, magazzini e profili della 4.0.0.
         if (oldVersion < 2) {

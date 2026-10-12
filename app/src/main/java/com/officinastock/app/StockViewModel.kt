@@ -138,7 +138,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun burstSkip() { ui=ui.copy(burstItemId=null); requestScan() }
     fun burstPick(itemId:Long,quantity:Double) {
         if(!(quantity>0.0)) return
-        execute(onSuccess={ ui=ui.copy(burstItemId=null,burstCount=ui.burstCount+1); if(ui.burstMode) requestScan() }) {
+        execute(onSuccess={ ui=ui.copy(burstItemId=null,burstCount=ui.burstCount+1); if(ui.burstMode) requestScan() },light=true) {
             db.movement(itemId,-quantity,"Prelievo a raffica")
         }
     }
@@ -162,7 +162,32 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         return TeamQr.encode(password,t.peers.map { it.letter },ui.warehouse?.name ?: "")
     }
 
-    private fun execute(onSuccess: (() -> Unit)? = null, action: () -> Unit) {
+    /**
+     * 4.10.2: after a carico/prelievo/prestito only what a movement can change is read again
+     * (articles, movements, loans, statistics, sync counter), not the whole archive: faster on
+     * large warehouses. Anything unexpected falls back to the full reload.
+     */
+    private suspend fun reloadStock(error:String?,generation:Long) {
+        val profile=ui.profile; val warehouse=ui.warehouse
+        if(profile==null || warehouse==null || generation!=backgroundGeneration) { reloadAfterSelection(error,generation);return }
+        val business=ui.businessMode
+        val fresh=withContext(Dispatchers.IO) {
+            val now=System.currentTimeMillis(); val day=86_400_000L
+            StockRefresh(db.items(warehouse.id),db.movements(warehouse.id),db.activeLoans(warehouse.id),
+                ManagerSnapshot(db.dailyActivity(warehouse.id,now-90*day),db.usageSummary(warehouse.id,now)),
+                planning.reservedByItem(warehouse.id),db.placementActivity(warehouse.id,now-30*day),team.status(),
+                if(business) listOf(7,30,90).associateWith{OperationalAnalytics(db).report(warehouse.id,it,now)} else emptyMap())
+        }
+        if(ui.warehouse?.id!=warehouse.id || generation!=backgroundGeneration) { reloadAfterSelection(error,generation);return }
+        ui=ui.copy(items=fresh.items,movements=fresh.movements,loans=fresh.loans,manager=fresh.manager,
+            reservedByItem=fresh.reserved,placementActivity=fresh.activity,team=fresh.team,
+            operationalReports=if(business) fresh.reports else ui.operationalReports,
+            burstItemId=ui.burstItemId?.takeIf{id->fresh.items.any{it.id==id}},message=error)
+    }
+    private class StockRefresh(val items:List<StockItem>,val movements:List<Movement>,val loans:List<Loan>,val manager:ManagerSnapshot,
+        val reserved:Map<Long,Double>,val activity:Map<Long,Int>,val team:TeamSyncStatus,val reports:Map<Int,OperationalReport>)
+
+    private fun execute(onSuccess: (() -> Unit)? = null, light: Boolean = false, action: () -> Unit) {
         if(ui.busy) return
         val generation=backgroundGeneration
         ui=ui.copy(busy=true, message=null)
@@ -172,7 +197,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     try { action(); null } catch(e:CancellationException) { throw e }
                     catch(e:Exception) { (e.message ?: "Operazione non riuscita").substringBefore(" (code ") }
                 }
-                reloadAfterSelection(failure,generation)
+                if(light) reloadStock(failure,generation) else reloadAfterSelection(failure,generation)
                 if(failure==null && generation==backgroundGeneration) onSuccess?.invoke()
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
@@ -226,6 +251,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked,mapFocusPlacementId=ui.mapFocusPlacementId,
+            // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
+            burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,
+            burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
+            scanRequest=ui.scanRequest,teamQr=ui.teamQr,
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},
             mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
         pendingNewItem = null
@@ -311,12 +340,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             val warehouses=db.warehouses(profileId)
             val warehouse=warehouses.firstOrNull{it.id==warehouseId}
             if(warehouse==null) null else listOf(warehouses,warehouse,db.items(warehouseId),db.placements(warehouseId),
-                db.walls(warehouseId),db.placementActivity(warehouseId,System.currentTimeMillis()-30*86_400_000L))
+                db.walls(warehouseId),db.placementActivity(warehouseId,System.currentTimeMillis()-30*86_400_000L),team.status())
         }
         if(fresh==null) { reload(error);return }
         @Suppress("UNCHECKED_CAST")
         ui=ui.copy(warehouses=fresh[0] as List<Warehouse>,warehouse=fresh[1] as Warehouse,items=fresh[2] as List<StockItem>,
-            placements=fresh[3] as List<Placement>,walls=fresh[4] as List<Wall>,placementActivity=fresh[5] as Map<Long,Int>,message=error)
+            placements=fresh[3] as List<Placement>,walls=fresh[4] as List<Wall>,placementActivity=fresh[5] as Map<Long,Int>,
+            team=fresh[6] as TeamSyncStatus,message=error)
     }
     // An edit leaves its stack only when the revert really runs; a double tap while saving does not
     // lose it. If the revert fails (e.g. the structure was deleted meanwhile) it is dropped on purpose.
@@ -406,7 +436,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun movement(itemId:Long,delta:Double,note:String) {
         val item=ui.items.firstOrNull { it.id==itemId }
         val label=MovementUndo.label(delta,item)
-        execute(onSuccess={ ui=ui.copy(movementUndo=MovementUndo(itemId,delta,label,System.nanoTime())) }) {
+        execute(onSuccess={ ui=ui.copy(movementUndo=MovementUndo(itemId,delta,label,System.nanoTime())) },light=true) {
             if(delta>0) requireDepartment(listOf(itemId),"qui puoi solo prelevare")
             db.movement(itemId,delta,note)
         }
@@ -418,15 +448,15 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val undo=ui.movementUndo ?: return
         if(ui.busy) return
         ui=ui.copy(movementUndo=null)
-        execute { team.returning { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) } }
+        execute(light=true) { team.returning { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) } }
     }
     fun dismissMovementUndo(token:Long) { if(ui.movementUndo?.token==token) ui=ui.copy(movementUndo=null) }
     fun reconcileQuantity(itemId:Long,counted:Double,reason:String) = execute {
         requireDepartment(listOf(itemId),"la rettifica la fa il telefono centrale")
         db.reconcileQuantity(itemId,counted,reason)
     }
-    fun lend(itemId:Long,borrower:String,amount:Double) = execute { db.lend(itemId,borrower,amount) }
-    fun returnLoan(id:Long) = execute { team.returning { db.returnLoan(id) } }
+    fun lend(itemId:Long,borrower:String,amount:Double) = execute(light=true) { db.lend(itemId,borrower,amount) }
+    fun returnLoan(id:Long) = execute(light=true) { team.returning { db.returnLoan(id) } }
     /** Local managerial actions operate only on the currently authenticated warehouse. */
     private fun managerActor():String = requireNotNull(ui.profile){"Profilo non selezionato"}.name
     fun changeManagerMode(business:Boolean) = execute {

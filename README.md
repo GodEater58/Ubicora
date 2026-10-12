@@ -1,5 +1,7 @@
-# Ubicora — Android nativo 4.10.1
+# Ubicora — Android nativo 4.10.2
 
+> **4.10.2:** prelievo a raffica che resta attivo, contatore sincronizzazione dopo gli spostamenti, carichi e prelievi più veloci. Dettagli: [CHANGELOG 4.10.2](docs/CHANGELOG_4_10_2.md).
+>
 > **4.10.1:** barre di sistema coerenti con il tema chiaro; prelievo a raffica con giacenze sotto 1 unità. Dettagli: [CHANGELOG 4.10.1](docs/CHANGELOG_4_10_1.md).
 >
 > **4.10.0:** collegamento con QR, sincronizza dalla Panoramica, prelievo a raffica, lista da ordinare da condividere, modalità guanti, tema chiaro, preferiti, screenshot consentibili. Dettagli: [CHANGELOG 4.10.0](docs/CHANGELOG_4_10_0.md).
