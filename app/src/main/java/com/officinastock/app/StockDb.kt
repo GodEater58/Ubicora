@@ -266,6 +266,25 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             return valid
         }
     }
+    /** 4.14: new PIN for [profileId]; the current one is checked with the same attempt limits as the login. */
+    fun changePin(profileId: Long, currentPin: String, newPin: String) {
+        require(newPin.matches(Regex("[0-9]{4,8}"))) { "Il nuovo PIN deve contenere da 4 a 8 cifre" }
+        require(newPin != currentPin) { "Il nuovo PIN è uguale a quello attuale" }
+        require(authenticate(profileId, currentPin)) { "PIN attuale errato" }
+        val salt = salt()
+        val changed = writableDatabase.update("profiles", ContentValues().apply {
+            put("salt", Base64.getEncoder().encodeToString(salt)); put("verifier", proof(newPin, salt))
+        }, "id=?", arrayOf(profileId.toString()))
+        require(changed == 1) { "Profilo inesistente" }
+    }
+    /** 4.14: new name and place of a warehouse of [profileId]. */
+    fun renameWarehouse(profileId: Long, warehouseId: Long, name: String, location: String) {
+        require(name.trim().isNotEmpty()) { "Inserisci un nome per il magazzino" }
+        require(name.trim().length <= 160 && location.trim().length <= 300) { "Nome o località troppo lunghi" }
+        val changed = writableDatabase.update("warehouses", ContentValues().apply { put("name", name.trim()); put("location", location.trim()) },
+            "id=? AND profile_id=?", arrayOf(warehouseId.toString(), profileId.toString()))
+        require(changed == 1) { "Magazzino inesistente" }
+    }
     fun createWarehouse(profileId: Long, name: String, location: String): Long {
         require(name.trim().isNotEmpty()) { "Inserisci un nome per il magazzino" }
         return writableDatabase.insertOrThrow("warehouses",null,ContentValues().apply {

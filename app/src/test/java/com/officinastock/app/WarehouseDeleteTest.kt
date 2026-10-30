@@ -62,6 +62,28 @@ class WarehouseDeleteTest {
         assertEquals("Officina", model.ui.warehouse?.name)
     }
 
+    @Test fun renamesAWarehouse() = runBlocking {
+        model.renameWarehouse(model.ui.warehouse!!, "  Officina 2 ", "Beverare"); awaitIdle()
+        assertEquals("Officina 2", model.ui.warehouse?.name)
+        assertEquals("Beverare", model.ui.warehouse?.location)
+        model.renameWarehouse(model.ui.warehouse!!, " ", ""); awaitIdle()
+        assertEquals("Officina 2", model.ui.warehouse?.name)
+    }
+
+    @Test fun changesThePinOnlyWithTheRightOne() = runBlocking {
+        var done = false
+        model.changePin("0000", "4321") { done = true }; awaitIdle()
+        assertFalse(done)
+        model.changePin("1234", "4321") { done = true }; awaitIdle()
+        assertTrue(done)
+        val db = StockDb(RuntimeEnvironment.getApplication())
+        try {
+            val id = model.ui.profile!!.id
+            assertTrue(db.authenticate(id, "4321"))
+            assertFalse(db.authenticate(id, "1234"))
+        } finally { db.close() }
+    }
+
     @Test fun syncedWarehouseIsProtected() = runBlocking {
         model.becomeTeamCentral("password-del-team-1"); awaitIdle()
         assertEquals(TeamRole.CENTRAL, model.ui.team.role)

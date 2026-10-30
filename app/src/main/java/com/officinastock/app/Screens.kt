@@ -130,6 +130,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 @Composable fun WarehouseChooserScreen(model:StockViewModel) {
     var show by remember{mutableStateOf(false)}
     var deleting by remember{mutableStateOf<Warehouse?>(null)}
+    var renaming by remember{mutableStateOf<Warehouse?>(null)}
+    var actionsFor by remember{mutableStateOf<Warehouse?>(null)}
     var name by remember{mutableStateOf("")};var location by remember{mutableStateOf("")}
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Spacer(Modifier.height(26.dp))
@@ -139,7 +141,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         Spacer(Modifier.height(18.dp))
         LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             items(model.ui.warehouses,key={it.id}) { w ->
-                Panel(Modifier.fillMaxWidth().combinedClickable(onClick={model.selectWarehouse(w)},onLongClick={deleting=w})) {
+                Panel(Modifier.fillMaxWidth().combinedClickable(onClick={model.selectWarehouse(w)},onLongClick={actionsFor=w})) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Warehouse,null,tint=Mint)
                         Spacer(Modifier.width(12.dp))
@@ -148,7 +150,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             }
-            if(model.ui.warehouses.isNotEmpty()) item { Text("Tieni premuto un magazzino per eliminarlo",fontSize=11.sp,color=TextSecondary) }
+            if(model.ui.warehouses.isNotEmpty()) item { Text("Tieni premuto un magazzino per rinominarlo o eliminarlo",fontSize=11.sp,color=TextSecondary) }
             // 4.10: a colleague's phone can join the team straight away, without creating a warehouse first.
             if(model.ui.team.role==TeamRole.NONE) item { TeamSyncPanel(model) }
         }
@@ -157,6 +159,13 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         model.ui.message?.let{Text(it,color=Danger)}
     }
     deleting?.let { w -> DeleteWarehouseDialog(model,w) { deleting=null } }
+    renaming?.let { w -> RenameWarehouseDialog(model,w) { renaming=null } }
+    actionsFor?.let { w -> AlertDialog(onDismissRequest={actionsFor=null},title={Text(w.name)},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick={actionsFor=null;renaming=w},modifier=Modifier.fillMaxWidth()){Icon(Icons.Outlined.Edit,null);Spacer(Modifier.width(8.dp));Text("Rinomina")}
+            OutlinedButton(onClick={actionsFor=null;deleting=w},modifier=Modifier.fillMaxWidth()){Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(8.dp));Text("Elimina",color=Danger)}
+        }
+    },confirmButton={TextButton(onClick={actionsFor=null}){Text("Chiudi")}}) }
     if(show) AlertDialog(onDismissRequest={show=false},title={Text("Nuovo magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome magazzino");Input(location,{location=it},"Località / descrizione")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);show=false},enabled=name.isNotBlank()){Text("Crea")}},
@@ -808,6 +817,7 @@ private fun EditItemDetailsDialog(
     var archiveError by remember { mutableStateOf<String?>(null) }
     var newWarehouse by remember{mutableStateOf(false)}
     var deleteWarehouse by remember{mutableStateOf(false)}
+    var renameWarehouse by remember{mutableStateOf(false)}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
     var showLegal by remember{mutableStateOf(false)}
@@ -848,6 +858,7 @@ private fun EditItemDetailsDialog(
             Text("MAGAZZINI",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text(model.ui.warehouse?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
             OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
+            OutlinedButton(onClick={renameWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Rinomina questo magazzino")}
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
             TextButton(onClick={deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questo magazzino",color=Danger)}
         }}
@@ -924,6 +935,7 @@ private fun EditItemDetailsDialog(
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
     if(deleteWarehouse) model.ui.warehouse?.let { w -> DeleteWarehouseDialog(model,w) { deleteWarehouse=false } }
+    if(renameWarehouse) model.ui.warehouse?.let { w -> RenameWarehouseDialog(model,w) { renameWarehouse=false } }
     if(confirmDemoRefresh) AlertDialog(onDismissRequest={confirmDemoRefresh=false},title={Text("Rigenerare la demo completa?")},text={
         Text("Sostituisce tutti gli elementi marcati DEMO, comprese eventuali prove fatte su quegli articoli. Non elimina gli articoli creati personalmente. È consigliato esportare un backup prima.")
     },confirmButton={TextButton(onClick={model.refreshDemo();confirmDemoRefresh=false}){Text("Rigenera demo")}},
@@ -989,4 +1001,24 @@ private fun EditItemDetailsDialog(
     },confirmButton={ if(!synced) TextButton(onClick={model.deleteWarehouse(w,typed);onClose()},
         enabled=typed.trim().equals(w.name.trim(),ignoreCase=true)&&!model.ui.busy){Text("Elimina",color=Danger)} },
         dismissButton={TextButton(onClick=onClose){Text(if(synced) "Chiudi" else "Annulla")}})
+}
+
+/** 4.14: new name and place of a warehouse. On a synced satellite the central decides the name. */
+@Composable fun RenameWarehouseDialog(model:StockViewModel,w:Warehouse,onClose:()->Unit) {
+    var name by remember(w.id){mutableStateOf(w.name)}
+    var location by remember(w.id){mutableStateOf(w.location)}
+    val satellite=model.ui.team.role==TeamRole.SATELLITE && model.ui.team.warehouseId==w.id
+    AlertDialog(onDismissRequest=onClose,title={Text("Rinomina magazzino")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(satellite) Text("Questo magazzino è sincronizzato: il nome si cambia dal telefono centrale e arriva qui con la sincronizzazione.",color=Amber)
+            else {
+                Input(name,{name=it.take(160)},"Nome magazzino")
+                Input(location,{location=it.take(300)},"Località / descrizione")
+                if(model.ui.team.role==TeamRole.CENTRAL && model.ui.team.warehouseId==w.id)
+                    Text("Il nuovo nome arriva anche ai satelliti con la prossima sincronizzazione.",fontSize=11.sp,color=TextSecondary)
+            }
+        }
+    },confirmButton={ if(!satellite) TextButton(onClick={model.renameWarehouse(w,name,location);onClose()},
+        enabled=name.isNotBlank()&&(name.trim()!=w.name||location.trim()!=w.location)&&!model.ui.busy){Text("Salva")} },
+        dismissButton={TextButton(onClick=onClose){Text(if(satellite) "Chiudi" else "Annulla")}})
 }

@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.14.0](CHANGELOG_4_14_0.md) | rinomina del magazzino e cambio PIN dal profilo aperto. |
 | [4.13.0](CHANGELOG_4_13_0.md) | sincronizzazione automatica ad app aperta, eliminazione articoli propagata ai satelliti, ricerca/trasferimento che non restano mai bloccati. |
 | [4.12.1](CHANGELOG_4_12_1.md) | sincronizzazione vicina che restava bloccata su «Operazione in corso…»; eliminazione di un magazzino. |
 | [4.12.0](CHANGELOG_4_12_0.md) | archivio cifrato sul telefono (SQLCipher AES-256, chiave nel portachiavi sicuro di Android) con migrazione automatica verificata. |

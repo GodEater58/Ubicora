@@ -395,6 +395,23 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
+    /** 4.14: rename a warehouse. On a satellite the name comes from the central with every update. */
+    fun renameWarehouse(w:Warehouse,name:String,location:String) {
+        if(ui.busy || ui.sessionLocked || ui.profile?.id!=w.profileId) return
+        execute {
+            val t=team.status()
+            require(!(t.role==TeamRole.SATELLITE && t.warehouseId==w.id)) {
+                "Su questo telefono (satellite ${t.letter}) il nome del magazzino si cambia dal telefono centrale"
+            }
+            db.renameWarehouse(w.profileId,w.id,name,location)
+        }
+    }
+    /** 4.14: change the PIN of the profile in use; [onDone] runs only when it worked. */
+    fun changePin(currentPin:String,newPin:String,onDone:()->Unit) {
+        val p=ui.profile ?: return
+        if(ui.sessionLocked) return
+        execute(onSuccess=onDone) { db.changePin(p.id,currentPin,newPin) }
+    }
     /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
     val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) }
     fun deleteItem(itemId:Long) = execute {
