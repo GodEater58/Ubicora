@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.12.1](CHANGELOG_4_12_1.md) | sincronizzazione vicina che restava bloccata su «Operazione in corso…»; eliminazione di un magazzino. |
 | [4.12.0](CHANGELOG_4_12_0.md) | archivio cifrato sul telefono (SQLCipher AES-256, chiave nel portachiavi sicuro di Android) con migrazione automatica verificata. |
 | [4.11.0](CHANGELOG_4_11_0.md) | QR di collegamento con codice usa e getta, password della squadra nel portachiavi sicuro di Android, limiti sulla rete del centrale. |
 | [4.10.3](CHANGELOG_4_10_3.md) | il pulsante «Scansiona QR» non copre più l'ultimo elemento delle liste. |

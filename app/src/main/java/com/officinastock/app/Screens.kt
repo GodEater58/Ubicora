@@ -793,6 +793,7 @@ private fun EditItemDetailsDialog(
     var archivePins by remember { mutableStateOf<Map<Long,String>>(emptyMap()) }
     var archiveError by remember { mutableStateOf<String?>(null) }
     var newWarehouse by remember{mutableStateOf(false)}
+    var deleteWarehouse by remember{mutableStateOf(false)};var deleteName by remember{mutableStateOf("")}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
     var showLegal by remember{mutableStateOf(false)}
@@ -834,6 +835,7 @@ private fun EditItemDetailsDialog(
             Text(model.ui.warehouse?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
             OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
+            TextButton(onClick={deleteName="";deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questo magazzino",color=Danger)}
         }}
         item { TeamSyncPanel(model) }
         item { DisplayPanel() }
@@ -907,6 +909,20 @@ private fun EditItemDetailsDialog(
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
+    if(deleteWarehouse) model.ui.warehouse?.let { w ->
+        val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.warehouseId==w.id
+        AlertDialog(onDismissRequest={deleteWarehouse=false},title={Text("Eliminare «${w.name}»?")},text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                if(synced) Text("Questo magazzino è sincronizzato con il team. Per eliminarlo, prima scollega questo telefono dalla sezione Sincronizzazione.",color=Danger)
+                else {
+                    Text("Cancella definitivamente articoli, foto, movimenti, prestiti, planimetria e dati gestionali di questo magazzino. Non si può annullare: se servono, esporta prima un backup.")
+                    Input(deleteName,{deleteName=it},"Scrivi il nome del magazzino per confermare")
+                }
+            }
+        },confirmButton={ if(!synced) TextButton(onClick={model.deleteWarehouse(deleteName);deleteWarehouse=false},
+            enabled=deleteName.trim().equals(w.name.trim(),ignoreCase=true)&&!model.ui.busy){Text("Elimina",color=Danger)} },
+            dismissButton={TextButton(onClick={deleteWarehouse=false}){Text(if(synced) "Chiudi" else "Annulla")}})
+    }
     if(confirmDemoRefresh) AlertDialog(onDismissRequest={confirmDemoRefresh=false},title={Text("Rigenerare la demo completa?")},text={
         Text("Sostituisce tutti gli elementi marcati DEMO, comprese eventuali prove fatte su quegli articoli. Non elimina gli articoli creati personalmente. È consigliato esportare un backup prima.")
     },confirmButton={TextButton(onClick={model.refreshDemo();confirmDemoRefresh=false}){Text("Rigenera demo")}},

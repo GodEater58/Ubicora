@@ -272,6 +272,23 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             put("profile_id",profileId);put("name",name.trim());put("location",location.trim())
         })
     }
+    /**
+     * 4.12.1: removes a warehouse of [profileId]; every table hanging on it goes with ON DELETE CASCADE.
+     * Returns the photo files of its articles, to delete once the transaction is committed.
+     */
+    fun deleteWarehouse(profileId: Long, warehouseId: Long): List<String> {
+        val db=writableDatabase
+        val photos=mutableListOf<String>()
+        db.beginTransaction()
+        try {
+            db.rawQuery("SELECT photo_file FROM items WHERE warehouse_id=? AND photo_file IS NOT NULL",arrayOf(warehouseId.toString()))
+                .use { c -> while(c.moveToNext()) photos.add(c.getString(0)) }
+            val removed=db.delete("warehouses","id=? AND profile_id=?",arrayOf(warehouseId.toString(),profileId.toString()))
+            require(removed==1) { "Magazzino inesistente" }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        return photos
+    }
     fun warehouses(profileId: Long): List<Warehouse> = readableDatabase.rawQuery(
         "SELECT id,profile_id,name,location,map_width,map_height FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }
