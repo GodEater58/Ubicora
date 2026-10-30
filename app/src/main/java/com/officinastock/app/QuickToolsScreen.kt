@@ -119,7 +119,37 @@ import androidx.compose.ui.unit.sp
         }
         Text("Il backup completo resta il modo per portare i dati su un altro telefono: la chiave dell'archivio non lascia mai questo.",
             fontSize = 11.sp, color = TextSecondary)
+        // 4.14: change the PIN of the profile in use.
+        var changing by remember { mutableStateOf(false) }
+        var done by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { changing = true; done = false }, enabled = !model.ui.busy, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.Password, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+            Text("Cambia PIN di ${model.ui.profile?.name.orEmpty()}")
+        }
+        if (done) Text("PIN cambiato. Ricorda: un backup fatto prima contiene ancora il PIN vecchio.", fontSize = 11.sp, color = Mint)
+        if (changing) ChangePinDialog(model, onClose = { changing = false }, onChanged = { changing = false; done = true })
     }
+}
+
+@Composable private fun ChangePinDialog(model: StockViewModel, onClose: () -> Unit, onChanged: () -> Unit) {
+    var current by remember { mutableStateOf("") }
+    var fresh by remember { mutableStateOf("") }
+    var repeat by remember { mutableStateOf("") }
+    fun digits(v: String) = v.filter(Char::isDigit).take(8)
+    val validNew = fresh.length in 4..8
+    LaunchedEffect(Unit) { model.dismissMessage() }
+    AlertDialog(onDismissRequest = onClose, title = { Text("Cambia PIN") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Input(current, { current = digits(it) }, "PIN attuale", number = true, password = true)
+            Input(fresh, { fresh = digits(it) }, "Nuovo PIN (4–8 cifre)", number = true, password = true)
+            Input(repeat, { repeat = digits(it) }, "Ripeti il nuovo PIN", number = true, password = true)
+            if (repeat.isNotEmpty() && repeat != fresh) Text("I due PIN nuovi non coincidono", color = Danger, fontSize = 12.sp)
+            model.ui.message?.let { Text(it, color = Danger, fontSize = 12.sp) }
+        }
+    }, confirmButton = {
+        TextButton(onClick = { model.changePin(current, fresh) { onChanged() } },
+            enabled = current.length >= 4 && validNew && repeat == fresh && !model.ui.busy) { Text("Cambia PIN") }
+    }, dismissButton = { TextButton(onClick = onClose) { Text("Annulla") } })
 }
 
 @Composable fun DisplayPanel() {
