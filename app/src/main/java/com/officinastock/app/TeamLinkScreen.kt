@@ -50,17 +50,19 @@ import androidx.compose.ui.window.DialogProperties
 /** Full-screen view of the automatic exchange, shown while the network or the search is active. */
 @Composable fun TeamLinkDialog(model: StockViewModel) {
     val link = model.link.ui
-    if (link.phase == LinkPhase.IDLE) return
+    if (link.phase == LinkPhase.IDLE || link.silent) return
     val view = LocalView.current
     DisposableEffect(Unit) { view.keepScreenOn = true; onDispose { view.keepScreenOn = false } }
     val central = link.phase == LinkPhase.CENTRAL
+    // 4.13: once every satellite seen has finished, say so instead of going back to the radar.
+    val centralDone = central && link.peers.isNotEmpty() && link.peers.none { it.phase in activePhases }
     Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(if (central) "RETE DEL CENTRALE" else "SINCRONIZZAZIONE", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
                 Text(when (link.phase) {
-                    LinkPhase.CENTRAL -> "In attesa dei satelliti"
+                    LinkPhase.CENTRAL -> if (centralDone) "Sincronizzazione completata" else "In attesa dei satelliti"
                     LinkPhase.SEARCHING -> "Cerco il centrale"
                     LinkPhase.CONNECTING -> "Mi collego a ${link.central ?: "centrale"}"
                     LinkPhase.TRANSFER -> "Scambio con ${link.central ?: "centrale"}"
@@ -82,6 +84,8 @@ import androidx.compose.ui.window.DialogProperties
                     Text(it, fontSize = 14.sp, textAlign = TextAlign.Center,
                         color = when (link.phase) { LinkPhase.ERROR -> Danger; LinkPhase.DONE -> Mint; else -> TextSecondary })
                 }
+                if (centralDone) Text("La rete resta aperta per altri telefoni: chiudila quando hai finito.",
+                    fontSize = 12.sp, color = TextSecondary, textAlign = TextAlign.Center)
                 if (central) {
                     if (link.peers.isEmpty()) Text("Sui satelliti: Impostazioni › «Sincronizza con il centrale vicino».",
                         fontSize = 12.sp, color = TextSecondary, textAlign = TextAlign.Center)
@@ -101,10 +105,11 @@ import androidx.compose.ui.window.DialogProperties
     }
 }
 
+private val activePhases = setOf(PeerPhase.CONNECTING, PeerPhase.RECEIVING, PeerPhase.APPLYING, PeerPhase.SENDING)
 private enum class Visual { RADAR, TRANSFER, DONE, ERROR }
 private fun visual(link: LinkUi) = when (link.phase) {
-    LinkPhase.CENTRAL -> if (link.peers.any { it.phase in setOf(PeerPhase.CONNECTING, PeerPhase.RECEIVING, PeerPhase.APPLYING, PeerPhase.SENDING) })
-        Visual.TRANSFER else Visual.RADAR
+    LinkPhase.CENTRAL -> if (link.peers.any { it.phase in activePhases }) Visual.TRANSFER
+        else if (link.peers.any { it.phase == PeerPhase.DONE }) Visual.DONE else Visual.RADAR
     LinkPhase.SEARCHING -> Visual.RADAR
     LinkPhase.CONNECTING, LinkPhase.TRANSFER -> Visual.TRANSFER
     LinkPhase.DONE -> Visual.DONE
@@ -178,3 +183,25 @@ private fun visual(link: LinkUi) = when (link.phase) {
     }
 }
 
+
+/** 4.13: small banner of the automatic exchange on a satellite; never blocks the screen. */
+@Composable fun TeamLinkBanner(model: StockViewModel, modifier: Modifier = Modifier) {
+    val link = model.link.ui
+    if (!link.silent || link.phase !in setOf(LinkPhase.CONNECTING, LinkPhase.TRANSFER, LinkPhase.DONE, LinkPhase.ERROR)) return
+    val color = when (link.phase) { LinkPhase.DONE -> Mint; LinkPhase.ERROR -> Danger; else -> TextSecondary }
+    Surface(modifier.padding(12.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 6.dp) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            when (link.phase) {
+                LinkPhase.DONE -> Icon(Icons.Outlined.CheckCircle, null, tint = Mint, modifier = Modifier.size(18.dp))
+                LinkPhase.ERROR -> Icon(Icons.Outlined.ErrorOutline, null, tint = Danger, modifier = Modifier.size(18.dp))
+                else -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(when (link.phase) {
+                LinkPhase.DONE -> link.message ?: "Sincronizzato"
+                LinkPhase.ERROR -> "Sincronizzazione automatica non riuscita: ${link.message ?: "riprova"}"
+                else -> "Sincronizzo con ${link.central ?: "il centrale"}…"
+            }, fontSize = 13.sp, color = color, maxLines = 2)
+        }
+    }
+}

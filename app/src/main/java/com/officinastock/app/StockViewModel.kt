@@ -8,7 +8,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
@@ -393,10 +395,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
+    /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
+    val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) }
+    fun deleteItem(itemId:Long) = execute {
+        require(canDeleteItems) { "Su questo telefono (satellite ${ui.team.letter}) gli articoli si eliminano dal telefono centrale" }
+        val photo=db.deleteItem(requireWarehouse(),itemId)
+        photo?.let { PhotoFiles.delete(getApplication<Application>(),it) }
+    }
     /** 4.12.1: deletes the open warehouse with everything in it; [typedName] must match its name. */
-    fun deleteWarehouse(typedName:String) {
-        val w=ui.warehouse ?: return
-        if(ui.busy || ui.sessionLocked) return
+    fun deleteWarehouse(typedName:String) { deleteWarehouse(ui.warehouse ?: return,typedName) }
+    /** 4.13: also from the warehouse list (long press), without opening it. */
+    fun deleteWarehouse(w:Warehouse,typedName:String) {
+        if(ui.busy || ui.sessionLocked || ui.profile?.id!=w.profileId) return
         clearMapHistory();pendingCsvImport=null
         execute {
             require(typedName.trim().equals(w.name.trim(),ignoreCase=true)) { "Il nome scritto non corrisponde: magazzino non eliminato" }
@@ -666,6 +676,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun removeDemo() { if(!ui.busy) clearMapHistory(); removeDemoNow() }
     private fun removeDemoNow() = execute {
+        require(canDeleteItems) { "Su un telefono satellite i dati dimostrativi si gestiscono dal telefono centrale" }
         val names=db.removeDemo(requireWarehouse())
         names.forEach {PhotoFiles.delete(getApplication<Application>(),it)}
     }
@@ -795,13 +806,34 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.team.role!=TeamRole.NONE || ui.sessionLocked) return
         link.startJoin(profileId,password,letter.uppercase(),viaCode)
     }
-    fun stopLink()=link.stop()
+    fun stopLink() { link.stop(); if(ui.team.role==TeamRole.CENTRAL) autoLink() }
+    /**
+     * 4.13: automatic exchange while the app is open, without any screen in the way: the central keeps
+     * its network open in the background, a satellite looks for it (on opening and every few minutes).
+     * Never asks for permissions by itself: without them the buttons still work as before.
+     */
+    fun autoLink() {
+        if(!UiPrefs.autoSync || ui.sessionLocked || link.ui.phase!=LinkPhase.IDLE) return
+        val t=ui.team; val w=ui.warehouse ?: return
+        if(t.warehouseId!=w.id || TeamLink.missingPermissions(getApplication()).isNotEmpty()) return
+        val uid=team.warehouseUid() ?: return
+        when(t.role) {
+            TeamRole.CENTRAL -> link.startCentral(uid,w.name,silent=true)
+            TeamRole.SATELLITE -> link.startSatellite(uid,t.letter ?: return,silent=true)
+            TeamRole.NONE -> {}
+        }
+    }
+    fun setAutoSync(on:Boolean) { UiPrefs.updateAutoSync(on); if(on) autoLink() else if(link.ui.silent) link.stop() }
     /** 4.12: whether the archive on this phone is encrypted, and why not if a migration was postponed. */
     val archiveEncrypted:Boolean get()=runCatching { db.encrypted }.getOrDefault(false)
     val archiveProblem:String? get()=DbCipher.lastProblem
     private suspend fun refreshAfterLink(joinedWarehouse:Long?) {
         if(ui.sessionLocked) return
         if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse
+        // 4.13: wait for an operation in progress instead of clearing its busy flag under it.
+        withTimeoutOrNull(30_000) { while(ui.busy) delay(50) }
+        if(ui.sessionLocked) return
+        ui=ui.copy(busy=true)
         clearMapHistory()
         // 4.12.1: reload() always leaves busy=true and only execute()/teamFile() cleared it, so after a
         // Nearby exchange the «Operazione in corso…» dialog stayed on forever and every button was blocked.
@@ -844,7 +876,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     (if(r.skipped>0) " · ${r.skipped} già importati" else "") + (if(r.conflicts>0) " · ${r.conflicts} conflitti da controllare" else "")
             } else {
                 val r=team.importState(input)
-                "Aggiornato dal centrale: ${r.articles} articoli" + (if(r.skipped>0) " · ${r.skipped} tue modifiche ancora da inviare" else "")
+                "Aggiornato dal centrale: ${r.articles} articoli" + (if(r.removed>0) " · ${r.removed} eliminati" else "") + (if(r.skipped>0) " · ${r.skipped} tue modifiche ancora da inviare" else "")
             }
         }
     }

@@ -239,6 +239,30 @@ class TeamSyncTest {
         assertEquals(9.0, qty(central, warehouse, "Vite M8"), 0.0)          // the rest went through
     }
 
+    @Test fun anArticleDeletedOnTheCentralLeavesTheSatellitesButUnsentOnesStay() {
+        val wh = join(satellite, "B")
+        val dado = central.addItem(warehouse, "Dado M8", "Ricambi", 4.0, 0.0, "pz", "")
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)
+        val mine = satellite.addItem(wh, "Guanti", "DPI", 1.0, 0.0, "paia", "")   // not sent yet
+        assertNull(central.deleteItem(warehouse, dado))
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(listOf("Guanti", "Vite M8"), satellite.items(wh).map { it.name }.sorted())
+        assertNotNull(satellite.item(mine))
+        // Once sent and confirmed it is the central's article like the others.
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)
+        assertEquals(0, TeamSync(satellite).status().pending)
+    }
+
+    @Test fun anArticleOnLoanCannotBeDeleted() {
+        val vite = central.items(warehouse).single().id
+        central.lend(vite, "Mario", 1.0)
+        rejects { central.deleteItem(warehouse, vite) }
+        assertEquals(1, central.items(warehouse).size)
+    }
+
     @Test fun backupsKeepTheSyncRoleAndOldBackupsGetGlobalIds() {
         val wh = join(satellite, "B")
         assertTrue(satellite.items(wh).all { it.id > 0 })

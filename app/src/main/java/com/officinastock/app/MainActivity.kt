@@ -176,6 +176,7 @@ class MainActivity: ComponentActivity() {
 @Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
     val data=model.ui
     Surface(color=Ink,modifier=Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+      Box(Modifier.fillMaxSize()) {
         when {
             !data.initialized -> Column(Modifier.padding(24.dp)) {
                 if(data.busy) CircularProgressIndicator()
@@ -186,6 +187,13 @@ class MainActivity: ComponentActivity() {
             data.warehouse==null -> WarehouseChooserScreen(model)
             else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
+        if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
+      }
+    }
+    // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
+    LaunchedEffect(data.sessionLocked,data.team.role,data.team.warehouseId,data.warehouse?.id,UiPrefs.autoSync) {
+        if(data.sessionLocked || data.warehouse==null || data.team.role==TeamRole.NONE || !UiPrefs.autoSync) return@LaunchedEffect
+        while(true) { model.autoLink(); kotlinx.coroutines.delay(10*60_000L) }
     }
     // 4.10: screens ask for the scanner through the model (burst picking, team QR).
     LaunchedEffect(data.scanRequest) {

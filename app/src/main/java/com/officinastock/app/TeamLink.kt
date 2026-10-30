@@ -43,7 +43,9 @@ data class LinkUi(
     val peers: List<LinkPeer> = emptyList(),
     /** Satellite: the central found nearby. */
     val central: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    /** 4.13: automatic exchange while the app is open: no full-screen view, only a small banner. */
+    val silent: Boolean = false
 )
 
 /**
@@ -88,10 +90,12 @@ class TeamLink(
     private val outgoing = mutableMapOf<Long, String>()
     private val peerSummary = mutableMapOf<String, String>()
     private var session = 0L
+    /** Satellite: last sign of life of the link (bytes sent or received), for the stall check. */
+    @Volatile private var lastProgress = 0L
 
-    private fun available(): Boolean {
+    private fun available(silent: Boolean = false): Boolean {
         val ok = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
-        if (!ok) ui = LinkUi(LinkPhase.ERROR, message = "Su questo telefono mancano i servizi Google: usa lo scambio con i file")
+        if (!ok && !silent) ui = LinkUi(LinkPhase.ERROR, message = "Su questo telefono mancano i servizi Google: usa lo scambio con i file")
         return ok
     }
     private fun failure(e: Exception): String {
@@ -101,14 +105,14 @@ class TeamLink(
 
     // ------------------------------------------------------------------ central
 
-    fun startCentral(warehouseUid: String, warehouseName: String) {
+    fun startCentral(warehouseUid: String, warehouseName: String, silent: Boolean = false) {
         stop()
-        if (!available()) return
+        if (!available(silent)) return
         val current = ++session
-        ui = LinkUi(LinkPhase.CENTRAL, message = "Rete aperta: i satelliti con Ubicora aperta si collegano da soli")
+        ui = LinkUi(LinkPhase.CENTRAL, message = "Rete aperta: i satelliti con Ubicora aperta si collegano da soli", silent = silent)
         client.startAdvertising(TeamLinkProtocol.endpointName(TeamLinkProtocol.tag(warehouseUid), warehouseName),
             TeamLinkProtocol.SERVICE_ID, centralLifecycle, AdvertisingOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { if (current == session) ui = LinkUi(LinkPhase.ERROR, message = failure(it)) }
+            .addOnFailureListener { if (current == session) { if (silent) stop() else ui = LinkUi(LinkPhase.ERROR, message = failure(it)) } }
     }
 
     private fun peer(endpointId: String, phase: PeerPhase, detail: String = "", name: String? = null) {
@@ -193,22 +197,32 @@ class TeamLink(
     // ------------------------------------------------------------------ satellite
 
     /** A satellite already joined looks for its own central. */
-    fun startSatellite(warehouseUid: String, letter: String) {
-        search(TeamLinkProtocol.tag(warehouseUid), null, "Satellite $letter")
+    fun startSatellite(warehouseUid: String, letter: String, silent: Boolean = false) {
+        search(TeamLinkProtocol.tag(warehouseUid), null, "Satellite $letter", silent)
     }
     /** First connection: any nearby central (the team password decides if the data can be read). */
     fun startJoin(profileId: Long, secret: String, letter: String, viaCode: Boolean = false) {
         search(null, TeamLinkProtocol.Join(profileId, secret, letter, viaCode), "Satellite $letter (nuovo)")
     }
 
-    private fun search(tag: String?, joining: TeamLinkProtocol.Join?, name: String) {
+    private fun search(tag: String?, joining: TeamLinkProtocol.Join?, name: String, silent: Boolean = false) {
         stop()
-        if (!available()) return
+        if (!available(silent)) return
         val current = ++session
         expectedTag = tag; join = joining; satelliteName = name
-        ui = LinkUi(LinkPhase.SEARCHING, message = "Cerco il telefono centrale… tienilo vicino con la rete aperta")
+        ui = LinkUi(LinkPhase.SEARCHING, message = "Cerco il telefono centrale… tienilo vicino con la rete aperta", silent = silent)
         client.startDiscovery(TeamLinkProtocol.SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { if (current == session) ui = LinkUi(LinkPhase.ERROR, message = failure(it)) }
+            .addOnFailureListener { if (current == session) { if (silent) stop() else ui = LinkUi(LinkPhase.ERROR, message = failure(it)) } }
+        // 4.13: the search never runs forever. The automatic one gives up quietly.
+        scope.launch {
+            delay(if (silent) TeamLinkProtocol.AUTO_SEARCH_MS else TeamLinkProtocol.SEARCH_MS)
+            if (current != session || ui.phase != LinkPhase.SEARCHING) return@launch
+            if (silent) stop()
+            else {
+                runCatching { client.stopDiscovery() }
+                ui = ui.copy(phase = LinkPhase.ERROR, message = "Centrale non trovato: sul telefono centrale apri la rete (o lascia Ubicora aperta) e tieni i telefoni vicini")
+            }
+        }
     }
 
     private val discovery = object : EndpointDiscoveryCallback() {
@@ -220,7 +234,11 @@ class TeamLink(
             client.stopDiscovery()
             ui = ui.copy(phase = LinkPhase.CONNECTING, central = name, message = "Trovato il centrale: mi collego…")
             client.requestConnection(satelliteName, endpointId, satelliteLifecycle)
-                .addOnFailureListener { if (current == session) ui = LinkUi(LinkPhase.ERROR, central = name, message = "Collegamento non riuscito: riprova") }
+                .addOnFailureListener { if (current == session) fail("Collegamento non riuscito: riprova") }
+            scope.launch {
+                delay(TeamLinkProtocol.IDLE_MS)
+                if (current == session && ui.phase == LinkPhase.CONNECTING) fail("Collegamento non riuscito: avvicina i telefoni e riprova")
+            }
         }
         override fun onEndpointLost(endpointId: String) {}
     }
@@ -230,20 +248,26 @@ class TeamLink(
             client.acceptConnection(endpointId, satellitePayloads)
         }
         override fun onConnectionResult(endpointId: String, resolution: ConnectionResolution) {
-            if (!resolution.status.isSuccess) { ui = ui.copy(phase = LinkPhase.ERROR, message = "Il centrale non ha accettato il collegamento: riprova"); return }
+            if (!resolution.status.isSuccess) { fail("Il centrale non ha accettato il collegamento: riprova"); return }
             connectedTo = endpointId; answerArrived = false
             val current = session
             ui = ui.copy(phase = LinkPhase.TRANSFER, message = "Invio le mie modifiche…")
+            lastProgress = System.currentTimeMillis()
             scope.launch {
                 val request = withContext(Dispatchers.IO) {
                     runCatching { join?.let { TeamLinkProtocol.joinRequest(team, it.password, it.letter) } ?: TeamLinkProtocol.changesRequest(team) }
                 }
                 if (current != session) return@launch
-                request.onSuccess { client.sendPayload(endpointId, Payload.fromStream(ByteArrayInputStream(it))) }
-                    .onFailure { fail(it.message ?: "Modifiche non leggibili") }
-                // The central always answers; silence means the link dropped without notice.
-                delay(120_000)
-                if (current == session && ui.phase == LinkPhase.TRANSFER && !answerArrived) fail("Il centrale non risponde: avvicina i telefoni e riprova")
+                request.onSuccess { lastProgress = System.currentTimeMillis(); client.sendPayload(endpointId, Payload.fromStream(ByteArrayInputStream(it))) }
+                    .onFailure { fail(it.message ?: "Modifiche non leggibili"); return@launch }
+                // 4.13: the central always answers. No bytes for a while, before or during its answer,
+                // means the link is stuck without notice (before, only the wait for the first byte was checked).
+                while (current == session && ui.phase == LinkPhase.TRANSFER) {
+                    delay(5_000)
+                    if (current == session && ui.phase == LinkPhase.TRANSFER &&
+                        System.currentTimeMillis() - lastProgress > TeamLinkProtocol.STALL_MS)
+                        fail(if (answerArrived) "Trasferimento bloccato: avvicina i telefoni e riprova" else "Il centrale non risponde: avvicina i telefoni e riprova")
+                }
             }
         }
         override fun onDisconnected(endpointId: String) {
@@ -255,31 +279,41 @@ class TeamLink(
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val stream = payload.asStream()?.asInputStream() ?: return
             val current = session
+            val joining = join
             answerArrived = true
+            lastProgress = System.currentTimeMillis()
             ui = ui.copy(message = "Ricevo l'archivio del centrale…")
             scope.launch {
                 val outcome = withContext(Dispatchers.IO) {
-                    runCatching { TeamLinkProtocol.finish(team, readAll(stream), join) }
+                    runCatching { TeamLinkProtocol.finish(team, readAll(stream), joining) }
                         .getOrElse { TeamLinkProtocol.Outcome.Failed("Trasferimento interrotto: riprova") }
                 }
+                // 4.13: the archive is already saved even if the exchange was cancelled meanwhile: refresh anyway.
+                if (outcome is TeamLinkProtocol.Outcome.Done) onDataChanged(outcome.joinedWarehouseId)
                 if (current != session) return@launch
                 when (outcome) {
-                    is TeamLinkProtocol.Outcome.Done -> {
-                        onDataChanged(outcome.joinedWarehouseId)
-                        ui = ui.copy(phase = LinkPhase.DONE, message = outcome.summary)
-                    }
+                    is TeamLinkProtocol.Outcome.Done -> ui = ui.copy(phase = LinkPhase.DONE, message = outcome.summary)
                     is TeamLinkProtocol.Outcome.Failed -> ui = ui.copy(phase = LinkPhase.ERROR, message = outcome.message)
                 }
                 join = null
                 client.disconnectFromEndpoint(endpointId); connectedTo = null
+                closeSilentLater(current)
             }
         }
-        override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {}
+        override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
+            lastProgress = System.currentTimeMillis()
+        }
     }
 
     private fun fail(message: String) {
         ui = ui.copy(phase = LinkPhase.ERROR, message = message)
         connectedTo?.let { client.disconnectFromEndpoint(it) }; connectedTo = null
+        closeSilentLater(session)
+    }
+    /** The automatic exchange shows its result for a moment, then goes back to idle on its own. */
+    private fun closeSilentLater(current: Long) {
+        if (!ui.silent) return
+        scope.launch { delay(4_000); if (current == session && ui.silent && ui.phase in setOf(LinkPhase.DONE, LinkPhase.ERROR)) stop() }
     }
 
     // ------------------------------------------------------------------ common

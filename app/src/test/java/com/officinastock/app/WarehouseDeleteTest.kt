@@ -47,6 +47,21 @@ class WarehouseDeleteTest {
         try { assertTrue(db.items(id).isEmpty()) } finally { db.close() }
     }
 
+    @Test fun deletesFromTheListWithoutOpeningIt() = runBlocking {
+        val w = model.ui.warehouse!!
+        model.leaveWarehouse()
+        assertNull(model.ui.warehouse)
+        model.deleteWarehouse(w, "Officina"); awaitIdle()
+        assertTrue(model.ui.warehouses.isEmpty())
+    }
+
+    @Test fun anArticleCanBeDeleted() = runBlocking {
+        val vite = model.ui.items.single()
+        model.deleteItem(vite.id); awaitIdle()
+        assertTrue(model.ui.items.isEmpty())
+        assertEquals("Officina", model.ui.warehouse?.name)
+    }
+
     @Test fun syncedWarehouseIsProtected() = runBlocking {
         model.becomeTeamCentral("password-del-team-1"); awaitIdle()
         assertEquals(TeamRole.CENTRAL, model.ui.team.role)
