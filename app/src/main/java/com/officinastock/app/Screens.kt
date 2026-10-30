@@ -126,8 +126,10 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             dismissButton={TextButton(onClick={picked=null}){Text("Annulla")}})
     }
 }
+@OptIn(ExperimentalFoundationApi::class)
 @Composable fun WarehouseChooserScreen(model:StockViewModel) {
     var show by remember{mutableStateOf(false)}
+    var deleting by remember{mutableStateOf<Warehouse?>(null)}
     var name by remember{mutableStateOf("")};var location by remember{mutableStateOf("")}
     Column(Modifier.fillMaxSize().padding(22.dp)) {
         Spacer(Modifier.height(26.dp))
@@ -137,7 +139,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         Spacer(Modifier.height(18.dp))
         LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             items(model.ui.warehouses,key={it.id}) { w ->
-                Panel(Modifier.fillMaxWidth().clickable{model.selectWarehouse(w)}) {
+                Panel(Modifier.fillMaxWidth().combinedClickable(onClick={model.selectWarehouse(w)},onLongClick={deleting=w})) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Warehouse,null,tint=Mint)
                         Spacer(Modifier.width(12.dp))
@@ -146,6 +148,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
                     }
                 }
             }
+            if(model.ui.warehouses.isNotEmpty()) item { Text("Tieni premuto un magazzino per eliminarlo",fontSize=11.sp,color=TextSecondary) }
             // 4.10: a colleague's phone can join the team straight away, without creating a warehouse first.
             if(model.ui.team.role==TeamRole.NONE) item { TeamSyncPanel(model) }
         }
@@ -153,6 +156,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         TextButton(onClick=model::signOut){Text("Cambia profilo")}
         model.ui.message?.let{Text(it,color=Danger)}
     }
+    deleting?.let { w -> DeleteWarehouseDialog(model,w) { deleting=null } }
     if(show) AlertDialog(onDismissRequest={show=false},title={Text("Nuovo magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome magazzino");Input(location,{location=it},"Località / descrizione")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);show=false},enabled=name.isNotBlank()){Text("Crea")}},
@@ -612,6 +616,7 @@ private fun EditItemDetailsDialog(
     var showQrLabel by remember(item.id) { mutableStateOf(false) }
     var editPurchase by remember(item.id) { mutableStateOf(false) }
     var editDetails by remember(item.id) { mutableStateOf(false) }
+    var askDeleteItem by remember(item.id) { mutableStateOf(false) }
     val canConfirm=quantity.replace(',','.').toDoubleOrNull()?.let{it.isFinite() && (if(action=="rettifica") it>=0.0 && it!=item.quantity else it>0.0)}==true&&(action!="prestito"||borrower.isNotBlank())&&(action!="rettifica"||note.trim().length in 3..250)
     FullScreenPage(item.name,onClose=onDismiss,subtitle="${item.sku} · ${item.category}",action={
         Button(onClick={
@@ -659,7 +664,16 @@ private fun EditItemDetailsDialog(
                 }
             }
             if(item.note.isNotBlank()) Text(item.note,color=TextSecondary,fontSize=12.sp)
+            if(model.canDeleteItems) TextButton(onClick={askDeleteItem=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(6.dp));Text("Elimina articolo",color=Danger)
+            }
     }
+    if(askDeleteItem) AlertDialog(onDismissRequest={askDeleteItem=false},title={Text("Eliminare ${item.name}?")},
+        text={Text("Cancella definitivamente l'articolo ${item.sku} con foto, movimenti e storico. " +
+            (if(model.ui.team.role==TeamRole.CENTRAL) "Sparirà anche dai telefoni satellite alla prossima sincronizzazione. " else "") +
+            "Non si può annullare.")},
+        confirmButton={TextButton(onClick={askDeleteItem=false;model.deleteItem(item.id);onDismiss()}){Text("Elimina",color=Danger)}},
+        dismissButton={TextButton(onClick={askDeleteItem=false}){Text("Annulla")}})
     if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
     if(editDetails) EditItemDetailsDialog(item,onClose={editDetails=false}) { name,category,min,unit,note,cost,supplier,days ->
         model.updateItemDetails(item.id,name,category,min,unit,note,cost,supplier,days)
@@ -793,7 +807,7 @@ private fun EditItemDetailsDialog(
     var archivePins by remember { mutableStateOf<Map<Long,String>>(emptyMap()) }
     var archiveError by remember { mutableStateOf<String?>(null) }
     var newWarehouse by remember{mutableStateOf(false)}
-    var deleteWarehouse by remember{mutableStateOf(false)};var deleteName by remember{mutableStateOf("")}
+    var deleteWarehouse by remember{mutableStateOf(false)}
     var confirmDemoRemoval by remember{mutableStateOf(false)}
     var confirmDemoRefresh by remember{mutableStateOf(false)}
     var showLegal by remember{mutableStateOf(false)}
@@ -835,7 +849,7 @@ private fun EditItemDetailsDialog(
             Text(model.ui.warehouse?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
             OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
             OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
-            TextButton(onClick={deleteName="";deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questo magazzino",color=Danger)}
+            TextButton(onClick={deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questo magazzino",color=Danger)}
         }}
         item { TeamSyncPanel(model) }
         item { DisplayPanel() }
@@ -909,20 +923,7 @@ private fun EditItemDetailsDialog(
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
-    if(deleteWarehouse) model.ui.warehouse?.let { w ->
-        val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.warehouseId==w.id
-        AlertDialog(onDismissRequest={deleteWarehouse=false},title={Text("Eliminare «${w.name}»?")},text={
-            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                if(synced) Text("Questo magazzino è sincronizzato con il team. Per eliminarlo, prima scollega questo telefono dalla sezione Sincronizzazione.",color=Danger)
-                else {
-                    Text("Cancella definitivamente articoli, foto, movimenti, prestiti, planimetria e dati gestionali di questo magazzino. Non si può annullare: se servono, esporta prima un backup.")
-                    Input(deleteName,{deleteName=it},"Scrivi il nome del magazzino per confermare")
-                }
-            }
-        },confirmButton={ if(!synced) TextButton(onClick={model.deleteWarehouse(deleteName);deleteWarehouse=false},
-            enabled=deleteName.trim().equals(w.name.trim(),ignoreCase=true)&&!model.ui.busy){Text("Elimina",color=Danger)} },
-            dismissButton={TextButton(onClick={deleteWarehouse=false}){Text(if(synced) "Chiudi" else "Annulla")}})
-    }
+    if(deleteWarehouse) model.ui.warehouse?.let { w -> DeleteWarehouseDialog(model,w) { deleteWarehouse=false } }
     if(confirmDemoRefresh) AlertDialog(onDismissRequest={confirmDemoRefresh=false},title={Text("Rigenerare la demo completa?")},text={
         Text("Sostituisce tutti gli elementi marcati DEMO, comprese eventuali prove fatte su quegli articoli. Non elimina gli articoli creati personalmente. È consigliato esportare un backup prima.")
     },confirmButton={TextButton(onClick={model.refreshDemo();confirmDemoRefresh=false}){Text("Rigenera demo")}},
@@ -972,3 +973,20 @@ private fun EditItemDetailsDialog(
     profiles.forEach { p -> Input(pins[p.id].orEmpty(),{onChange(p.id,it.filter(Char::isDigit).take(8))},"PIN ${p.name}",number=true,password=true) }
 }
 
+
+/** 4.12.1/4.13: delete a warehouse after typing its name; refused while it is the synced one. */
+@Composable fun DeleteWarehouseDialog(model:StockViewModel,w:Warehouse,onClose:()->Unit) {
+    var typed by remember(w.id){mutableStateOf("")}
+    val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.warehouseId==w.id
+    AlertDialog(onDismissRequest=onClose,title={Text("Eliminare «${w.name}»?")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(synced) Text("Questo magazzino è sincronizzato con il team. Per eliminarlo, prima scollega questo telefono dalla sezione Sincronizzazione.",color=Danger)
+            else {
+                Text("Cancella definitivamente articoli, foto, movimenti, prestiti, planimetria e dati gestionali di questo magazzino. Non si può annullare: se servono, esporta prima un backup.")
+                Input(typed,{typed=it},"Scrivi il nome del magazzino per confermare")
+            }
+        }
+    },confirmButton={ if(!synced) TextButton(onClick={model.deleteWarehouse(w,typed);onClose()},
+        enabled=typed.trim().equals(w.name.trim(),ignoreCase=true)&&!model.ui.busy){Text("Elimina",color=Danger)} },
+        dismissButton={TextButton(onClick=onClose){Text(if(synced) "Chiudi" else "Annulla")}})
+}

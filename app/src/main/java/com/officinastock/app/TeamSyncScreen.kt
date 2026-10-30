@@ -155,6 +155,28 @@ import java.util.Locale
                 }
             }
         }
+        if (t.role != TeamRole.NONE && synced) {
+            // 4.13: automatic exchange while the app is open.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val permitted = TeamLink.missingPermissions(context).isEmpty()
+            val link = model.link.ui
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sincronizzazione automatica", fontWeight = FontWeight.SemiBold)
+                    Text(if (t.role == TeamRole.CENTRAL) "Con Ubicora aperta la rete resta aperta: i satelliti vicini si aggiornano da soli"
+                        else "Con Ubicora aperta cerca il centrale all'avvio e ogni 10 minuti, senza bloccare lo schermo",
+                        fontSize = 11.sp, color = TextSecondary)
+                }
+                Switch(checked = UiPrefs.autoSync && permitted, enabled = !u.busy,
+                    onCheckedChange = { on -> if (on) nearby { model.setAutoSync(true) } else model.setAutoSync(false) })
+            }
+            if (link.silent && link.phase == LinkPhase.CENTRAL) {
+                val done = link.peers.count { it.phase == PeerPhase.DONE }
+                Text("Rete automatica aperta" + (if (done > 0) " · $done ${if (done == 1) "satellite sincronizzato" else "satelliti sincronizzati"}" else ""),
+                    fontSize = 11.sp, color = Mint)
+            }
+        }
         if (t.lastSync > 0) Text("Ultimo scambio: ${date(t.lastSync)}", fontSize = 11.sp, color = TextSecondary)
         if (t.conflicts.isNotEmpty()) OutlinedButton(onClick = { showConflicts = true }, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.WarningAmber, null, tint = Amber); Spacer(Modifier.width(8.dp)); Text("${t.conflicts.size} conflitti da controllare", color = Amber)

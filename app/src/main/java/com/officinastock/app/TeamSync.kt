@@ -125,7 +125,7 @@ data class TeamSyncStatus(
     val needsPassword: Boolean = false
 )
 data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
-                            val letter: String? = null)
+                            val letter: String? = null, val removed: Int = 0)
 
 class TeamSync(private val stock: StockDb) {
     companion object {
@@ -140,6 +140,9 @@ class TeamSync(private val stock: StockDb) {
         private const val MAX_EVENTS = 200_000
     }
     private val db get() = stock.writableDatabase
+    /** Photos of articles removed by the last central update: deleted once the update is committed. */
+    private val removedPhotos = mutableListOf<String>()
+    private fun dropRemovedPhotos() { stock.deletePhotoFiles(removedPhotos); removedPhotos.clear() }
     private fun setting(key: String) = TeamSyncSchema.setting(db, key)
     private fun deviceUid(): String = setting("device_uid") ?: UUID.randomUUID().toString().also { TeamSyncSchema.put(db, "device_uid", it) }
 
@@ -546,11 +549,14 @@ class TeamSync(private val stock: StockDb) {
         require(state.getString("warehouse_uid") == setting("warehouse_uid")) { "Il file appartiene a un altro magazzino" }
         val sql = db
         sql.beginTransaction()
+        removedPhotos.clear()
         try {
             val result = applyState(sql, setting("warehouse_id")!!.toLong(), state)
             sql.setTransactionSuccessful()
+            sql.endTransaction()
+            dropRemovedPhotos()
             return result
-        } finally { sql.endTransaction() }
+        } catch (e: Throwable) { sql.endTransaction(); removedPhotos.clear(); throw e }
     }
 
     private fun applyState(sql: SQLiteDatabase, warehouseId: Long, state: JSONObject): TeamImportResult {
@@ -613,9 +619,11 @@ class TeamSync(private val stock: StockDb) {
         // Articles: central fields and quantity, plus the local changes not yet confirmed.
         val items = state.getJSONArray("items")
         var updated = 0
+        val centralItems = HashSet<String>()
         for (i in 0 until items.length()) {
             val it = items.getJSONObject(i)
             val uid = it.getString("uid")
+            centralItems += uid
             val local = sql.rawQuery("SELECT id,quantity FROM items WHERE uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString())).use { c -> if (c.moveToFirst()) c.getLong(0) to c.getDouble(1) else null }
             // Central quantity plus what this phone moved and has not sent yet (never below zero).
             val target = StockRules.difference(it.getDouble("quantity"), -(local?.let { l -> pendingDelta[l.first] } ?: 0.0))
@@ -639,10 +647,20 @@ class TeamSync(private val stock: StockDb) {
             }
             updated++
         }
+        // 4.13: an article the central no longer has was deleted there (or refused): it goes here too,
+        // unless this phone created it and has not sent it yet.
+        var removed = 0
+        sql.rawQuery("SELECT id,uid,photo_file FROM items WHERE warehouse_id=?", arrayOf(warehouseId.toString())).use { c ->
+            buildList { while (c.moveToNext()) if (c.getString(1) !in centralItems && c.getLong(0) !in pendingItems)
+                add(c.getLong(0) to (if (c.isNull(2)) null else c.getString(2))) }
+        }.forEach { (id, photo) ->
+            sql.delete("items", "id=?", arrayOf(id.toString())); removed++
+            photo?.let { removedPhotos += it }
+        }
         TeamSyncSchema.put(sql, "applying", "0")
         TeamSyncSchema.put(sql, "last_sync", System.currentTimeMillis().toString())
         val stillPending = sql.rawQuery("SELECT COUNT(*) FROM team_sync_outbox", null).use { c -> c.moveToFirst(); c.getInt(0) }
-        return TeamImportResult(updated, 0, 0, stillPending, 0)
+        return TeamImportResult(updated, 0, 0, stillPending, 0, removed = removed)
     }
 
     // ---------------------------------------------------------------- helpers

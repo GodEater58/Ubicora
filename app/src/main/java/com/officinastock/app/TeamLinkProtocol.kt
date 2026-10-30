@@ -27,6 +27,11 @@ object TeamLinkProtocol {
     const val MAX_PEERS = 6
     /** A connection that sends nothing within this time is closed. */
     const val IDLE_MS = 60_000L
+    /** 4.13: how long a satellite looks for its central (by hand / automatically) before giving up. */
+    const val SEARCH_MS = 90_000L
+    const val AUTO_SEARCH_MS = 45_000L
+    /** 4.13: no bytes in either direction for this long means the link is stuck. */
+    const val STALL_MS = 90_000L
 
     /** Short public tag of the shared warehouse: satellites recognise their central by it. */
     fun tag(warehouseUid: String): String =
@@ -69,6 +74,7 @@ object TeamLinkProtocol {
                 } else {
                     val r = team.importState(body)
                     Outcome.Done("Sincronizzato: ${r.articles} articoli aggiornati" +
+                        (if (r.removed > 0) " · ${r.removed} eliminati dal centrale" else "") +
                         (if (r.skipped > 0) " · ${r.skipped} modifiche ancora da confermare" else " · tutto confermato dal centrale"))
                 }
             }

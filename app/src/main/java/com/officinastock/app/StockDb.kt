@@ -289,6 +289,27 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         } finally { db.endTransaction() }
         return photos
     }
+    /**
+     * 4.13: deletes an article with its movements, loans and records (ON DELETE CASCADE).
+     * Refused while something is still out on loan. Returns its photo file, to delete after the commit.
+     */
+    fun deleteItem(warehouseId: Long, itemId: Long): String? {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            val photo=db.rawQuery("SELECT photo_file FROM items WHERE id=? AND warehouse_id=?",arrayOf(itemId.toString(),warehouseId.toString()))
+                .use { c -> require(c.moveToFirst()) { "Articolo inesistente" }; if(c.isNull(0)) null else c.getString(0) }
+            require(db.rawQuery("SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL",arrayOf(itemId.toString())).use { !it.moveToFirst() }) {
+                "Questo articolo è ancora in prestito: registra prima il rientro"
+            }
+            db.delete("demo_assets","entity_type='items' AND entity_id=?",arrayOf(itemId.toString()))
+            db.delete("items","id=? AND warehouse_id=?",arrayOf(itemId.toString(),warehouseId.toString()))
+            db.setTransactionSuccessful()
+            return photo
+        } finally { db.endTransaction() }
+    }
+    /** Deletes stored article photos (call only after the rows are gone). */
+    fun deletePhotoFiles(names: Collection<String>) = names.forEach { PhotoFiles.delete(appContext,it) }
     fun warehouses(profileId: Long): List<Warehouse> = readableDatabase.rawQuery(
         "SELECT id,profile_id,name,location,map_width,map_height FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }
