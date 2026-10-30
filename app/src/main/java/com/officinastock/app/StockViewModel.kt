@@ -393,6 +393,21 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val pid=requireNotNull(ui.profile?.id){"Seleziona un profilo"}
         pendingWarehouseId=db.createWarehouse(pid,name,location)
     }
+    /** 4.12.1: deletes the open warehouse with everything in it; [typedName] must match its name. */
+    fun deleteWarehouse(typedName:String) {
+        val w=ui.warehouse ?: return
+        if(ui.busy || ui.sessionLocked) return
+        clearMapHistory();pendingCsvImport=null
+        execute {
+            require(typedName.trim().equals(w.name.trim(),ignoreCase=true)) { "Il nome scritto non corrisponde: magazzino non eliminato" }
+            val t=team.status()
+            require(t.role==TeamRole.NONE || t.warehouseId!=w.id) {
+                "Questo magazzino è sincronizzato con il team: prima usa «Scollega questo telefono» nella sezione Sincronizzazione"
+            }
+            val photos=db.deleteWarehouse(w.profileId,w.id)
+            photos.forEach { PhotoFiles.delete(getApplication<Application>(),it) }
+        }
+    }
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
                 cost:Double?=null,supplier:String="",leadDays:Int?=null) = execute {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
@@ -788,7 +803,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.sessionLocked) return
         if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse
         clearMapHistory()
-        reloadAfterSelection(null,backgroundGeneration)
+        // 4.12.1: reload() always leaves busy=true and only execute()/teamFile() cleared it, so after a
+        // Nearby exchange the «Operazione in corso…» dialog stayed on forever and every button was blocked.
+        try { reloadAfterSelection(null,backgroundGeneration) }
+        catch(e:CancellationException) { throw e }
+        catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
+        finally { ui=ui.copy(busy=false); drainWalls() }
     }
     override fun onCleared() { link.stop();super.onCleared() }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
