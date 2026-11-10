@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.16.0 / Web 1.1.0](CHANGELOG_4_16_0.md) | foto degli articoli nella sincronizzazione, magazzino della squadra sul PC, verifica scaffale con più codici per fotogramma. |
 | [4.15.0](CHANGELOG_4_15_0.md) | prelievo a raffica in una sola schermata con suono e vibrazione, righe articolo con scorrimento e pannello rapido, «Scansiona» nella barra in basso, prelievo guidato, doppio tocco sulla mappa. |
 | [4.14.0](CHANGELOG_4_14_0.md) | rinomina del magazzino e cambio PIN dal profilo aperto. |
 | [4.13.0](CHANGELOG_4_13_0.md) | sincronizzazione automatica ad app aperta, eliminazione articoli propagata ai satelliti, ricerca/trasferimento che non restano mai bloccati. |

@@ -21,9 +21,7 @@
 | **Prestiti di tutta la squadra** | A ogni scambio i telefoni si dicono quali utensili hanno in prestito: «In prestito» e «Utensili fuori da più di N giorni» in Oggi contano anche quelli degli altri, e la sezione Squadra li elenca con la lettera del telefono. La restituzione si registra sul telefono che ha fatto il prestito |
 | **Sostituire il centrale** | Sezione Squadra di un satellite › «Il centrale non c'è più: questo telefono lo sostituisce». Il satellite diventa centrale con le sue giacenze; gli altri satelliti proseguono con lui senza ricollegarsi, e le modifiche che avevano già consegnato non vengono applicate due volte |
 | **Tag NFC** | Tieni premuto un articolo › «Scrivi su tag NFC» (compare se il telefono ha l'NFC) e appoggia un tag: da quel momento toccarlo con il telefono fa quello che fa la scansione del QR, in ogni schermata (scheda articolo, prelievo a raffica, prelievo guidato, verifica scaffale). Il QR resta l'etichetta di base |
-| **Verifica scaffale** | Articoli › «Verifica scaffale»: leggi l'etichetta della struttura, poi passa la fotocamera sulle etichette degli articoli; legge tutti i codici QR presenti nel fotogramma. L'elenco spunta quelli trovati, mostra quelli non visti e segnala quelli che sono lì ma risultano altrove, con «Sposta qui». Non cambia le quantità |
-| **Foto nella sincronizzazione** | Le foto degli articoli seguono il centrale. Il satellite chiede quelle che gli mancano e le riceve con l'aggiornamento successivo (al massimo 60 foto e 8 MB per scambio, il resto agli scambi seguenti). La foto di un articolo creato su un satellite arriva al centrale insieme all'articolo |
-| **Ubicora Web 1.1.0: il magazzino della squadra sul PC** | «Dati e connessione» › «Apri aggiornamento della squadra»: il file esportato dal telefono centrale, aperto con la password della squadra, diventa una nuova sede con pianta, strutture, articoli e giacenze. È una copia da consultare: dal PC non torna nulla ai telefoni |
+| **Verifica scaffale** | Articoli › «Verifica scaffale»: leggi l'etichetta della struttura, poi passa la fotocamera sulle etichette degli articoli. L'elenco spunta quelli trovati, mostra quelli non visti e segnala quelli che sono lì ma risultano altrove, con «Sposta qui». Non cambia le quantità |
 | **Sezione Squadra** | La sincronizzazione ha una sua sezione nella barra (resta anche nelle Impostazioni) |
 | **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. La Mappa entra in modalità giro: spariscono gli strumenti di modifica, il titolo diventa «Prelievo guidato · 2 di 5» con la barra di avanzamento, e il pannello in basso indica prossimo articolo, ubicazione e quantità. Si conferma scansionando l'etichetta; se la lettura fallisce o viene chiusa compare «Etichetta illeggibile? Conferma a mano». In pianta: strutture visitate con il segno di spunta, prossima in arancio, tratto puntinato ad angolo retto che evita le strutture quando può. Nelle altre sezioni resta una barra con «Vai» |
 | **Prestito dal prelievo a raffica** | «Segna come prestito» accanto a «Salta»: chiede chi lo prende e prosegue |
@@ -40,17 +38,11 @@
 
 - Sostituzione del centrale: conviene promuovere il satellite che ha sincronizzato per ultimo. Quello che solo il vecchio centrale sapeva dopo il suo ultimo aggiornamento a quel telefono va perso. Se il vecchio centrale torna in funzione va scollegato dalla squadra prima di usarlo: due centrali sullo stesso magazzino non si riconciliano.
 - I prestiti degli altri telefoni arrivano solo quando entrambi hanno la 4.15; con un telefono su una versione precedente lo scambio funziona come prima, senza l'elenco dei prestiti.
-- Foto: servono due scambi perché una foto nuova arrivi su un satellite (al primo scopre che gli manca, al secondo la riceve). Una foto oltre 2 MB non viaggia. Una foto cambiata su un satellite per un articolo già del centrale non risale: le foto degli articoli le decide il centrale.
-- Il PC legge lo stato della squadra ma non è un satellite: non invia carichi o prelievi ai telefoni.
+- Le foto degli articoli non viaggiano ancora tra i telefoni.
+- Verifica scaffale legge un'etichetta alla volta mentre la fotocamera scorre, non tutte in un solo fotogramma: per quello servirebbe sostituire la libreria di lettura.
 - NFC: servono tag riscrivibili di tipo NDEF (per esempio NTAG213). Sul metallo servono tag «anti-metallo», altrimenti la lettura è difficile o impossibile.
-
-
-## Per chi lavora sul codice
-- `Screens.kt` (1.000 righe) è diviso in cinque file per area, senza modifiche al contenuto: `ProfileScreens.kt`, `InventoryScreen.kt`, `ItemScreens.kt`, `MovementsScreen.kt`, `SettingsScreen.kt`.
-- `docs/SCHEMA.md` è l'indice unico delle tabelle e di dove sono definite, tenuto allineato da un controllo automatico.
-- Non fatto: `StockDb.kt`, `StockViewModel.kt`, `TeamSync.kt` e `MapScreen.kt` restano file unici (sono classi o funzioni uniche: dividerle richiede di riscriverle, non di spostarle); i testi restano nel codice e non in `strings.xml`.
 
 ## Da provare sul telefono
 Questa versione è verificata con i test automatici, non su un dispositivo: fotocamera, torcia, suono, vibrazione, pausa di 2 secondi tra due letture della stessa etichetta, scorrimento sulle righe (anche con i guanti), pannello dal basso, doppio tocco sulla mappa, scrittura e lettura dei tag NFC e verifica scaffale vanno collaudati in officina.
 
-Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `TeamSyncTest` (foto, prestiti di squadra, lettera sui movimenti, sostituzione del centrale), `GuidedPickTest` (ordine del percorso, guida sulla mappa, tratto ad angolo, prestiti scaduti, quantità digitate), `WebTeamFileTest` (file scritto dal browser aperto dal telefono); per il Web `web/tests/core.test.mjs`.
+Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `TeamSyncTest` (prestiti di squadra, lettera sui movimenti, sostituzione del centrale), `GuidedPickTest` (ordine del percorso, guida sulla mappa, tratto ad angolo, prestiti scaduti, quantità digitate).
