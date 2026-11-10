@@ -331,6 +331,10 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
     }
     /** Deletes stored article photos (call only after the rows are gone). */
     fun deletePhotoFiles(names: Collection<String>) = names.forEach { PhotoFiles.delete(appContext,it) }
+    // 4.15: photos exchanged by the team sync.
+    fun hasPhoto(name: String?) = PhotoFiles.exists(appContext,name)
+    fun photoBytes(name: String?) = PhotoFiles.bytes(appContext,name)
+    fun storePhoto(name: String, bytes: ByteArray) = PhotoFiles.receive(appContext,name,bytes)
     fun warehouses(profileId: Long): List<Warehouse> = readableDatabase.rawQuery(
         "SELECT id,profile_id,name,location,map_width,map_height FROM warehouses WHERE profile_id=? ORDER BY id",arrayOf(profileId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(Warehouse(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getFloat(4),c.getFloat(5))) } }

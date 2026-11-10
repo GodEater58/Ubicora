@@ -333,4 +333,44 @@ class TeamSyncTest {
         TeamSync(other).importState(ByteArrayInputStream(newState()))
         assertEquals(4.0, qty(other, whC, "Vite M8"), 0.0); assertEquals(0, TeamSync(other).status().pending)
     }
+
+    /** 4.15: an article takes the photo the central names; a photo missing on the satellite is asked for and arrives with the next update. */
+    @Test fun photosFollowTheCentralAndMissingOnesAreAskedFor() {
+        val app = RuntimeEnvironment.getApplication()
+        val wh = join(satellite, "B")
+        assertNull(satellite.items(wh).single().photoFile)
+        // The central names a photo this phone does not have yet (the file is not there).
+        val name = "item_${java.util.UUID.randomUUID()}.jpg"
+        val vite = central.items(warehouse).single().id
+        central.updatePhoto(vite, name)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertNull("no file yet: the article keeps what it had", satellite.items(wh).single().photoFile)
+        // The satellite asks for it; the photo exists by then and travels with the central's answer.
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        PhotoFiles.receive(app, name, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3, 0xFF.toByte(), 0xD9.toByte()))
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(name, satellite.items(wh).single().photoFile)
+        // Photo removed on the central: removed on the satellite too. Stock untouched all along.
+        central.updatePhoto(vite, null)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertNull(satellite.items(wh).single().photoFile)
+        assertEquals(10.0, qty(satellite, wh, "Vite M8"), 0.0)
+        // Names that are not photos of the app, or files that are not JPEG, are refused.
+        rejects { PhotoFiles.receive(app, "../x.jpg", byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2)) }
+        rejects { PhotoFiles.receive(app, "item_${java.util.UUID.randomUUID()}.jpg", byteArrayOf(1, 2, 3, 4)) }
+    }
+
+    /** 4.15: the photo of an article created on a satellite reaches the central with the article. */
+    @Test fun photoOfANewSatelliteArticleReachesTheCentral() {
+        val app = RuntimeEnvironment.getApplication()
+        val wh = join(satellite, "B")
+        val name = "item_${java.util.UUID.randomUUID()}.jpg"
+        PhotoFiles.receive(app, name, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 9, 9, 0xFF.toByte(), 0xD9.toByte()))
+        val guanti = satellite.addItem(wh, "Guanti", "DPI", 5.0, 1.0, "paia", "")
+        satellite.updatePhoto(guanti, name)
+        assertEquals(1, TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite))).articles)
+        assertEquals(name, central.items(warehouse).single { it.name == "Guanti" }.photoFile)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(name, satellite.items(wh).single { it.name == "Guanti" }.photoFile)
+    }
 }
