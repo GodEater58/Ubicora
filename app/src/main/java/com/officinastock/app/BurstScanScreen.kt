@@ -39,7 +39,14 @@ import com.google.zxing.ResultPoint
 import com.journeyapps.barcodescanner.BarcodeCallback
 import com.journeyapps.barcodescanner.BarcodeResult
 import com.journeyapps.barcodescanner.BarcodeView
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.Result
+import com.google.zxing.multi.qrcode.QRCodeMultiReader
+import com.google.zxing.qrcode.QRCodeReader
+import com.journeyapps.barcodescanner.Decoder
+import com.journeyapps.barcodescanner.DecoderFactory
 import com.journeyapps.barcodescanner.DefaultDecoderFactory
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.delay
 
 /**
@@ -212,7 +219,7 @@ import kotlinx.coroutines.delay
     Surface(color = Ink, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black)) {
-                if (granted) BurstCamera(torch) { raw -> if (gate.accept(raw, SystemClock.elapsedRealtime())) model.handleScannedCode(raw) }
+                if (granted) BurstCamera(torch, multi = true) { raw -> if (gate.accept(raw, SystemClock.elapsedRealtime())) model.handleScannedCode(raw) }
                 else Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Per leggere le etichette serve il permesso della fotocamera.", color = Color.White, textAlign = TextAlign.Center)
@@ -272,14 +279,19 @@ import kotlinx.coroutines.delay
 }
 
 /** Camera preview that keeps reading QR codes; it follows the activity so the camera is released in the background. */
-@Composable private fun BurstCamera(torch: Boolean, onCode: (String) -> Unit) {
+@Composable private fun BurstCamera(torch: Boolean, multi: Boolean = false, onCode: (String) -> Unit) {
     val context = LocalContext.current
     val current by rememberUpdatedState(onCode)
     val view = remember {
+        // Codes of the same frame beyond the first one (shelf check only).
+        val others = ConcurrentLinkedQueue<String>()
         BarcodeView(context).apply {
-            decoderFactory = DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE))
+            decoderFactory = if (multi) DecoderFactory { _ -> MultiQrDecoder(others) } else DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE))
             decodeContinuous(object : BarcodeCallback {
-                override fun barcodeResult(result: BarcodeResult) { result.text?.let { current(it) } }
+                override fun barcodeResult(result: BarcodeResult) {
+                    result.text?.let { current(it) }
+                    while (true) { current(others.poll() ?: break) }
+                }
                 override fun possibleResultPoints(resultPoints: MutableList<ResultPoint>) {}
             })
         }
@@ -298,4 +310,16 @@ import kotlinx.coroutines.delay
     }
     LaunchedEffect(torch) { runCatching { view.setTorch(torch) } }
     AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+}
+
+/**
+ * 4.15 shelf check: reads every QR code of a frame, not only the first. The first goes the usual
+ * way; the others wait in [others] and are handed over with it.
+ */
+private class MultiQrDecoder(private val others: ConcurrentLinkedQueue<String>) : Decoder(QRCodeReader()) {
+    override fun decode(bitmap: BinaryBitmap): Result? = try {
+        val all = QRCodeMultiReader().decodeMultiple(bitmap)
+        all.drop(1).forEach { code -> code.text?.let { others.add(it) } }
+        all.firstOrNull()
+    } catch (e: Exception) { null }
 }

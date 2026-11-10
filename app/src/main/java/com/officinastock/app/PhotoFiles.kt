@@ -41,6 +41,24 @@ object PhotoFiles {
 
     fun delete(context: Context, name: String?) { storedFile(context,name)?.delete() }
 
+    // ---- 4.15: photos travelling between the phones of the team ----
+    const val MAX_SHARED_BYTES = 2_000_000
+    fun exists(context: Context, name: String?): Boolean = storedFile(context,name)?.isFile == true
+    /** Bytes of a stored photo, or null when it is missing or too large to travel. */
+    fun bytes(context: Context, name: String?): ByteArray? =
+        storedFile(context,name)?.takeIf { it.isFile && it.length() in 1..MAX_SHARED_BYTES }?.readBytes()
+    /** Stores a photo received from another phone under the same name. Only JPEG files with a valid name are accepted. */
+    fun receive(context: Context, name: String, bytes: ByteArray) {
+        val target=storedFile(context,name) ?: throw IllegalArgumentException("Nome della foto non valido")
+        require(bytes.size in 4..MAX_SHARED_BYTES && bytes[0]==0xFF.toByte() && bytes[1]==0xD8.toByte()) { "Foto non valida nel file" }
+        if(target.isFile) return
+        val tmp=File(photos(context),"$name.tmp")
+        try {
+            tmp.writeBytes(bytes)
+            if(!tmp.renameTo(target)) throw IOException("Salvataggio della foto non riuscito")
+        } finally { tmp.delete() }
+    }
+
     fun preview(context: Context, selectedUri: String?, savedFile: String?, edge: Int=650): Bitmap? {
         val u=selectedUri?.let(Uri::parse)
         if(u!=null) return runCatching { decode(context,u,edge) }.getOrNull()

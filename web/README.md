@@ -1,4 +1,4 @@
-# Ubicora Web 1.0.4 — PC e browser mobile
+# Ubicora Web 1.1.0 — PC e browser mobile
 
 ## Uso immediato, senza installazione
 
@@ -16,6 +16,12 @@ L'archivio locale risiede in IndexedDB del browser. Stesso PC ma browser diverso
 Il CSV inventario Android 4.6, UTF-8 e separatore `;`, comprende codice, descrizione, categoria, quantità, minimo, unità, ubicazione, note, costo unitario, fornitore e giorni consegna. L'importazione aggiunge gli articoli e genera i movimenti iniziali; i codici duplicati annullano l'intera importazione. Importare preferibilmente in una nuova sede.
 
 Non trasferisce foto, planimetria, prestiti, lotti, seriali o storico Android. Il nuovo CSV esportato dal web mantiene lo stesso formato; per importarlo nell'APK usare una sede nuova, perché l'import Android non aggiorna automaticamente articoli esistenti. Non è un meccanismo di sincronizzazione bidirezionale.
+
+### Il magazzino della squadra sul PC (1.1.0)
+
+Sul telefono centrale esporta l'aggiornamento della squadra (sezione Squadra) e copia il file sul PC. In **Dati e connessione → Apri aggiornamento della squadra** scegli il file e inserisci la password della squadra: viene aggiunta una nuova sede con pianta, strutture, pareti, articoli, giacenze, ripiani e posizioni di quel momento. Le altre sedi non cambiano.
+
+È una copia da consultare. Dal PC non torna nulla ai telefoni: carichi e prelievi fatti qui restano nel browser. Non comprende foto, prestiti e storico. Il file viene decifrato nel browser, senza inviarlo altrove; il formato è lo stesso del telefono (AES-256-GCM, chiave PBKDF2), verificato da un test in entrambe le direzioni di lettura.
 
 ## Spazio condiviso PC-telefono
 

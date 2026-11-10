@@ -1,6 +1,7 @@
 package com.officinastock.app
 
 import android.content.ContentValues
+import android.util.Base64
 import com.officinastock.app.AppDatabase as SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
@@ -164,6 +165,9 @@ class TeamSync(private val stock: StockDb) {
         private const val INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
+        /** 4.15: photos asked for and carried by one file; what does not fit follows at the next exchanges. */
+        private const val MAX_PHOTO_WANTS = 60
+        private const val MAX_PHOTO_BYTES = 8 * 1024 * 1024
     }
     private val db get() = stock.writableDatabase
     /** Photos of articles removed by the last central update: deleted once the update is committed. */
@@ -186,6 +190,53 @@ class TeamSync(private val stock: StockDb) {
     }
 
     // ---------------------------------------------------------------- 4.15 loans of the team
+
+    // ---------------------------------------------------------------- 4.15 photos of the team
+
+    /** Photos as base64 by name, skipping what is missing and stopping at the size limit of one file. */
+    private fun photosJson(names: Collection<String>): JSONObject {
+        val out = JSONObject()
+        var total = 0
+        for (name in names) {
+            val bytes = stock.photoBytes(name) ?: continue
+            if (total + bytes.size > MAX_PHOTO_BYTES) break
+            total += bytes.size
+            out.put(name, Base64.encodeToString(bytes, Base64.NO_WRAP))
+        }
+        return out
+    }
+    /** Central: stores the photo that came with a new article of a satellite. A bad photo never blocks the article. */
+    private fun receivePhoto(sql: SQLiteDatabase, warehouseId: Long, uid: String, name: String, photos: JSONObject?) {
+        if (name.isEmpty()) return
+        runCatching {
+            if (!stock.hasPhoto(name)) stock.storePhoto(name, Base64.decode(photos?.optString(name).orEmpty(), Base64.DEFAULT))
+            sql.update("items", ContentValues().apply { put("photo_file", name) }, "uid=? AND warehouse_id=?", arrayOf(uid, warehouseId.toString()))
+        }
+    }
+    /**
+     * Satellite: every article takes the photo the central names. A photo already on this phone, or
+     * delivered with this file, is used at once; the others are noted and asked for with the next file
+     * of changes. Until a photo arrives the article keeps the one it had.
+     */
+    private fun applyPhotos(sql: SQLiteDatabase, warehouseId: Long, items: JSONArray, delivered: JSONObject?, pendingItems: Set<Long>) {
+        val wants = LinkedHashSet<String>()
+        for (i in 0 until items.length()) {
+            val it = items.getJSONObject(i)
+            if (!it.has("photo")) return   // central older than 4.15: photos stay as they are
+            val local = sql.rawQuery("SELECT id,photo_file FROM items WHERE uid=? AND warehouse_id=?", arrayOf(it.getString("uid"), warehouseId.toString()))
+                .use { c -> if (c.moveToFirst()) c.getLong(0) to (if (c.isNull(1)) null else c.getString(1)) else null } ?: continue
+            if (local.first in pendingItems) continue
+            val name = if (it.isNull("photo")) null else it.getString("photo")
+            if (name == local.second) continue
+            if (name != null && !stock.hasPhoto(name)) {
+                val data = delivered?.optString(name).orEmpty()
+                if (data.isEmpty() || runCatching { stock.storePhoto(name, Base64.decode(data, Base64.DEFAULT)) }.isFailure) { wants += name; continue }
+            }
+            sql.update("items", ContentValues().apply { if (name == null) putNull("photo_file") else put("photo_file", name) }, "id=?", arrayOf(local.first.toString()))
+            local.second?.let { removedPhotos += it }
+        }
+        TeamSyncSchema.put(sql, "photo_wants", wants.take(MAX_PHOTO_WANTS).joinToString("\n"))
+    }
 
     private fun teamLoans(): List<TeamLoan> {
         val warehouse = setting("warehouse_id") ?: return emptyList()
@@ -247,7 +298,7 @@ class TeamSync(private val stock: StockDb) {
                 if (letter != myLetter && categories != null && categories.length() > 0)
                     TeamSyncSchema.put(sql, "scope:$letter", (0 until categories.length()).joinToString("\n") { categories.getString(it) })
             }
-            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor')", null)
+            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants')", null)
             TeamSyncSchema.put(sql, "role", "central")
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
@@ -492,13 +543,19 @@ class TeamSync(private val stock: StockDb) {
                 .put("x2", c.getDouble(2)).put("y2", c.getDouble(3)).put("source", c.getString(4))) }
         val items = JSONArray()
         read.rawQuery("""SELECT i.uid,i.sku,i.name,i.category,i.quantity,i.minimum,i.unit,p.uid,i.shelf_level,i.shelf_slot,
-            i.note,i.unit_cost,i.supplier,i.lead_days FROM items i LEFT JOIN placements p ON p.id=i.placement_id
+            i.note,i.unit_cost,i.supplier,i.lead_days,i.photo_file FROM items i LEFT JOIN placements p ON p.id=i.placement_id
             WHERE i.warehouse_id=? ORDER BY i.id""", arrayOf(warehouseId.toString())).use { c ->
             while (c.moveToNext()) items.put(itemJson(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getDouble(4),
                 c.getDouble(5), c.getString(6), if (c.isNull(7)) null else c.getString(7), if (c.isNull(8)) null else c.getInt(8),
                 if (c.isNull(9)) null else c.getInt(9), c.getString(10), if (c.isNull(11)) null else c.getDouble(11),
-                c.getString(12), if (c.isNull(13)) null else c.getInt(13)))
+                c.getString(12), if (c.isNull(13)) null else c.getInt(13))
+                // 4.15: name of the photo (a new photo has a new name, so the name alone tells when it changed).
+                .put("photo", if (c.isNull(14)) JSONObject.NULL else c.getString(14)))
         }
+        // 4.15: the photos the satellites said they miss, within a size limit; the rest follows at the next exchanges.
+        val wanted = LinkedHashSet<String>()
+        read.rawQuery("SELECT value FROM team_sync_settings WHERE key LIKE 'photo_wants:%'", null).use { c -> while (c.moveToNext()) wanted += lines(c.getString(0)) }
+        state.put("photos", photosJson(wanted))
         state.put("placements", placements).put("walls", walls).put("items", items)
         // 4.15: who has which tool, from every phone (older versions ignore this field).
         val loans = ownLoans(read, warehouseId, "A")
@@ -555,7 +612,7 @@ class TeamSync(private val stock: StockDb) {
                         } else {
                             // A bad article (e.g. a code already taken) must not block every later file of this phone.
                             val inserted = runCatching { insertArticle(sql, warehouseId, e) }
-                            inserted.onSuccess { if (it) articles++ else skipped++ }.onFailure {
+                            inserted.onSuccess { if (it) { articles++; receivePhoto(sql, warehouseId, o.getString("uid"), e.optString("photo"), changes.optJSONObject("photos")) } else skipped++ }.onFailure {
                                 conflict(sql, letter, "${o.optString("sku")} · ${o.optString("name")}",
                                     "articolo non creato: ${it.message ?: "dati non validi"}"); conflicts++
                             }
@@ -597,6 +654,9 @@ class TeamSync(private val stock: StockDb) {
                 "device_uid=?", arrayOf(device))
             TeamSyncSchema.put(sql, "actor", "")
             // 4.15: the satellite's open loans replace what was known of it (a file of an older version has none: nothing changes).
+            changes.optJSONArray("photo_wants")?.let { wants ->
+                TeamSyncSchema.put(sql, "photo_wants:$letter", (0 until minOf(wants.length(), MAX_PHOTO_WANTS)).joinToString("\n") { wants.optString(it) })
+            }
             changes.optJSONArray("loans")?.let { loans ->
                 sql.delete("team_loans", "letter=?", arrayOf(letter))
                 storeLoans(sql, loans, forced = letter, skip = null)
@@ -613,6 +673,7 @@ class TeamSync(private val stock: StockDb) {
         require(setting("role") == "satellite") { "Solo un satellite invia le modifiche al centrale" }
         val read = stock.readableDatabase
         val events = JSONArray()
+        val newPhotos = LinkedHashSet<String>()
         read.rawQuery("SELECT seq,kind,ref_id,created_at FROM team_sync_outbox ORDER BY seq", null).use { c ->
             while (c.moveToNext()) {
                 val seq = c.getLong(0); val ref = c.getLong(2)
@@ -627,6 +688,10 @@ class TeamSync(private val stock: StockDb) {
                             if (r.isNull(8)) null else r.getInt(8), r.getString(9), if (r.isNull(10)) null else r.getDouble(10),
                             r.getString(11), if (r.isNull(12)) null else r.getInt(12)))
                         else e.put("kind", "NONE")
+                        // 4.15: the photo of a new article travels with it.
+                        read.rawQuery("SELECT photo_file FROM items WHERE id=? AND photo_file IS NOT NULL", arrayOf(ref.toString())).use { p ->
+                            if (p.moveToFirst()) { e.put("photo", p.getString(0)); newPhotos += p.getString(0) }
+                        }
                     }
                     "MOVE" -> read.rawQuery("SELECT i.uid,m.delta,m.note,m.created_at FROM movements m JOIN items i ON i.id=m.item_id WHERE m.id=?",
                         arrayOf(ref.toString())).use { r ->
@@ -647,7 +712,8 @@ class TeamSync(private val stock: StockDb) {
         }
         write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid"))
             .put("device_uid", deviceUid()).put("letter", setting("letter")).put("created_at", System.currentTimeMillis())
-            .put("events", events).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
+            .put("events", events).put("photos", photosJson(newPhotos))
+            .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
         return events.length()
     }
 
@@ -768,6 +834,7 @@ class TeamSync(private val stock: StockDb) {
         }
         TeamSyncSchema.put(sql, "applying", "0")
         TeamSyncSchema.put(sql, "last_sync", System.currentTimeMillis().toString())
+        applyPhotos(sql, warehouseId, items, state.optJSONObject("photos"), pendingItems)
         // 4.15: loans of the other phones, and what the central knows of the team (needed if this phone ever replaces it).
         state.optJSONArray("loans")?.let { loans ->
             sql.delete("team_loans", null, null)

@@ -180,3 +180,80 @@ export function demo(){let s=empty();s=apply(s,{type:'warehouse',name:'Officina 
  return s;
 }
 
+
+// ---- 1.1.0: team files of Ubicora Android (encrypted update of the central phone) ----
+// Same format as BackupCipher.kt: "OSTOCKB2", 16-byte salt, 8-byte nonce prefix, then frames of
+// [4-byte length][AES-256-GCM ciphertext + 16-byte tag]; nonce = prefix + frame number; AAD =
+// signature + frame number + length; an empty frame ends the file. Inside: gzip of the JSON.
+const TEAM_SIGNATURE=new TextEncoder().encode('OSTOCKB2'),TEAM_ROUNDS=220000,TEAM_CHUNK=65536;
+const be32=n=>new Uint8Array([n>>>24&255,n>>>16&255,n>>>8&255,n&255]);
+const joinBytes=parts=>{const out=new Uint8Array(parts.reduce((a,p)=>a+p.length,0));let o=0;for(const p of parts){out.set(p,o);o+=p.length;}return out;};
+async function teamKey(password,salt){
+ if(typeof password!=='string'||password.length<8)throw Error('La password della squadra ha almeno 8 caratteri');
+ const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:TEAM_ROUNDS,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+const teamFrame=(prefix,seq,length)=>({name:'AES-GCM',iv:joinBytes([prefix,be32(seq)]),additionalData:joinBytes([TEAM_SIGNATURE,be32(seq),be32(length)]),tagLength:128});
+async function gzip(bytes,inflate){
+ const stream=new Blob([bytes]).stream().pipeThrough(inflate?new DecompressionStream('gzip'):new CompressionStream('gzip'));
+ return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+/** Decrypts a team file and returns its JSON. Wrong password and damaged files give the same message, as on the phone. */
+export async function teamDecrypt(bytes,password){
+ bytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
+ if(bytes.length<32||TEAM_SIGNATURE.some((b,i)=>bytes[i]!==b))throw Error('Questo non è un file di sincronizzazione di Ubicora');
+ const key=await teamKey(password,bytes.slice(8,24)),prefix=bytes.slice(24,32),plain=[];let o=32,seq=0,total=0;
+ try{
+  for(;;){
+   if(o+4>bytes.length)throw Error('incompleto');
+   const length=(bytes[o]<<24|bytes[o+1]<<16|bytes[o+2]<<8|bytes[o+3])>>>0;o+=4;
+   if(length>TEAM_CHUNK||o+length+16>bytes.length)throw Error('blocco');
+   const block=new Uint8Array(await crypto.subtle.decrypt(teamFrame(prefix,seq++,length),key,bytes.slice(o,o+length+16)));o+=length+16;
+   if(length===0){if(o!==bytes.length)throw Error('coda');break;}
+   total+=block.length;if(total>64*1024*1024)throw Error('grande');plain.push(block);
+  }
+  return JSON.parse(new TextDecoder().decode(await gzip(joinBytes(plain),true)));
+ }catch(e){throw Error('File non valido o password della squadra errata');}
+}
+/** Writes a team file (used by the tests and by the phone-compatibility fixture). */
+export async function teamEncrypt(json,password,random=n=>crypto.getRandomValues(new Uint8Array(n))){
+ const salt=random(16),prefix=random(8),key=await teamKey(password,salt),data=await gzip(new TextEncoder().encode(JSON.stringify(json)),false);
+ const parts=[TEAM_SIGNATURE,salt,prefix];let seq=0;
+ for(let o=0;o<data.length;o+=TEAM_CHUNK){const chunk=data.slice(o,o+TEAM_CHUNK);parts.push(be32(chunk.length),new Uint8Array(await crypto.subtle.encrypt(teamFrame(prefix,seq++,chunk.length),key,chunk)));}
+ parts.push(be32(0),new Uint8Array(await crypto.subtle.encrypt(teamFrame(prefix,seq,0),key,new Uint8Array(0))));
+ return joinBytes(parts);
+}
+/**
+ * Adds the warehouse of a central phone's update as a new site: plan, structures, walls, articles
+ * with quantities and locations. It is a picture of that moment to consult on the PC: nothing goes
+ * back to the phones, and photos, loans and history are not part of it.
+ */
+export function importTeam(state,snapshot,label='squadra',at=Date.now()){
+ if(!snapshot||snapshot.format!=='UBICORA_SYNC_STATE'||snapshot.version!==1)throw Error('Serve il file di aggiornamento del telefono centrale');
+ const s=structuredClone(state),room=snapshot.warehouse??{},wid=uid();
+ const width=number(room.width),depth=number(room.height);
+ s.warehouses.push({id:wid,name:name((String(room.name??'Magazzino').trim().slice(0,140)+' · '+label).slice(0,160)),location:String(room.location??'').trim().slice(0,300),width,depth});
+ const byUid=new Map(),taken=new Set();
+ for(const p of snapshot.placements??[]){
+  // The phone stores centre and rotation; the browser stores the top-left corner of the footprint.
+  const quarter=Math.round((Number(p.rotation)||0)/90)%2!==0;
+  const w=Math.min(positive(quarter?p.depth:p.width),width),d=Math.min(positive(quarter?p.width:p.depth),depth);
+  let label=String(p.label||p.kind||'Struttura').trim().slice(0,150)||'Struttura';while(taken.has(label))label=nextLabel(label);taken.add(label);
+  const id=uid();byUid.set(p.uid,{id,name:label});
+  s.placements.push({id,warehouseId:wid,name:label,x:clamp(number(p.x,-1e12)-w/2,0,width-w),y:clamp(number(p.y,-1e12)-d/2,0,depth-d),width:w,depth:d});
+ }
+ for(const w of snapshot.walls??[]){
+  const [x1,y1,x2,y2]=[clamp(number(w.x1,-1e12),0,width),clamp(number(w.y1,-1e12),0,depth),clamp(number(w.x2,-1e12),0,width),clamp(number(w.y2,-1e12),0,depth)];
+  if(Math.hypot(x2-x1,y2-y1)>=.2)s.walls.push({id:uid(),warehouseId:wid,x1,y1,x2,y2});
+ }
+ const whole=(v,max)=>Number.isInteger(v)&&v>=1&&v<=max?v:null;
+ for(const a of snapshot.items??[]){
+  const place=a.placement==null?null:byUid.get(a.placement)??null;
+  const i={id:uid(),warehouseId:wid,sku:name(a.sku),name:String(a.name??'').trim().slice(0,180),category:String(a.category||'Ricambi').slice(0,100),unit:name(a.unit||'pz').slice(0,24),
+   quantity:number(a.quantity),minimum:number(a.minimum??0),cost:a.cost==null?null:number(a.cost),supplier:String(a.supplier??'').slice(0,160),
+   leadDays:Number.isInteger(a.lead)&&a.lead>=0&&a.lead<=3650?a.lead:null,location:place?.name??'',note:String(a.note??'').slice(0,3000),
+   placementId:place?.id??null,shelfLevel:place?whole(a.level,20):null,shelfSlot:place?whole(a.slot,50):null};
+  s.items.push(i);if(i.quantity)s.movements.push({id:uid(),itemId:i.id,delta:i.quantity,note:'Aggiornamento della squadra',at});
+ }
+ return {state:validate(s),warehouseId:wid,items:(snapshot.items??[]).length};
+}

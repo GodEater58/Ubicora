@@ -5,7 +5,8 @@ root=Path(__file__).resolve().parents[1]
 base=root/'app/src/main/java/com/officinastock/app'
 cat=(base/'DemoCatalog.kt').read_text(encoding='utf-8')
 db=(base/'StockDb.kt').read_text(encoding='utf-8')
-ui=(base/'Screens.kt').read_text(encoding='utf-8')
+# 4.15: the screens are split in several files.
+ui=''.join((base/f).read_text(encoding='utf-8') for f in ['Screens.kt','ProfileScreens.kt','InventoryScreen.kt','ItemScreens.kt','MovementsScreen.kt','SettingsScreen.kt'])
 model=(base/'StockViewModel.kt').read_text(encoding='utf-8')
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 main=(base/'MainActivity.kt').read_text(encoding='utf-8')

@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.15.0-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.16.0-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
@@ -25,7 +25,7 @@
 
 > Le immagini qui sopra mostrano la 4.14. La 4.15 ha cambiato prima schermata, lista articoli, prelievo a raffica e barra in basso: vanno rifatte da un telefono con la nuova versione installata.
 
-## Novità della 4.15
+## Novità della 4.15 e della 4.16
 
 | | Novità | In breve |
 |---|---|---|
@@ -35,9 +35,11 @@
 | 🧭 | **Prelievo guidato** | Lista di prelievo in ordine di percorso; la mappa mostra la prossima struttura, quelle già visitate e il tratto da fare |
 | 🔧 | **Prestiti di squadra** | Ogni telefono vede gli utensili in prestito dagli altri; ogni movimento ricorda il telefono che l'ha fatto |
 | 📶 | **Tag NFC e verifica scaffale** | Un tag NFC vale come l'etichetta QR: basta toccarlo. «Verifica scaffale» passa la fotocamera su una struttura e dice cosa manca o è fuori posto |
+| 🖼️ | **Foto di squadra** (4.16) | Le foto degli articoli arrivano su tutti i telefoni con gli scambi |
+| 💻 | **Squadra sul PC** (4.16) | Ubicora Web apre l'aggiornamento cifrato del centrale e mostra il magazzino della squadra |
 | 🔁 | **Centrale sostituibile** | Se il telefono centrale è perso, un satellite ne prende il posto e gli altri proseguono con lui |
 
-Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).
+Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md) · [note della 4.16](docs/CHANGELOG_4_16_0.md).
 
 ## Cosa fa
 
@@ -90,7 +92,7 @@ Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).
 ## Documentazione
 
 - **Per chi usa l'app:** [guida illustrata 4.12](docs/guida/Ubicora_Guida_4.12.pdf) · [novità versione per versione](docs/CHANGELOG.md)
-- **Approfondimenti:** [mappa](docs/PLANIMETRIA_4_1.md) · [gestione aziendale](docs/MANAGER_4_3_GUIDA.md) · [indicatori](docs/MANAGER_INDICATORI_4_6.md) · [pianificazione e tracciabilità](docs/PLANNING_4_6.md) · [server](docs/ENTERPRISE_4_4_SERVER.md)
+- **Approfondimenti:** [tabelle dell'archivio](docs/SCHEMA.md) · [mappa](docs/PLANIMETRIA_4_1.md) · [gestione aziendale](docs/MANAGER_4_3_GUIDA.md) · [indicatori](docs/MANAGER_INDICATORI_4_6.md) · [pianificazione e tracciabilità](docs/PLANNING_4_6.md) · [server](docs/ENTERPRISE_4_4_SERVER.md)
 - **Rilascio:** [criteri beta](docs/BETA_RELEASE_GATE.md) · [checklist commerciale](docs/COMMERCIAL_RELEASE_CHECKLIST.md) · [stato dei test](docs/TEST_REPORT.md)
 
 ## Stato e informazioni legali
