@@ -210,7 +210,8 @@ class MainActivity: ComponentActivity() {
     } } }
 }
 
-enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione") }
+// 4.15: the bottom bar shows Oggi, Articoli, the scanner, Mappa and Squadra; the other sections open from inside the screens.
+enum class Tab(val label:String) { HOME("Oggi"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione"), TEAM("Squadra") }
 enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90, FAVORITES }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
@@ -237,15 +238,15 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     LaunchedEffect(data.scannedItemId) {
         if(data.scannedItemId!=null) go(Tab.STOCK)
     }
-    LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.SETTINGS) }
+    LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.TEAM) }
     // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
-    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
-        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) go(Tab.MAP)
+    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds,data.guidedMapRequest) {
+        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null || data.guidedMapRequest!=0L) { go(Tab.MAP); model.consumeGuidedMap() }
     }
     // 4.15: no floating button over the lists; the scanner sits in the middle of the bottom bar.
     Scaffold(containerColor=Ink, bottomBar={
         NavigationBar(containerColor=PanelBg) {
-            Tab.entries.filter{it!=Tab.MANAGER}.forEach { item ->
+            listOf(Tab.HOME,Tab.STOCK,Tab.MAP,Tab.TEAM).forEach { item ->
                 val icon=when(item){
                     Tab.HOME -> Icons.Outlined.Dashboard
                     Tab.STOCK -> Icons.Outlined.Inventory2
@@ -253,14 +254,14 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.MOVES -> Icons.Outlined.SyncAlt
                     Tab.SETTINGS -> Icons.Outlined.Settings
                     Tab.MANAGER -> Icons.Outlined.Dashboard
+                    Tab.TEAM -> Icons.Outlined.SyncAlt
                 }
                 NavigationBarItem(selected=tab==item,onClick={go(item)},
                     icon={Icon(icon,contentDescription=item.label)},
-                    label={Text(item.label,maxLines=1)},alwaysShowLabel=tab==item)
+                    label={Text(item.label,maxLines=1)},alwaysShowLabel=true)
                 if(item==Tab.STOCK) NavigationBarItem(selected=false,onClick=onScan,
                     icon={ Surface(color=Mint,shape=androidx.compose.foundation.shape.CircleShape) {
-                        Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR",tint=OnMint,modifier=Modifier.padding(10.dp)) } },
-                    label={Text("Scansiona",maxLines=1)},alwaysShowLabel=false)
+                        Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR",tint=OnMint,modifier=Modifier.padding(14.dp).size(28.dp)) } })
             }
         }
     }) { padding ->
@@ -280,6 +281,8 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         goMap={go(Tab.MAP)},
                         goMoves={openActivity(ActivityFocus.ALL)},
                         goManager={go(Tab.MANAGER)},
+                        goSettings={go(Tab.SETTINGS)},
+                        goTeam={go(Tab.TEAM)},
                         onStockFocus={openStock(it)},
                         onActivityFocus={focus,days->openActivity(focus,days)},
                         onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
@@ -287,6 +290,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.MAP -> NativeMapScreen(model,onAr)
                     Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
                     Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
+                    Tab.TEAM -> TeamScreen(model)
                     Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
                 }
             }

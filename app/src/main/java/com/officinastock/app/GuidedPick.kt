@@ -1,19 +1,27 @@
 package com.officinastock.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 4.15 guided picking: one line of the list ([skipped] = "later", walked at the end). */
-data class PickLine(val itemId: Long, val quantity: Double, val skipped: Boolean = false)
+/** 4.15 guided picking: one line of the list ([skipped] = "later", walked at the end; [done] = already taken). */
+data class PickLine(val itemId: Long, val quantity: Double, val skipped: Boolean = false, val done: Boolean = false)
 data class PickStop(val line: PickLine, val item: StockItem, val place: Placement?)
+/** A list where everything has been taken is over. */
+object PickLists { fun finished(lines: List<PickLine>): List<PickLine> = if (lines.none { !it.done }) emptyList() else lines }
+/** What the map draws: structures already visited, the one to reach and where the walk comes from. */
+data class PickGuide(val done: Set<Long> = emptySet(), val next: Placement? = null, val from: Placement? = null)
 
 /**
  * Order of the walk. Structures are visited from the first by name to the nearest not yet visited
@@ -24,10 +32,23 @@ object PickRoute {
     fun order(lines: List<PickLine>, items: List<StockItem>, placements: List<Placement>): List<PickStop> {
         val itemById = items.associateBy { it.id }
         val placeById = placements.associateBy { it.id }
-        val stops = lines.mapNotNull { line ->
+        val stops = lines.filter { !it.done }.mapNotNull { line ->
             itemById[line.itemId]?.let { item -> PickStop(line, item, item.placementId?.let { placeById[it] }) }
         }
         return walk(stops.filter { !it.line.skipped }) + walk(stops.filter { it.line.skipped })
+    }
+
+    /** Done lines are kept, in the order they were taken, until the list is finished. */
+    fun guide(lines: List<PickLine>, items: List<StockItem>, placements: List<Placement>): PickGuide {
+        if (lines.isEmpty()) return PickGuide()
+        val itemById = items.associateBy { it.id }
+        val placeById = placements.associateBy { it.id }
+        fun placeOf(line: PickLine) = itemById[line.itemId]?.placementId?.let { placeById[it] }
+        val next = order(lines, items, placements).firstOrNull()?.place
+        val waiting = lines.filter { !it.done }.mapNotNull { placeOf(it)?.id }.toSet()
+        val done = lines.filter { it.done }.mapNotNull { placeOf(it)?.id }.toSet() - waiting
+        val from = lines.lastOrNull { it.done }?.let { placeOf(it) }?.takeIf { it.id != next?.id }
+        return PickGuide(done, next, from)
     }
 
     private fun walk(stops: List<PickStop>): List<PickStop> {
@@ -53,8 +74,9 @@ object PickRoute {
 }
 
 /**
- * 4.15: bar of the guided picking, above the bottom bar on every section. It names the next
- * article and where it is; on the map the structure to reach is highlighted by itself.
+ * 4.15 guided picking. On the map it is the large panel of the walk: progress, next article, where
+ * it is, how many, confirmation by scanning its label. On the other sections it shrinks to a bar
+ * that leads back to the map. The structure to reach is highlighted on the plan by itself.
  */
 @Composable fun GuidedPickBar(model: StockViewModel, onMapTab: Boolean) {
     val u = model.ui
@@ -63,28 +85,64 @@ object PickRoute {
     val next = route.firstOrNull() ?: return
     val placeId = next.place?.id
     LaunchedEffect(next.item.id, onMapTab) { if (onMapTab && placeId != null) model.showOnMap(placeId) }
+    val total = u.pickList.size
+    val done = u.pickList.count { it.done }
     val take = minOf(next.line.quantity, next.item.quantity)
-    Surface(color = PanelBg, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("PRELIEVO GUIDATO · ${route.size} ${if (route.size == 1) "articolo" else "articoli"}", color = Amber, fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = model::clearPickList) { Text("Svuota lista", fontSize = 12.sp) }
+    Surface(color = PanelBg, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+        if (!onMapTab) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("PRELIEVO GUIDATO · $done di $total", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text(next.item.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Locations.describe(next.place, next.item), color = if (next.place == null) Amber else Sky, fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(next.item.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(Locations.describe(next.place, next.item), color = if (next.place == null) Amber else Sky, fontSize = 15.sp,
-                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (next.item.quantity < next.line.quantity) Text(
-                "Ne servono ${amount(next.line.quantity)}, a scaffale ${amount(next.item.quantity)} ${next.item.unit}", color = Danger, fontSize = 12.sp)
-            Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { model.confirmPick(next.item.id) }, enabled = !u.busy && take > 0.0,
-                    modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)) {
-                    Text(if (take > 0.0) "Prelevato ${amount(take)} ${next.item.unit}" else "Esaurito", fontWeight = FontWeight.Bold, maxLines = 1)
+            Button(onClick = { if (placeId != null) model.showOnMap(placeId) else model.openGuidedMap() }, modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(16.dp)) { Text("Vai", fontWeight = FontWeight.Bold) }
+        } else Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Prelievo guidato · $done di $total fatti", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = model::clearPickList) { Text("Chiudi lista") }
+            }
+            // One segment per article: taken, next, still to take.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(total.coerceAtMost(24)) { index ->
+                    Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                        .background(if (index < done) Mint else if (index == done) Amber else Surface2))
                 }
-                if (placeId != null && !onMapTab) OutlinedButton(onClick = { model.showOnMap(placeId) }, modifier = Modifier.height(52.dp),
-                    shape = RoundedCornerShape(16.dp)) { Text("In pianta") }
-                if (take > 0.0 && route.size > 1) TextButton(onClick = { model.skipPick(next.item.id) }, modifier = Modifier.height(52.dp)) { Text("Dopo") }
-                else if (take <= 0.0) TextButton(onClick = { model.removeFromPickList(next.item.id) }, modifier = Modifier.height(52.dp)) { Text("Togli") }
+            }
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("PROSSIMO", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text(next.item.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 26.sp)
+                    Text(Locations.describe(next.place, next.item), color = if (next.place == null) Amber else Sky, fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(amount(take), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (take < next.line.quantity) Danger else TextPrimary)
+                    Text("${next.item.unit} da prendere", color = TextSecondary, fontSize = 12.sp)
+                }
+            }
+            if (take < next.line.quantity) Text("Ne servono ${amount(next.line.quantity)}, a scaffale ${amount(next.item.quantity)} ${next.item.unit}.",
+                color = Danger, fontSize = 12.sp)
+            Button(onClick = { model.scanToConfirmPick(next.item.id) }, enabled = !u.busy && take > 0.0,
+                modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(20.dp)) {
+                Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
+                Spacer(Modifier.width(10.dp))
+                Text("Scansiona per confermare", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = { model.skipPick(next.item.id) }, enabled = route.size > 1, modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(16.dp)) { Text("Salta") }
+                OutlinedButton(onClick = { model.removeFromPickList(next.item.id) }, modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(16.dp)) { Text("Manca a scaffale", maxLines = 1) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (route.size > 1) "Poi: " + route.drop(1).take(2).joinToString(" · ") { it.item.name + (it.place?.let { p -> " (${p.label})" } ?: "") }
+                    else "Ultimo articolo della lista", color = TextSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+                // Not in the first design: a worn or missing label must not block the walk.
+                TextButton(onClick = { model.confirmPick(next.item.id) }, enabled = !u.busy && take > 0.0) { Text("Senza etichetta") }
             }
         }
     }

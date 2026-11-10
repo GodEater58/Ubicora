@@ -13,7 +13,11 @@
 | **Tieni premuto** | Sulla riga: pannello dal basso con preleva/carica una quantità, mostra in pianta, sposta sulla mappa, lista di prelievo, etichetta QR, preferiti. Sui tasti − e +: «quanti?» |
 | **Righe più leggibili** | Nome su due righe, ubicazione in evidenza, «Scorta bassa» solo quando serve. «Vista compatta» mostra più articoli togliendo foto e codice |
 | **Scansiona nella barra in basso** | Tasto centrale della barra di navigazione, sempre nello stesso punto: non c'è più il pulsante flottante sopra le liste |
-| **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. Una barra sopra la navigazione indica il prossimo articolo e dove si trova, in ordine di percorso; nella Mappa la struttura da raggiungere si evidenzia da sola |
+| **Prima schermata «Oggi»** | Al posto dei riquadri con i numeri: tre contatori compatti, l'elenco «Da fare adesso» (articoli sotto scorta, utensili fuori da più di 7 giorni, articoli senza ubicazione, conflitti della squadra), stato della squadra in una riga e ultimi movimenti. Le Impostazioni si aprono dall'ingranaggio in alto |
+| **Barra in basso** | Oggi · Articoli · Scansiona · Mappa · Squadra. Movimenti si apre da «Tutti» in Oggi, le Impostazioni dall'ingranaggio |
+| **Sezione Squadra** | La sincronizzazione ha una sua sezione nella barra (resta anche nelle Impostazioni) |
+| **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. Nella Mappa un pannello mostra avanzamento, prossimo articolo, ubicazione e quantità; si conferma scansionando l'etichetta («Senza etichetta» se manca). In pianta: strutture già visitate in verde, prossima in arancio, tratto puntinato tra le due. Nelle altre sezioni resta una barra con «Vai» |
+| **Prestito dal prelievo a raffica** | «Segna come prestito» accanto a «Salta»: chiede chi lo prende e prosegue |
 | **Mappa: doppio tocco** | Due tocchi sul pavimento vuoto ingrandiscono su quel punto; a zoom già alto tornano alla pianta intera |
 | **Mappa: etichette e contatori** | Le etichette si spostano o si nascondono invece di finire sotto i contatori degli articoli |
 
@@ -25,4 +29,4 @@
 ## Da provare sul telefono
 Questa versione è verificata con i test automatici, non su un dispositivo: fotocamera, torcia, suono, vibrazione, pausa di 2 secondi tra due letture della stessa etichetta, scorrimento sulle righe (anche con i guanti), pannello dal basso e doppio tocco sulla mappa vanno collaudati in officina.
 
-Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `GuidedPickTest` (ordine del percorso, quantità digitate).
+Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `GuidedPickTest` (ordine del percorso, guida sulla mappa, prestiti scaduti, quantità digitate).

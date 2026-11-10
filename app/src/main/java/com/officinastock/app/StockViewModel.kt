@@ -72,6 +72,10 @@ data class StockUiState(
     val burstQty: Double = 1.0,
     /** 4.15 guided picking: what to take, walked in the order of the plan. */
     val pickList: List<PickLine> = emptyList(),
+    /** 4.15: article whose label the scanner must read to confirm the guided withdrawal. */
+    val pickScanItemId: Long? = null,
+    /** 4.15: the guided bar asks to open the map (token, 0 = none). */
+    val guidedMapRequest: Long = 0,
     /** 4.15: outcome of the last reading, for the sound and the vibration of the scanner screen. */
     val scanSignal: ScanSignal? = null,
     /** 4.10: a screen asks MainActivity to open the scanner (token, 0 = none). */
@@ -113,6 +117,15 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             return
         }
         val warehouse=ui.warehouse ?: return
+        ui.pickScanItemId?.let { expected ->
+            // 4.15 guided picking: only the label of the expected article confirms the withdrawal.
+            ui=ui.copy(pickScanItemId=null)
+            val read=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+                ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
+            if(read?.id==expected) confirmPick(expected)
+            else ui=ui.copy(message="Etichetta diversa: serve ${ui.items.firstOrNull { it.id==expected }?.name ?: "l'articolo della lista"}.")
+            return
+        }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
         ArticleCodes.parseLocationScan(raw)?.let { location ->
             ui=when {
@@ -140,7 +153,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun consumeScanRequest() { ui=ui.copy(scanRequest=0) }
     fun consumeTeamQr() { ui=ui.copy(teamQr=null) }
     /** Scanner closed without reading: a burst session ends there. */
-    fun scanCancelled() { if(ui.burstMode) endBurst() }
+    fun scanCancelled() { if(ui.burstMode) endBurst(); if(ui.pickScanItemId!=null) ui=ui.copy(pickScanItemId=null) }
     fun startBurst() { if(!ui.busy) { ui=ui.copy(burstMode=true,burstItemId=null,burstQty=1.0,burstCount=0,scanSignal=null,message=null); requestScan() } }
     fun endBurst() { ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null) }
     fun burstSkip() { ui=ui.copy(burstItemId=null,burstQty=1.0); requestScan() }
@@ -150,6 +163,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=ui.copy(burstQty=if(up) BurstQty.more(ui.burstQty,item.quantity) else BurstQty.less(ui.burstQty))
     }
     fun consumeScanSignal(token:Long) { if(ui.scanSignal?.token==token) ui=ui.copy(scanSignal=null) }
+    /** 4.15: the scanned tool leaves as a loan instead of a withdrawal; the session goes on. */
+    fun burstLend(itemId:Long,quantity:Double,borrower:String) {
+        if(!(quantity>0.0) || borrower.isBlank()) return
+        execute(onSuccess={
+            ui=ui.copy(burstItemId=null,burstQty=1.0,burstCount=ui.burstCount+1)
+            if(ui.burstMode) requestScan()
+        },light=true) { db.lend(itemId,borrower.trim(),quantity) }
+    }
     fun burstPick(itemId:Long,quantity:Double) {
         if(!(quantity>0.0)) return
         // 4.15: a burst withdrawal can be undone like any other movement.
@@ -167,22 +188,28 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.items.none { it.id==itemId }) return
         val lines=ui.pickList
         val known=lines.any { it.itemId==itemId }
-        ui=ui.copy(message=null,pickList=if(known) lines.map { if(it.itemId==itemId) it.copy(quantity=it.quantity+1,skipped=false) else it }
+        ui=ui.copy(message=null,pickList=if(known) lines.map { if(it.itemId!=itemId) it else if(it.done) PickLine(itemId,1.0) else it.copy(quantity=it.quantity+1,skipped=false) }
             else lines+PickLine(itemId,1.0))
     }
-    fun removeFromPickList(itemId:Long) { ui=ui.copy(pickList=ui.pickList.filter { it.itemId!=itemId }) }
-    fun clearPickList() { ui=ui.copy(pickList=emptyList()) }
+    fun removeFromPickList(itemId:Long) { ui=ui.copy(pickList=PickLists.finished(ui.pickList.filter { it.itemId!=itemId })) }
+    fun clearPickList() { ui=ui.copy(pickList=emptyList(),pickScanItemId=null) }
+    fun openGuidedMap() { ui=ui.copy(guidedMapRequest=System.nanoTime()) }
+    fun consumeGuidedMap() { if(ui.guidedMapRequest!=0L) ui=ui.copy(guidedMapRequest=0) }
+    /** Opens the scanner: the withdrawal is confirmed only by the label of that article. */
+    fun scanToConfirmPick(itemId:Long) { if(!ui.busy && ui.pickList.any { it.itemId==itemId && !it.done }) { ui=ui.copy(pickScanItemId=itemId,message=null); requestScan() } }
     /** "Later": the article goes to the end of the walk. */
-    fun skipPick(itemId:Long) { ui=ui.copy(pickList=ui.pickList.map { if(it.itemId==itemId) it.copy(skipped=true) else it }) }
+    fun skipPick(itemId:Long) { ui=ui.copy(pickList=ui.pickList.map { if(it.itemId==itemId && !it.done) it.copy(skipped=true) else it }) }
     /** Withdraws what the list asks, or what is left on the shelf when there is less. */
     fun confirmPick(itemId:Long) {
-        val line=ui.pickList.firstOrNull { it.itemId==itemId } ?: return
+        val line=ui.pickList.firstOrNull { it.itemId==itemId && !it.done } ?: return
         val item=ui.items.firstOrNull { it.id==itemId } ?: return
         val quantity=minOf(line.quantity,item.quantity)
         if(!(quantity>0.0)) { ui=ui.copy(message="${item.name}: a scaffale non ce n'è. Salta o togli dalla lista."); return }
         val label=MovementUndo.label(-quantity,item)
         execute(onSuccess={
-            ui=ui.copy(pickList=ui.pickList.filter { it.itemId!=itemId },movementUndo=MovementUndo(itemId,-quantity,label,System.nanoTime()))
+            // The line stays as done (last in the list) until every article has been taken: the map shows where the walk has been.
+            ui=ui.copy(pickList=PickLists.finished(ui.pickList.filter { it.itemId!=itemId }+line.copy(done=true,skipped=false)),
+                movementUndo=MovementUndo(itemId,-quantity,label,System.nanoTime()))
         },light=true) { db.movement(itemId,-quantity,"Prelievo guidato") }
     }
     private fun handleBurstScan(raw:String,warehouse:Warehouse) {
@@ -309,6 +336,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
+            pickScanItemId=ui.pickScanItemId,
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},

@@ -75,6 +75,15 @@ import kotlinx.coroutines.delay
             model.consumeScanSignal(signal.token)
         }
     }
+    // null = closed; otherwise the name being typed for "Segna come prestito".
+    var lendTo by remember(u.burstItemId) { mutableStateOf<String?>(null) }
+    val lendName = lendTo
+    if (lendName != null && item != null) AlertDialog(onDismissRequest = { lendTo = null },
+        title = { Text("Prestito · ${item.name}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = { Input(lendName, { lendTo = it }, "Chi lo prende") },
+        confirmButton = { Button(enabled = lendName.isNotBlank() && !u.busy, onClick = { model.burstLend(item.id, u.burstQty, lendName); lendTo = null }) {
+            Text("Presta ${amount(u.burstQty)} ${item.unit}") } },
+        dismissButton = { TextButton(onClick = { lendTo = null }) { Text("Annulla") } })
     BackHandler { model.endBurst() }
     Surface(color = Ink, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -143,8 +152,12 @@ import kotlinx.coroutines.delay
                             modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(20.dp)) {
                             Text("Preleva ${amount(qty)} ${item.unit}", fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         }
-                        OutlinedButton(onClick = model::burstSkip, enabled = !u.busy, modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(16.dp)) { Text("Salta questo articolo") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(onClick = model::burstSkip, enabled = !u.busy, modifier = Modifier.weight(1f).height(52.dp),
+                                shape = RoundedCornerShape(16.dp)) { Text("Salta") }
+                            OutlinedButton(onClick = { lendTo = "" }, enabled = !u.busy && qty > 0.0 && qty <= max, modifier = Modifier.weight(1f).height(52.dp),
+                                shape = RoundedCornerShape(16.dp)) { Text("Segna come prestito", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
                     }
                     u.movementUndo?.let { undo ->
                         HorizontalDivider()

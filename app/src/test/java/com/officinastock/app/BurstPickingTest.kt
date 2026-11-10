@@ -118,10 +118,10 @@ class BurstPickingTest {
 
         model.confirmPick(vite.id); awaitIdle()
         assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
-        assertTrue(model.ui.pickList.none { it.itemId == vite.id })
+        assertTrue("taken lines stay as done until the list is over", model.ui.pickList.single { it.itemId == vite.id }.done)
         assertEquals(-2.0, model.ui.movementUndo!!.delta, 0.0)
 
-        model.skipPick(dado.id); assertTrue(model.ui.pickList.single().skipped)
+        model.skipPick(dado.id); assertTrue(model.ui.pickList.single { it.itemId == dado.id }.skipped)
         model.confirmPick(dado.id); awaitIdle()
         assertEquals(0.0, model.ui.items.single { it.id == dado.id }.quantity, 0.0)
         assertTrue(model.ui.pickList.isEmpty())
@@ -130,5 +130,15 @@ class BurstPickingTest {
         model.addToPickList(dado.id); model.confirmPick(dado.id); awaitIdle()
         assertEquals(1, model.ui.pickList.size); assertNotNull(model.ui.message)
         model.clearPickList(); assertTrue(model.ui.pickList.isEmpty())
+
+        // Confirmation by label: the wrong one is refused, the right one withdraws.
+        model.addToPickList(vite.id)
+        model.scanToConfirmPick(vite.id); assertNotEquals(0L, model.ui.scanRequest); model.consumeScanRequest()
+        model.handleScannedCode(ArticleCodes.payload(dado.warehouseId, dado.sku))
+        assertNotNull(model.ui.message); assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        model.scanToConfirmPick(vite.id); model.consumeScanRequest()
+        model.handleScannedCode(ArticleCodes.payload(vite.warehouseId, vite.sku)); awaitIdle()
+        assertEquals(2.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue(model.ui.pickList.isEmpty())
     }
 }

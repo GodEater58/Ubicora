@@ -113,6 +113,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var selectedId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var selectedWallId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var highlightId by remember(warehouse.id){mutableStateOf<Long?>(null)}
+    // 4.15 guided picking: structures already visited, the one to reach and the stretch between them.
+    val guide=remember(state.pickList,state.items,state.placements){ PickRoute.guide(state.pickList,state.items,state.placements) }
     var wallAnchor by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftEnd by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftCloses by remember(warehouse.id){mutableStateOf(false)}
@@ -485,6 +487,15 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             val box=Offset(center.x-fw/2,center.y-fh/2)
                             if(f.kind!="Corridoio")drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                             drawRoundRect(fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            if(f.id in guide.done) {
+                                drawRoundRect(Mint.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                                drawRoundRect(Mint,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=3f))
+                            }
+                            if(f.id==guide.next?.id) {
+                                drawRoundRect(Amber.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                                drawRoundRect(Amber,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=4f))
+                                drawRoundRect(Amber.copy(alpha=.5f),topLeft=Offset(box.x-9f,box.y-9f),size=Size(fw+18f,fh+18f),cornerRadius=CornerRadius(12f),style=Stroke(width=2f))
+                            }
                             when(f.kind) {
                                 "Porta" -> drawArc(Color.White.copy(alpha=.5f),270f,90f,false,topLeft=Offset(box.x-fw,box.y+fh-fw),size=Size(fw*2,fw*2),
                                     style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f))))
@@ -558,6 +569,14 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             }
                             }
                         }
+                    }
+                    // 4.15: dotted stretch from the last structure visited to the next one.
+                    val guideFrom=guide.from;val guideNext=guide.next
+                    if(guideFrom!=null && guideNext!=null) {
+                        val a=camera.toScreen(PointMetres(guideFrom.x,guideFrom.y));val b=camera.toScreen(PointMetres(guideNext.x,guideNext.y))
+                        drawLine(Amber,Offset(a.x,a.y),Offset(b.x,b.y),strokeWidth=5f,cap=androidx.compose.ui.graphics.StrokeCap.Round,
+                            pathEffect=PathEffect.dashPathEffect(floatArrayOf(3f,16f)))
+                        drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
                     }
                     drawIntoCanvas { cv ->
                         cv.nativeCanvas.drawText(numberM(roomWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
