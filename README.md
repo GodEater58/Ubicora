@@ -7,11 +7,11 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.14.0-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.15.0-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
-[📖 Guida illustrata (PDF)](docs/guida/Ubicora_Guida_4.12.pdf) · [🆕 Novità](docs/CHANGELOG.md) · [⬇️ Installare e aggiornare](#installare-e-aggiornare) · [🌐 Versione Web](web/README.md)
+[📖 Guida illustrata 4.12 (PDF)](docs/guida/Ubicora_Guida_4.12.pdf) · [🆕 Novità](docs/CHANGELOG.md) · [⬇️ Installare e aggiornare](#installare-e-aggiornare) · [🌐 Versione Web](web/README.md)
 
 </div>
 
@@ -23,14 +23,30 @@
   <img src="docs/img/tema_chiaro.png" width="19%" alt="Tema chiaro"/>
 </p>
 
+> Le immagini qui sopra mostrano la 4.14. La 4.15 ha cambiato prima schermata, lista articoli, prelievo a raffica e barra in basso: vanno rifatte da un telefono con la nuova versione installata.
+
+## Novità della 4.15
+
+| | Novità | In breve |
+|---|---|---|
+| 🏠 | **Oggi** | La prima schermata elenca cosa c'è da fare: articoli sotto scorta, utensili fuori da troppi giorni, articoli senza ubicazione, conflitti della squadra |
+| 👆 | **Gesti** | Scorri una riga a destra per prelevare e a sinistra per caricare; tieni premuto per le azioni rapide; tieni premuto − o + per digitare la quantità |
+| 📷 | **Prelievo a raffica** | Una sola schermata con la fotocamera sempre accesa, suono e vibrazione a ogni lettura, «Segna come prestito» |
+| 🧭 | **Prelievo guidato** | Lista di prelievo in ordine di percorso; la mappa mostra la prossima struttura, quelle già visitate e il tratto da fare |
+| 🔧 | **Prestiti di squadra** | Ogni telefono vede gli utensili in prestito dagli altri; ogni movimento ricorda il telefono che l'ha fatto |
+| 📶 | **Tag NFC e verifica scaffale** | Un tag NFC vale come l'etichetta QR: basta toccarlo. «Verifica scaffale» passa la fotocamera su una struttura e dice cosa manca o è fuori posto |
+| 🔁 | **Centrale sostituibile** | Se il telefono centrale è perso, un satellite ne prende il posto e gli altri proseguono con lui |
+
+Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).
+
 ## Cosa fa
 
 | | Funzione | In breve |
 |---|---|---|
-| 📦 | **Articoli** | Codici automatici per categoria, unità di misura da menu, foto, scorta minima, preferiti ★, carico/prelievo ±1 con Annulla |
-| 📷 | **QR** | Etichette per articoli e strutture, scanner, **prelievo a raffica** (scansiona → quantità → prossimo) |
-| 🗺️ | **Mappa** | Pianta in metri: pareti che chiudono le forme da sole, scaffali con ripiani e posizioni, viste a colori, PDF, rilievo AR |
-| 👥 | **Lavoro in squadra** | Un telefono **centrale** e più **satelliti**: si sincronizzano da vicini (Bluetooth + Wi-Fi diretto, senza internet) o con file cifrati; **reparti** per operatore |
+| 📦 | **Articoli** | Codici automatici per categoria, unità di misura da menu, foto, scorta minima, preferiti ★, carico/prelievo con uno scorrimento e «Annulla», vista compatta, storico dei movimenti nella stessa sezione |
+| 📷 | **QR** | Etichette per articoli e strutture, scanner al centro della barra in basso, **prelievo a raffica** in una sola schermata |
+| 🗺️ | **Mappa** | Pianta in metri: pareti che chiudono le forme da sole, scaffali con ripiani e posizioni, viste a colori, PDF, rilievo AR, doppio tocco per ingrandire, **prelievo guidato** |
+| 👥 | **Lavoro in squadra** | Un telefono **centrale** e più **satelliti**: si sincronizzano da vicini (Bluetooth + Wi-Fi diretto, senza internet) o con file cifrati; **reparti** per operatore; prestiti visibili a tutti; un satellite può sostituire il centrale |
 | 📊 | **Gestione** | Movimenti, prestiti, lista da ordinare da condividere, acquisti, inventari, trasferimenti, manutenzioni, lotti e report (modalità aziendale) |
 | 📥 | **Excel** | [Modello anagrafica](docs/Ubicora_Modello_Anagrafica.xlsx) per caricare tutti gli articoli in una volta; esportazione CSV |
 | 🧤 | **In officina** | Tema chiaro, modalità guanti (tutto più grande), funziona offline |

@@ -53,6 +53,30 @@ class MainActivity: ComponentActivity() {
         if(!isChangingConfigurations && !externalActivityPending) model.lockForBackground()
         super.onStop()
     }
+    // 4.15: while the app is in front, an NFC tag touched with the phone is read (or written) here.
+    override fun onResume() {
+        super.onResume()
+        runCatching {
+            android.nfc.NfcAdapter.getDefaultAdapter(this)?.enableReaderMode(this,{ tag -> onNfcTag(tag) },
+                android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B or
+                    android.nfc.NfcAdapter.FLAG_READER_NFC_F or android.nfc.NfcAdapter.FLAG_READER_NFC_V,null)
+        }
+    }
+    override fun onPause() {
+        runCatching { android.nfc.NfcAdapter.getDefaultAdapter(this)?.disableReaderMode(this) }
+        super.onPause()
+    }
+    /** Called on an NFC thread: tag access happens here, the model is touched on the main thread. */
+    private fun onNfcTag(tag:android.nfc.Tag) {
+        val toWrite=model.nfcWritePayload
+        if(toWrite!=null) {
+            val failure=runCatching { NfcLabels.write(tag,toWrite) }.exceptionOrNull()
+            runOnUiThread { model.nfcWritten(toWrite,failure?.let { it.message ?: "Scrittura non riuscita: riavvicina il tag e tienilo fermo" }) }
+        } else {
+            val text=runCatching { NfcLabels.read(tag) }.getOrNull()
+            runOnUiThread { model.handleNfcText(text) }
+        }
+    }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         externalActivityPending=savedInstanceState?.getBoolean("externalActivityPending") ?: false
@@ -188,6 +212,8 @@ class MainActivity: ComponentActivity() {
             else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
         if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
+        if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
+        if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfCheck!=null) ShelfCheckScreen(model)
       }
     }
     // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
@@ -197,9 +223,16 @@ class MainActivity: ComponentActivity() {
     }
     // 4.10: screens ask for the scanner through the model (burst picking, team QR).
     LaunchedEffect(data.scanRequest) {
-        if(data.scanRequest!=0L) { model.consumeScanRequest(); onScan() }
+        // 4.15: burst picking has its own screen with the camera inside, so it never opens the separate scanner.
+        if(data.scanRequest!=0L) { val burst=data.burstMode; model.consumeScanRequest(); if(!burst) onScan() }
     }
-    if(data.profile!=null && !data.sessionLocked) { BurstPickDialog(model); TeamLinkDialog(model) }
+    if(data.profile!=null && !data.sessionLocked) TeamLinkDialog(model)
+    // 4.15: waiting for a tag to write the label of an article on.
+    data.nfcWrite?.let { label ->
+        AlertDialog(onDismissRequest=model::cancelNfcWrite,title={Text("Avvicina il tag NFC")},
+            text={Text("Appoggia il tag sul retro del telefono e tienilo fermo un secondo. Verrà scritta l'etichetta di: $label. Quello che il tag conteneva viene sostituito.")},
+            confirmButton={TextButton(onClick=model::cancelNfcWrite){Text("Annulla")}})
+    }
     if(data.busy && data.initialized) androidx.compose.ui.window.Dialog(
         onDismissRequest={},
         properties=androidx.compose.ui.window.DialogProperties(dismissOnBackPress=false,dismissOnClickOutside=false)
@@ -208,7 +241,8 @@ class MainActivity: ComponentActivity() {
     } } }
 }
 
-enum class Tab(val label:String) { HOME("Panoramica"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione") }
+// 4.15: the bottom bar shows Oggi, Articoli, the scanner, Mappa and Squadra; the other sections open from inside the screens.
+enum class Tab(val label:String) { HOME("Oggi"), STOCK("Articoli"), MAP("Mappa"), MOVES("Movimenti"), SETTINGS("Impostazioni"), MANAGER("Gestione"), TEAM("Squadra") }
 enum class StockFocus { ALL, CRITICAL, EMPTY, PRICED, UNLOCATED, IDLE_90, FAVORITES }
 enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
 
@@ -235,24 +269,15 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     LaunchedEffect(data.scannedItemId) {
         if(data.scannedItemId!=null) go(Tab.STOCK)
     }
-    LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.SETTINGS) }
+    LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.TEAM) }
     // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
-    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
-        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) go(Tab.MAP)
+    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds,data.guidedMapRequest) {
+        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null || data.guidedMapRequest!=0L) { go(Tab.MAP); model.consumeGuidedMap() }
     }
-    Scaffold(containerColor=Ink, floatingActionButton={
-        if(tab==Tab.HOME || tab==Tab.STOCK) {
-            ExtendedFloatingActionButton(
-                onClick=onScan,
-                icon={ Icon(Icons.Outlined.QrCodeScanner,contentDescription=null) },
-                text={ Text("Scansiona QR") },
-                containerColor=Mint,
-                contentColor=OnMint
-            )
-        }
-    }, bottomBar={
+    // 4.15: no floating button over the lists; the scanner sits in the middle of the bottom bar.
+    Scaffold(containerColor=Ink, bottomBar={
         NavigationBar(containerColor=PanelBg) {
-            Tab.entries.filter{it!=Tab.MANAGER}.forEach { item ->
+            listOf(Tab.HOME,Tab.STOCK,Tab.MAP,Tab.TEAM).forEach { item ->
                 val icon=when(item){
                     Tab.HOME -> Icons.Outlined.Dashboard
                     Tab.STOCK -> Icons.Outlined.Inventory2
@@ -260,10 +285,15 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.MOVES -> Icons.Outlined.SyncAlt
                     Tab.SETTINGS -> Icons.Outlined.Settings
                     Tab.MANAGER -> Icons.Outlined.Dashboard
+                    Tab.TEAM -> Icons.Outlined.SyncAlt
                 }
-                NavigationBarItem(selected=tab==item,onClick={go(item)},
+                // 4.15: Movimenti is a page of Articoli.
+                NavigationBarItem(selected=tab==item || (item==Tab.STOCK && tab==Tab.MOVES),onClick={go(item)},
                     icon={Icon(icon,contentDescription=item.label)},
-                    label={Text(item.label,maxLines=1)},alwaysShowLabel=tab==item)
+                    label={Text(item.label,maxLines=1)},alwaysShowLabel=true)
+                if(item==Tab.STOCK) NavigationBarItem(selected=false,onClick=onScan,
+                    icon={ Surface(color=Mint,shape=androidx.compose.foundation.shape.CircleShape) {
+                        Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR",tint=OnMint,modifier=Modifier.padding(14.dp).size(28.dp)) } })
             }
         }
     }) { padding ->
@@ -276,8 +306,35 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     }
                 }
             }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when(tab) {
+                    Tab.HOME -> DashboardScreen(model,
+                        goStock={openStock(StockFocus.ALL)},
+                        goMap={go(Tab.MAP)},
+                        goMoves={openActivity(ActivityFocus.ALL)},
+                        goManager={go(Tab.MANAGER)},
+                        goSettings={go(Tab.SETTINGS)},
+                        goTeam={go(Tab.TEAM)},
+                        onStockFocus={openStock(it)},
+                        onActivityFocus={focus,days->openActivity(focus,days)},
+                        onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
+                    Tab.STOCK -> Column(Modifier.fillMaxSize()) {
+                        StockSections(movements=false,onSelect={ if(it) go(Tab.MOVES) },goSettings={go(Tab.SETTINGS)})
+                        InventoryScreen(model,onScan,stockFocus)
+                    }
+                    Tab.MAP -> NativeMapScreen(model,onAr,onSettings={go(Tab.SETTINGS)})
+                    Tab.MOVES -> Column(Modifier.fillMaxSize()) {
+                        StockSections(movements=true,onSelect={ if(!it) go(Tab.STOCK) },goSettings={go(Tab.SETTINGS)})
+                        MovementsScreen(model,activityFocus,activityDays)
+                    }
+                    Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
+                    Tab.TEAM -> TeamScreen(model,goSettings={go(Tab.SETTINGS)})
+                    Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
+                }
+            }
+            GuidedPickBar(model,onMapTab=tab==Tab.MAP)
             data.movementUndo?.let { undo ->
-                // Visible for 6 seconds; disappears earlier if anything else changes the archive.
+                // 4.15: at the bottom, next to the thumb. Visible for 6 seconds; disappears earlier if anything else changes the archive.
                 LaunchedEffect(undo.token) { kotlinx.coroutines.delay(6000); model.dismissMovementUndo(undo.token) }
                 Surface(color=Surface2) {
                     Row(Modifier.fillMaxWidth().padding(start=14.dp,end=6.dp,top=2.dp,bottom=2.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -285,21 +342,6 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         TextButton(onClick=model::undoMovement,enabled=!data.busy){Text("Annulla",color=Mint,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)}
                     }
                 }
-            }
-            when(tab) {
-                Tab.HOME -> DashboardScreen(model,
-                    goStock={openStock(StockFocus.ALL)},
-                    goMap={go(Tab.MAP)},
-                    goMoves={openActivity(ActivityFocus.ALL)},
-                    goManager={go(Tab.MANAGER)},
-                    onStockFocus={openStock(it)},
-                    onActivityFocus={focus,days->openActivity(focus,days)},
-                    onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
-                Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
-                Tab.MAP -> NativeMapScreen(model,onAr)
-                Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
-                Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
-                Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
             }
         }
     }

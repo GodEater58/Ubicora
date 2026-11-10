@@ -172,101 +172,6 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
         dismissButton={TextButton(onClick={show=false}){Text("Annulla")}})
 }
 
-@Composable fun DashboardScreen(
-    model:StockViewModel,goStock:()->Unit,goMap:()->Unit,goMoves:()->Unit,goManager:()->Unit,
-    onStockFocus:(StockFocus)->Unit,
-    onActivityFocus:(ActivityFocus,Int)->Unit,
-    onItemFocus:(Long)->Unit
-) {
-    val u=model.ui
-    val count=u.items.size;val critical=u.items.count{it.lowStock}
-    val recently=u.movements.take(4)
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=17.dp,top=17.dp,end=17.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(17.dp)) {
-        item {
-            Column {
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.foundation.Image(painterResource(R.drawable.ic_ubicora_u_selected),contentDescription=null,modifier=Modifier.size(23.dp))
-                    Text("UBICORA  /  CONTROLLO OPERATIVO",color=Mint,letterSpacing=1.2.sp,fontWeight=FontWeight.Bold,fontSize=10.sp)
-                }
-                Spacer(Modifier.height(5.dp))
-                Text(u.warehouse?.name ?: "Magazzino",fontSize=30.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text("${u.warehouse?.location?.ifBlank{"Area di lavoro"}}  ·  ${u.profile?.name}",color=TextSecondary,fontSize=13.sp)
-            }
-        }
-        // 4.10: sync status and one-tap exchange, without going into Settings.
-        if(u.team.role!=TeamRole.NONE && u.team.warehouseId==u.warehouse?.id) item { SyncCard(model) }
-        item {
-            Surface(shape=RoundedCornerShape(26.dp),color=Color.Transparent,
-                modifier=Modifier.fillMaxWidth().clickable {
-                    onStockFocus(if(critical>0)StockFocus.CRITICAL else StockFocus.ALL)
-                }) {
-                Column(Modifier.background(HeroBrush).padding(23.dp)) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.QueryStats,null,tint=Mint)
-                        Spacer(Modifier.width(10.dp));Text("STATO DEL MAGAZZINO",color=Mint,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
-                    }
-                    Spacer(Modifier.height(17.dp))
-                    Text(if(critical==0) "Tutto sotto controllo" else "$critical articoli da verificare",fontSize=24.sp,fontWeight=FontWeight.Bold)
-                    Text(if(critical==0) "Nessuna scorta sotto la soglia impostata." else "Controlla le giacenze per evitare fermi e mancanze.",color=TextSecondary,fontSize=13.sp)
-                    Spacer(Modifier.height(18.dp))
-                    LinearProgressIndicator(progress={ if(count==0)0f else (1f-critical.toFloat()/count).coerceIn(0f,1f) },
-                        modifier=Modifier.fillMaxWidth().height(7.dp),color=Mint,trackColor=Hairline.copy(alpha=.12f))
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        Text("${count-critical} di $count referenze sopra la soglia",fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
-                        Text("Apri inventario ›",fontSize=11.sp,color=Mint,fontWeight=FontWeight.Bold)
-                    }
-                }
-            }
-        }
-        item {
-            Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                SmallMetric("REFERENZE",count.toString(),"A catalogo",Mint,Modifier.weight(1f),onClick={onStockFocus(StockFocus.ALL)})
-                SmallMetric("DA RIORDINARE",critical.toString(),"Sotto soglia",Amber,Modifier.weight(1f),onClick={onStockFocus(StockFocus.CRITICAL)})
-            }
-        }
-        if(critical>0) item { ReorderShareButton(model,Modifier.fillMaxWidth()) }
-        item {
-            Row(horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                SmallMetric("UBICAZIONI",u.placements.size.toString(),"Nella planimetria",Sky,Modifier.weight(1f),onClick=goMap)
-                SmallMetric("IN UTILIZZO",u.loans.size.toString(),"Prestiti aperti",TextPrimary,Modifier.weight(1f),onClick={onActivityFocus(ActivityFocus.LOANS,0)})
-            }
-        }
-        if(u.businessMode) item {
-            Panel(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.AssignmentTurnedIn,contentDescription=null,tint=Mint)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Centro operativo",fontWeight=FontWeight.Bold,fontSize=17.sp)
-                        Text("Acquisti · conteggi · trasferimenti · manutenzioni",fontSize=12.sp,color=TextSecondary)
-                    }
-                }
-                val pending=u.orders.count{it.status in listOf("DRAFT","APPROVED","ORDERED")}+
-                    u.stockCounts.count{it.status=="PENDING"}+
-                    u.stockTransfers.count{it.status in listOf("REQUESTED","IN_TRANSIT")}+
-                    u.maintenanceWork.count{it.status=="OPEN"}
-                Text(if(pending==0)"Nessuna azione aperta" else "$pending attività da seguire",
-                    color=if(pending>0)Amber else Mint,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
-                PrimaryAction("Apri gestione aziendale",goManager,modifier=Modifier.fillMaxWidth())
-            }
-        }
-        if(u.businessMode) item { ManagerAnalyticsPanel(u.items,u.manager,
-            onStockFocus=onStockFocus,onActivityFocus=onActivityFocus,onItemFocus=onItemFocus) }
-        item { SectionTitle("Accesso rapido","Azioni frequenti, senza menu inutili") }
-        item {
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                QuickAction("Inventario",Icons.Outlined.Inventory2,goStock,Modifier.weight(1f))
-                QuickAction("Mappa",Icons.Outlined.Map,goMap,Modifier.weight(1f))
-                QuickAction("Storico",Icons.Outlined.History,goMoves,Modifier.weight(1f))
-            }
-        }
-        item {SectionTitle("Ultime attività")}
-        if(recently.isEmpty()) item { Panel(Modifier.fillMaxWidth()){Text("Non ci sono ancora movimenti. Aggiungi il primo articolo.",color=TextSecondary)} }
-        items(recently,key={it.id}) { move -> MovementRow(move,onClick={onItemFocus(move.itemId)}) }
-        item{Spacer(Modifier.height(8.dp))}
-    }
-}
 @Composable fun SmallMetric(label:String,value:String,subtitle:String,color:Color,modifier:Modifier=Modifier,onClick:(()->Unit)?=null) {
     Panel(if(onClick!=null) modifier.clickable(onClick=onClick) else modifier){
         Text(label,color=TextSecondary,fontSize=10.sp,letterSpacing=1.sp,fontWeight=FontWeight.Bold,maxLines=1)
@@ -292,7 +197,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(move.itemName,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
-                Text("${move.sku} · ${move.note} · ${date(move.createdAt)}",fontSize=11.sp,color=TextSecondary,maxLines=2)
+                Text("${move.sku} · ${move.note} · ${TodayTasks.who(move.actor,date(move.createdAt))}",fontSize=11.sp,color=TextSecondary,maxLines=2)
             }
             Text("${if(move.delta>0)"+" else ""}${amount(move.delta)}",color=if(move.delta>=0)Mint else Amber,fontWeight=FontWeight.Bold)
             if(onClick!=null) {
@@ -363,6 +268,8 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     }
     LaunchedEffect(requestedFocus){activeFocus=requestedFocus}
     var add by remember{mutableStateOf(false)}
+    var menuItemId by remember{mutableStateOf<Long?>(null)}
+    var quantityFor by remember{mutableStateOf<Pair<Long,Boolean>?>(null)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
     LaunchedEffect(u.scannedItemId,u.items) {
@@ -399,10 +306,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
-            FilledTonalIconButton(onClick=onScan) {
-                Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR articolo")
-            }
-            Spacer(Modifier.width(6.dp))
+            // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
             FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -412,6 +316,9 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                 // 4.10: scan → quantity → next article, until "Fine".
                 AssistChip(onClick=model::startBurst,enabled=!u.busy,label={Text("Prelievo a raffica")},
                     leadingIcon={Icon(Icons.Outlined.DocumentScanner,contentDescription=null,modifier=Modifier.size(18.dp))})
+                // 4.15: sweep a structure and see what is missing or misplaced.
+                AssistChip(onClick={model.startShelfCheck()},enabled=!u.busy,label={Text("Verifica scaffale")},
+                    leadingIcon={Icon(Icons.Outlined.FactCheck,contentDescription=null,modifier=Modifier.size(18.dp))})
                 Box {
                     AssistChip(onClick={sortMenu=true},label={Text(sort.label)},
                         leadingIcon={Icon(Icons.Outlined.Sort,contentDescription="Ordina",modifier=Modifier.size(18.dp))})
@@ -422,6 +329,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                         }
                     }
                 }
+                FilterChip(selected=UiPrefs.compactList,onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)},label={Text("Vista compatta")})
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
@@ -432,45 +340,12 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                 }
             }
         }
-        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=18.dp,end=18.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=12.dp,end=18.dp,bottom=18.dp),verticalArrangement=Arrangement.spacedBy(if(UiPrefs.compactList) 6.dp else 10.dp)) {
+            item { Text("Scorri a destra per prelevare, a sinistra per caricare. Tieni premuto per le altre azioni.",color=TextSecondary,fontSize=11.sp) }
             items(filtered,key={it.id}) { entry ->
-                Panel(Modifier.fillMaxWidth().clickable{selected=entry}) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        if(entry.photoFile!=null) ArticleThumbnail(entry.photoFile)
-                        else Surface(color=if(entry.lowStock)Amber.copy(alpha=.13f) else Mint.copy(alpha=.12f),shape=RoundedCornerShape(14.dp)) {
-                            Icon(Icons.Outlined.Inventory2,null,tint=if(entry.lowStock)Amber else Mint,modifier=Modifier.padding(12.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Text(entry.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f,fill=false))
-                                val star=entry.id.let { UiPrefs.isFavorite(entry.warehouseId,it) }
-                                IconButton(onClick={UiPrefs.toggleFavorite(entry.warehouseId,entry.id)},modifier=Modifier.size(30.dp)) {
-                                    Icon(if(star) Icons.Outlined.Star else Icons.Outlined.StarOutline,
-                                        contentDescription=if(star)"Togli dai preferiti" else "Aggiungi ai preferiti",
-                                        tint=if(star) Amber else TextSecondary.copy(alpha=.6f),modifier=Modifier.size(18.dp))
-                                }
-                            }
-                            Text("${entry.sku}  ·  ${entry.category}",color=TextSecondary,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            // 4.7.2: where to find it, without opening the item.
-                            val place=entry.placementId?.let { placementById[it] }
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Place,contentDescription=null,tint=if(place==null)Amber else Sky,modifier=Modifier.size(13.dp))
-                                Spacer(Modifier.width(3.dp))
-                                Text(Locations.describe(place,entry),color=if(place==null)Amber else Sky,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            }
-                        }
-                        Column(horizontalAlignment=Alignment.End) {
-                            Text("${amount(entry.quantity)} ${entry.unit}",color=if(entry.lowStock)Amber else TextPrimary,fontWeight=FontWeight.Bold)
-                            Text(if(entry.lowStock)"Scorta bassa" else "Disponibile",color=if(entry.lowStock)Amber else Mint,fontSize=11.sp)
-                            // Quick ±1: the same traced movement as the item page, with "Annulla" afterwards.
-                            Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.padding(top=4.dp)) {
-                                QuickStep(Icons.Outlined.Remove,"Preleva 1 ${entry.unit}",enabled=!u.busy && entry.quantity>=1.0) { model.quickMovement(entry.id,-1.0) }
-                                QuickStep(Icons.Outlined.Add,"Carica 1 ${entry.unit}",enabled=!u.busy) { model.quickMovement(entry.id,1.0) }
-                            }
-                        }
-                    }
-                }
+                // 4.15: swipe, long press and compact rows live in ArticleRow.
+                ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,
+                    onOpen={selected=entry},onMenu={menuItemId=entry.id},onQuantity={load->quantityFor=entry.id to load})
             }
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
         }
@@ -480,6 +355,15 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})
+    }
+    menuItemId?.let { id ->
+        val current=u.items.firstOrNull{it.id==id}
+        if(current==null) menuItemId=null else ArticleActionsSheet(current,current.placementId?.let { placementById[it] },model,
+            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onQuantity={load->quantityFor=current.id to load})
+    }
+    quantityFor?.let { (id,load) ->
+        val current=u.items.firstOrNull{it.id==id}
+        if(current==null) quantityFor=null else QuickQuantityDialog(current,load,model,onClose={quantityFor=null})
     }
     selected?.let { item ->
         val current=u.items.firstOrNull{it.id==item.id}

@@ -3,14 +3,17 @@ from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 p=r/'app/src/main/java/com/officinastock/app'
 screens=(p/'Screens.kt').read_text(encoding='utf-8')
+today=(p/'TodayScreen.kt').read_text(encoding='utf-8')
 main=(p/'MainActivity.kt').read_text(encoding='utf-8')
 report=(p/'ManagerDashboard.kt').read_text(encoding='utf-8')
 map_screen=(p/'MapScreen.kt').read_text(encoding='utf-8')
 metrics=(p/'ManagerMetrics.kt').read_text(encoding='utf-8')
 gradle=(r/'app/build.gradle.kts').read_text(encoding='utf-8')
 checks={
-    'Home interactive metrics': 'onClick={onStockFocus(StockFocus.CRITICAL)}' in screens and 'onClick=goMap' in screens,
-    'Home item drilldown': 'MovementRow(move,onClick={onItemFocus(move.itemId)})' in screens,
+    # 4.15: the first screen lives in TodayScreen.kt; numbers and tasks stay actionable.
+    'Home interactive metrics': 'onStockFocus(StockFocus.CRITICAL)' in today and 'onStockFocus(StockFocus.UNLOCATED)' in today and 'onActivityFocus(ActivityFocus.LOANS, 0)' in today,
+    'Home item drilldown': 'onItemFocus(move.itemId)' in today,
+    'Home opens settings and team': 'goSettings={go(Tab.SETTINGS)}' in main and 'goTeam={go(Tab.TEAM)}' in main and 'Tab.TEAM -> TeamScreen(model,' in main and 'StockSections(movements=true' in main,
     'Inventory filters': 'StockFocus.IDLE_90 -> item.id !in idleIds' in screens,
     'Manager card navigation': 'onActivityFocus(ActivityFocus.INBOUND,days)' in report,
     'Manager idle drilldown': 'onStockFocus(StockFocus.IDLE_90)' in report,

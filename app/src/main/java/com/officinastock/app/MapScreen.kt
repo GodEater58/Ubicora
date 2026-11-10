@@ -102,7 +102,7 @@ private fun heat(t: Float): Color {
 }
 
 @Composable
-fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
+fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
     val state=model.ui
     val warehouse=state.warehouse ?: return
     val context=LocalContext.current
@@ -113,6 +113,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     var selectedId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var selectedWallId by remember(warehouse.id){mutableStateOf<Long?>(null)}
     var highlightId by remember(warehouse.id){mutableStateOf<Long?>(null)}
+    // 4.15 guided picking: structures already visited, the one to reach and the stretch between them.
+    val guide=remember(state.pickList,state.items,state.placements){ PickRoute.guide(state.pickList,state.items,state.placements) }
     var wallAnchor by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftEnd by remember(warehouse.id){mutableStateOf<PointMetres?>(null)}
     var draftCloses by remember(warehouse.id){mutableStateOf(false)}
@@ -210,7 +212,11 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
     }
 
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        // 4.15 "tour mode": during a guided picking the editing tools leave the screen and the title follows the walk.
+        val guiding=state.pickList.any{!it.done}
+        LaunchedEffect(guiding) { if(guiding) { mode=EditorTool.VIEW;layer=MapLayer.NORMAL;wallAnchor=null;draftEnd=null;selectedWallId=null } }
+        if(guiding) GuidedMapHeader(state.pickList,onClose=model::clearPickList)
+        if(!guiding) Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 Surface(shape=RoundedCornerShape(12.dp),color=Mint.copy(alpha=.11f)) {
                     Icon(Icons.Outlined.Architecture,"Progettazione",tint=Mint,modifier=Modifier.padding(10.dp).size(23.dp))
@@ -226,6 +232,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                     catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
                 },enabled=state.placements.any{it.holdsStock}) {Icon(Icons.Outlined.QrCode2,"Etichette QR di tutte le strutture",tint=Sky)}
                 FilledTonalIconButton(onClick={showDimensions=true}) {Icon(Icons.Outlined.Straighten,"Dimensioni ambiente")}
+                FilledTonalIconButton(onClick=onSettings) {Icon(Icons.Outlined.Settings,"Impostazioni")}
             }
             Row(horizontalArrangement=Arrangement.spacedBy(5.dp),modifier=Modifier.fillMaxWidth()) {
                 listOf(
@@ -298,6 +305,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 }
                 // One gesture owner. Unlike overlapping tap/drag handlers, this cannot steal its own wall strokes.
                 Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
+                    // 4.15: double tap on the empty floor.
+                    var lastTapAt=0L
+                    var lastTapPos=PointMetres(0f,0f)
                     awaitEachGesture {
                         val down=awaitFirstDown(requireUnconsumed=false)
                         val cameraNow=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
@@ -363,6 +373,21 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         if(picking) {
                             if(!dragged && hit!=null) pick(hit)
                             return@awaitEachGesture
+                        }
+                        // 4.15: a second tap on the same spot of the empty floor zooms there; when already close, back to the whole plan.
+                        if(!dragged && hit==null && mode==EditorTool.VIEW) {
+                            val now=down.uptimeMillis
+                            if(now-lastTapAt<320L && PlanGeometry.distance(initial,lastTapPos)<minDrag*4f) {
+                                lastTapAt=0L
+                                if(zoom>=3.2f) { zoom=1f;panX=0f;panY=0f }
+                                else {
+                                    val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                                    val next=current.transformed(1.8f,initial,PointMetres(0f,0f))
+                                    zoom=next.zoom;panX=next.panX;panY=next.panY
+                                }
+                                return@awaitEachGesture
+                            }
+                            lastTapAt=now;lastTapPos=initial
                         }
                         val tappedWall=if(!dragged && hit==null && mode!=EditorTool.WALL)
                             liveWalls.minByOrNull{PlanGeometry.distanceToWall(startWorld,it)}
@@ -467,6 +492,15 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             val box=Offset(center.x-fw/2,center.y-fh/2)
                             if(f.kind!="Corridoio")drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                             drawRoundRect(fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            if(f.id in guide.done) {
+                                drawRoundRect(Mint.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                                drawRoundRect(Mint,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=3f))
+                            }
+                            if(f.id==guide.next?.id) {
+                                drawRoundRect(Amber.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                                drawRoundRect(Amber,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=4f))
+                                drawRoundRect(Amber.copy(alpha=.5f),topLeft=Offset(box.x-9f,box.y-9f),size=Size(fw+18f,fh+18f),cornerRadius=CornerRadius(12f),style=Stroke(width=2f))
+                            }
                             when(f.kind) {
                                 "Porta" -> drawArc(Color.White.copy(alpha=.5f),270f,90f,false,topLeft=Offset(box.x-fw,box.y+fh-fw),size=Size(fw*2,fw*2),
                                     style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f))))
@@ -488,14 +522,18 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                                 size=Size(fw+20f+16f*pulse,fh+20f+16f*pulse),cornerRadius=CornerRadius(14f),style=Stroke(width=3f))
                         }
                         val count=items.size
-                        if(count>0){
+                        val visited=f.id in guide.done
+                        if(count>0 || visited){
                             val bubble=Offset(
                                 camera.insetCoordinate(center.x+fw/2,size.width,badgePx),
                                 camera.insetCoordinate(center.y-fh/2,size.height,badgePx)
                             )
-                            drawCircle(if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
+                            drawCircle(if(visited) Mint else if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
+                            // 4.15: labels keep clear of the counters instead of being cut by them.
+                            occupiedLabelBoxes.add(android.graphics.RectF(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
                             drawIntoCanvas { cv ->
-                                cv.nativeCanvas.drawText(count.toString(),bubble.x,
+                                // 4.15: a check mark replaces the count on the structures already visited by the guided picking.
+                                cv.nativeCanvas.drawText(if(visited) "\u2713" else count.toString(),bubble.x,
                                     bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)
                             }
                         }
@@ -538,6 +576,17 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                             }
                             }
                         }
+                    }
+                    // 4.15: dotted stretch from the last structure visited to the next one.
+                    val guideFrom=guide.from;val guideNext=guide.next
+                    if(guideFrom!=null && guideNext!=null) {
+                        val a=camera.toScreen(PointMetres(guideFrom.x,guideFrom.y));val b=camera.toScreen(PointMetres(guideNext.x,guideNext.y))
+                        // Right-angled stretch through the corner that crosses fewer structures.
+                        val corner=camera.toScreen(PickRoute.elbow(guideFrom,guideNext,state.placements))
+                        val dots=PathEffect.dashPathEffect(floatArrayOf(3f,16f))
+                        drawLine(Amber,Offset(a.x,a.y),Offset(corner.x,corner.y),strokeWidth=5f,cap=androidx.compose.ui.graphics.StrokeCap.Round,pathEffect=dots)
+                        drawLine(Amber,Offset(corner.x,corner.y),Offset(b.x,b.y),strokeWidth=5f,cap=androidx.compose.ui.graphics.StrokeCap.Round,pathEffect=dots)
+                        drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
                     }
                     drawIntoCanvas { cv ->
                         cv.nativeCanvas.drawText(numberM(roomWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
@@ -593,7 +642,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 }
             }
         }
-        Row(Modifier.padding(horizontal=14.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
+        if(!guiding) Row(Modifier.padding(horizontal=14.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
             when(mode) {
                 EditorTool.WALL -> {
                     FilterChip(selected=snapGrid,onClick={snapGrid=!snapGrid},label={Text("Griglia 25 cm",fontSize=11.sp)},leadingIcon={Icon(Icons.Outlined.GridOn,null,Modifier.size(15.dp))})

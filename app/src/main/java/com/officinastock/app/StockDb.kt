@@ -78,6 +78,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         if (!db.isReadOnly) {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_items_placement ON items(placement_id)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
+            // 4.15: who made each movement. Same rule: created once, on any database version.
+            MovementActors.create(db)
         }
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -548,10 +550,10 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         } finally { sql.endTransaction() }
     }
     fun movements(warehouseId: Long): List<Movement> = readableDatabase.rawQuery(
-        """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at FROM movements m
+        """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at,(SELECT a.letter FROM movement_actors a WHERE a.movement_id=m.id) FROM movements m
         JOIN items i ON i.id=m.item_id WHERE i.warehouse_id=? ORDER BY m.created_at DESC,m.id DESC LIMIT 250""",
         arrayOf(warehouseId.toString())
-    ).use { c -> buildList { while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6))) } }
+    ).use { c -> buildList { while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6),if(c.isNull(7)) null else c.getString(7))) } }
     /** Cronologia paginata direttamente in SQLite: filtri applicati prima di LIMIT/OFFSET. */
     fun movementsPage(warehouseId: Long, since: Long, direction: Int, offset: Int, limit: Int = 101): List<Movement> {
         require(since >= 0L && direction in -1..1 && offset >= 0 && limit in 1..101) { "Parametri cronologia non validi" }
@@ -561,13 +563,13 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             else -> ""
         }
         return readableDatabase.rawQuery(
-            """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at FROM movements m
+            """SELECT m.id,m.item_id,i.sku,i.name,m.delta,m.note,m.created_at,(SELECT a.letter FROM movement_actors a WHERE a.movement_id=m.id) FROM movements m
                JOIN items i ON i.id=m.item_id
                WHERE i.warehouse_id=? AND m.created_at>=?$directionSql
                ORDER BY m.created_at DESC,m.id DESC LIMIT ? OFFSET ?""",
             arrayOf(warehouseId.toString(),since.toString(),limit.toString(),offset.toString())
         ).use { c -> buildList {
-            while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6)))
+            while(c.moveToNext()) add(Movement(c.getLong(0),c.getLong(1),c.getString(2),c.getString(3),c.getDouble(4),c.getString(5),c.getLong(6),if(c.isNull(7)) null else c.getString(7)))
         } }
     }
     fun lend(itemId: Long, borrower: String, amount: Double) {

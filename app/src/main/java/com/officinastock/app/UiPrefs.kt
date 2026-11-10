@@ -19,6 +19,12 @@ object UiPrefs {
     var screenshots by mutableStateOf(false); private set
     /** 4.13: nearby phones of the team exchange on their own while the app is open. */
     var autoSync by mutableStateOf(true); private set
+    /** 4.15: beep of the burst scanner (the vibration always stays). */
+    var scanSound by mutableStateOf(true); private set
+    /** 4.15: article list without photo and code, to see more rows. */
+    var compactList by mutableStateOf(false); private set
+    /** 4.15: days after which a tool on loan appears in "Da fare adesso". */
+    var loanDays by mutableStateOf(7); private set
     /** "warehouseId:itemId" of the favourite articles. */
     var favorites by mutableStateOf(emptySet<String>()); private set
 
@@ -30,12 +36,18 @@ object UiPrefs {
         glove = p.getBoolean("glove", false)
         screenshots = p.getBoolean("screenshots", false)
         autoSync = p.getBoolean("auto_sync", true)
+        scanSound = p.getBoolean("scan_sound", true)
+        compactList = p.getBoolean("compact_list", false)
+        loanDays = p.getInt("loan_days", 7)
         favorites = p.getStringSet("favorites", emptySet())!!.toSet()
     }
 
     fun updateLight(value: Boolean) { light = value; prefs?.edit()?.putBoolean("light", value)?.apply() }
     fun updateGlove(value: Boolean) { glove = value; prefs?.edit()?.putBoolean("glove", value)?.apply() }
     fun updateAutoSync(value: Boolean) { autoSync = value; prefs?.edit()?.putBoolean("auto_sync", value)?.apply() }
+    fun updateScanSound(value: Boolean) { scanSound = value; prefs?.edit()?.putBoolean("scan_sound", value)?.apply() }
+    fun updateCompactList(value: Boolean) { compactList = value; prefs?.edit()?.putBoolean("compact_list", value)?.apply() }
+    fun updateLoanDays(value: Int) { loanDays = value; prefs?.edit()?.putInt("loan_days", value)?.apply() }
     fun updateScreenshots(value: Boolean) { screenshots = value; prefs?.edit()?.putBoolean("screenshots", value)?.apply() }
 
     private fun key(warehouseId: Long, itemId: Long) = "$warehouseId:$itemId"

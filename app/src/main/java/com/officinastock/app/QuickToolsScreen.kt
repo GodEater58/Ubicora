@@ -16,45 +16,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 4.10 burst picking: one dialog per scanned article, then the scanner opens again. */
-@Composable fun BurstPickDialog(model: StockViewModel) {
-    val u = model.ui
-    val item = u.burstItemId?.let { id -> u.items.firstOrNull { it.id == id } } ?: return
-    val max = item.quantity
-    // Less than one unit left (e.g. 0.5 kg): offer exactly what is there.
-    var qty by remember(item.id, u.burstCount) { mutableStateOf(if (max > 0.0 && max < 1.0) max else 1.0) }
-    val place = item.placementId?.let { id -> u.placements.firstOrNull { it.id == id } }
-    AlertDialog(onDismissRequest = {}, title = {
-        Column {
-            Text("PRELIEVO A RAFFICA" + if (u.burstCount > 0) " · ${u.burstCount} fatti" else "", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
-            Text(item.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-    }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${item.sku} · ${Locations.describe(place, item)}", fontSize = 12.sp, color = TextSecondary)
-            Text("Disponibili: ${amount(max)} ${item.unit}", fontSize = 13.sp, color = if (item.lowStock) Amber else TextPrimary)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                FilledTonalIconButton(onClick = { qty = (qty - 1).coerceAtLeast(1.0) }, enabled = qty > 1.0, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Outlined.Remove, "Uno in meno")
-                }
-                Text(amount(qty), fontSize = 34.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.width(110.dp))
-                FilledTonalIconButton(onClick = { qty += 1 }, enabled = qty + 1 <= max, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Outlined.Add, "Uno in più")
-                }
-            }
-            if (max <= 0.0) Text("Esaurito: salta questo articolo.", color = Danger, fontSize = 12.sp)
-        }
-    }, confirmButton = {
-        Column(horizontalAlignment = Alignment.End) {
-            Button(onClick = { model.burstPick(item.id, qty) }, enabled = !u.busy && qty > 0.0 && qty <= max) {
-                Text("Preleva ${amount(qty)} ${item.unit} e continua")
-            }
-            TextButton(onClick = { model.burstSkip() }, enabled = !u.busy) { Text("Salta, scansiona il prossimo") }
-            TextButton(onClick = { model.endBurst() }, enabled = !u.busy) { Text("Fine") }
-        }
-    })
-}
-
 /** 4.10: sync status on the home screen with a one-tap exchange. */
 @Composable fun SyncCard(model: StockViewModel) {
     val u = model.ui

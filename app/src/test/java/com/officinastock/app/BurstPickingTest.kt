@@ -69,4 +69,100 @@ class BurstPickingTest {
         model.undoMovement(); awaitIdle()
         assertEquals(5.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
     }
+
+    /** 4.15: one screen. The same label adds one, another label waits, every reading has its signal. */
+    @Test fun sameLabelAddsOneAndOtherLabelsWaitForConfirmation() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }
+        val dado = model.ui.items.single { it.name == "Dado M8" }
+        val viteQr = ArticleCodes.payload(vite.warehouseId, vite.sku)
+        model.startBurst()
+
+        model.handleScannedCode(viteQr)
+        assertEquals(vite.id, model.ui.burstItemId); assertEquals(1.0, model.ui.burstQty, 0.0)
+        assertEquals(true, model.ui.scanSignal?.ok)
+        model.handleScannedCode(viteQr)
+        assertEquals(2.0, model.ui.burstQty, 0.0)
+
+        // Another article while the first waits: ignored, nothing replaced.
+        model.handleScannedCode(ArticleCodes.payload(dado.warehouseId, dado.sku))
+        assertEquals(vite.id, model.ui.burstItemId); assertEquals(2.0, model.ui.burstQty, 0.0)
+
+        // Never more than the shelf holds (5): the extra reading is refused.
+        repeat(5) { model.handleScannedCode(viteQr) }
+        assertEquals(5.0, model.ui.burstQty, 0.0)
+        assertEquals(false, model.ui.scanSignal?.ok)
+        model.burstAdjust(false); assertEquals(4.0, model.ui.burstQty, 0.0)
+
+        model.burstPick(vite.id, model.ui.burstQty); awaitIdle()
+        assertEquals(1.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertEquals(1.0, model.ui.burstQty, 0.0)
+        assertEquals(-4.0, model.ui.movementUndo!!.delta, 0.0)
+
+        // Undo gives the pieces back and the session goes on.
+        model.undoMovement(); awaitIdle()
+        assertEquals(5.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue(model.ui.burstMode)
+
+        // A label that is not an article: refused with its own signal.
+        model.handleScannedCode("non-una-etichetta")
+        assertEquals(false, model.ui.scanSignal?.ok); assertNull(model.ui.burstItemId)
+    }
+
+    /** 4.15 guided picking: the list withdraws what it asks, never more than the shelf, and can be undone. */
+    @Test fun guidedPickWithdrawsTheListAndStopsAtTheShelf() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }   // 5 on the shelf
+        val dado = model.ui.items.single { it.name == "Dado M8" }   // 4 on the shelf
+        model.addToPickList(vite.id); model.addToPickList(vite.id); model.addToPickList(dado.id)
+        assertEquals(2.0, model.ui.pickList.single { it.itemId == vite.id }.quantity, 0.0)
+        repeat(9) { model.addToPickList(dado.id) }   // asks 10, only 4 there
+
+        model.confirmPick(vite.id); awaitIdle()
+        assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue("taken lines stay as done until the list is over", model.ui.pickList.single { it.itemId == vite.id }.done)
+        assertEquals(-2.0, model.ui.movementUndo!!.delta, 0.0)
+
+        model.skipPick(dado.id); assertTrue(model.ui.pickList.single { it.itemId == dado.id }.skipped)
+        model.confirmPick(dado.id); awaitIdle()
+        assertEquals(0.0, model.ui.items.single { it.id == dado.id }.quantity, 0.0)
+        assertTrue(model.ui.pickList.isEmpty())
+
+        // Nothing left: the list keeps the line and says why.
+        model.addToPickList(dado.id); model.confirmPick(dado.id); awaitIdle()
+        assertEquals(1, model.ui.pickList.size); assertNotNull(model.ui.message)
+        model.clearPickList(); assertTrue(model.ui.pickList.isEmpty())
+
+        // Confirmation by label: the wrong one is refused, the right one withdraws.
+        model.addToPickList(vite.id)
+        model.scanToConfirmPick(vite.id); assertNotEquals(0L, model.ui.scanRequest); model.consumeScanRequest()
+        model.handleScannedCode(ArticleCodes.payload(dado.warehouseId, dado.sku))
+        assertNotNull(model.ui.message); assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertEquals("after a wrong label the confirmation by hand is offered", vite.id, model.ui.pickScanMissedId)
+        model.scanToConfirmPick(vite.id); model.consumeScanRequest()
+        model.handleScannedCode(ArticleCodes.payload(vite.warehouseId, vite.sku)); awaitIdle()
+        assertEquals(2.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue(model.ui.pickList.isEmpty())
+    }
+
+    /** 4.15: an NFC tag holds the text of the QR label and does what a scan does; a shelf check ticks what it reads. */
+    @Test fun nfcTagsActLikeLabelsAndShelfCheckTicksArticles() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }
+        val label = ArticleCodes.payload(vite.warehouseId, vite.sku)
+        assertEquals(label, NfcLabels.text(NfcLabels.message(label).records.single()))
+        assertNull(NfcLabels.text(android.nfc.NdefRecord.createUri("https://example.org")))
+
+        model.handleNfcText(null); assertNotNull(model.ui.message)
+        model.handleNfcText(label); assertEquals(vite.id, model.ui.scannedItemId)
+        model.acknowledgeScannedItem()
+
+        model.requestNfcWrite(vite.id); assertEquals(label, model.nfcWritePayload); assertEquals("Vite M8", model.ui.nfcWrite)
+        model.nfcWritten(label, "Tag protetto"); assertNotNull(model.ui.nfcWrite); assertEquals("Tag protetto", model.ui.message)
+        model.nfcWritten(label, null); assertNull(model.ui.nfcWrite); assertNull(model.nfcWritePayload)
+
+        model.startShelfCheck()
+        model.handleScannedCode(label); model.handleScannedCode(label)
+        assertEquals(setOf(vite.id), model.ui.shelfCheck!!.seen)
+        assertNull("a shelf check never opens the article page", model.ui.scannedItemId)
+        model.handleScannedCode("altro"); assertEquals(false, model.ui.scanSignal?.ok)
+        model.endShelfCheck(); assertNull(model.ui.shelfCheck)
+    }
 }

@@ -45,7 +45,9 @@ object Locations {
 }
 data class Wall(val id: Long, val warehouseId: Long, val x1: Float, val y1: Float, val x2: Float, val y2: Float, val source: String)
 data class Movement(val id: Long, val itemId: Long, val sku: String, val itemName: String,
-    val delta: Double, val note: String, val createdAt: Long)
+    val delta: Double, val note: String, val createdAt: Long,
+    /** 4.15: letter of the phone that made it (A = central); null without a team or before 4.15. */
+    val actor: String? = null)
 data class Loan(val id: Long, val itemId: Long, val borrower: String, val quantity: Double,
     val createdAt: Long, val returnedAt: Long?)
 
