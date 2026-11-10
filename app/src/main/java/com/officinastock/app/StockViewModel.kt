@@ -74,6 +74,8 @@ data class StockUiState(
     val pickList: List<PickLine> = emptyList(),
     /** 4.15: article whose label the scanner must read to confirm the guided withdrawal. */
     val pickScanItemId: Long? = null,
+    /** 4.15: article whose label could not be read: the panel then offers the confirmation by hand. */
+    val pickScanMissedId: Long? = null,
     /** 4.15: the guided bar asks to open the map (token, 0 = none). */
     val guidedMapRequest: Long = 0,
     /** 4.15: outcome of the last reading, for the sound and the vibration of the scanner screen. */
@@ -119,7 +121,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val warehouse=ui.warehouse ?: return
         ui.pickScanItemId?.let { expected ->
             // 4.15 guided picking: only the label of the expected article confirms the withdrawal.
-            ui=ui.copy(pickScanItemId=null)
+            ui=ui.copy(pickScanItemId=null,pickScanMissedId=expected)
             val read=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
                 ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
             if(read?.id==expected) confirmPick(expected)
@@ -153,7 +155,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun consumeScanRequest() { ui=ui.copy(scanRequest=0) }
     fun consumeTeamQr() { ui=ui.copy(teamQr=null) }
     /** Scanner closed without reading: a burst session ends there. */
-    fun scanCancelled() { if(ui.burstMode) endBurst(); if(ui.pickScanItemId!=null) ui=ui.copy(pickScanItemId=null) }
+    fun scanCancelled() { if(ui.burstMode) endBurst(); ui.pickScanItemId?.let { waiting -> ui=ui.copy(pickScanItemId=null,pickScanMissedId=waiting) } }
     fun startBurst() { if(!ui.busy) { ui=ui.copy(burstMode=true,burstItemId=null,burstQty=1.0,burstCount=0,scanSignal=null,message=null); requestScan() } }
     fun endBurst() { ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null) }
     fun burstSkip() { ui=ui.copy(burstItemId=null,burstQty=1.0); requestScan() }
@@ -192,7 +194,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             else lines+PickLine(itemId,1.0))
     }
     fun removeFromPickList(itemId:Long) { ui=ui.copy(pickList=PickLists.finished(ui.pickList.filter { it.itemId!=itemId })) }
-    fun clearPickList() { ui=ui.copy(pickList=emptyList(),pickScanItemId=null) }
+    fun clearPickList() { ui=ui.copy(pickList=emptyList(),pickScanItemId=null,pickScanMissedId=null) }
     fun openGuidedMap() { ui=ui.copy(guidedMapRequest=System.nanoTime()) }
     fun consumeGuidedMap() { if(ui.guidedMapRequest!=0L) ui=ui.copy(guidedMapRequest=0) }
     /** Opens the scanner: the withdrawal is confirmed only by the label of that article. */
@@ -209,7 +211,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute(onSuccess={
             // The line stays as done (last in the list) until every article has been taken: the map shows where the walk has been.
             ui=ui.copy(pickList=PickLists.finished(ui.pickList.filter { it.itemId!=itemId }+line.copy(done=true,skipped=false)),
-                movementUndo=MovementUndo(itemId,-quantity,label,System.nanoTime()))
+                pickScanMissedId=null,movementUndo=MovementUndo(itemId,-quantity,label,System.nanoTime()))
         },light=true) { db.movement(itemId,-quantity,"Prelievo guidato") }
     }
     private fun handleBurstScan(raw:String,warehouse:Warehouse) {
@@ -336,7 +338,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
-            pickScanItemId=ui.pickScanItemId,
+            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},

@@ -197,7 +197,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(move.itemName,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
-                Text("${move.sku} · ${move.note} · ${date(move.createdAt)}",fontSize=11.sp,color=TextSecondary,maxLines=2)
+                Text("${move.sku} · ${move.note} · ${TodayTasks.who(move.actor,date(move.createdAt))}",fontSize=11.sp,color=TextSecondary,maxLines=2)
             }
             Text("${if(move.delta>0)"+" else ""}${amount(move.delta)}",color=if(move.delta>=0)Mint else Amber,fontWeight=FontWeight.Bold)
             if(onClick!=null) {

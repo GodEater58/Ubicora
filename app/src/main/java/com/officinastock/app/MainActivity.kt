@@ -256,7 +256,8 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.MANAGER -> Icons.Outlined.Dashboard
                     Tab.TEAM -> Icons.Outlined.SyncAlt
                 }
-                NavigationBarItem(selected=tab==item,onClick={go(item)},
+                // 4.15: Movimenti is a page of Articoli.
+                NavigationBarItem(selected=tab==item || (item==Tab.STOCK && tab==Tab.MOVES),onClick={go(item)},
                     icon={Icon(icon,contentDescription=item.label)},
                     label={Text(item.label,maxLines=1)},alwaysShowLabel=true)
                 if(item==Tab.STOCK) NavigationBarItem(selected=false,onClick=onScan,
@@ -286,11 +287,17 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         onStockFocus={openStock(it)},
                         onActivityFocus={focus,days->openActivity(focus,days)},
                         onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
-                    Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
-                    Tab.MAP -> NativeMapScreen(model,onAr)
-                    Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
+                    Tab.STOCK -> Column(Modifier.fillMaxSize()) {
+                        StockSections(movements=false,onSelect={ if(it) go(Tab.MOVES) },goSettings={go(Tab.SETTINGS)})
+                        InventoryScreen(model,onScan,stockFocus)
+                    }
+                    Tab.MAP -> NativeMapScreen(model,onAr,onSettings={go(Tab.SETTINGS)})
+                    Tab.MOVES -> Column(Modifier.fillMaxSize()) {
+                        StockSections(movements=true,onSelect={ if(!it) go(Tab.STOCK) },goSettings={go(Tab.SETTINGS)})
+                        MovementsScreen(model,activityFocus,activityDays)
+                    }
                     Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
-                    Tab.TEAM -> TeamScreen(model)
+                    Tab.TEAM -> TeamScreen(model,goSettings={go(Tab.SETTINGS)})
                     Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
                 }
             }

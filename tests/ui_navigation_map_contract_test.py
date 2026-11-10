@@ -13,7 +13,7 @@ checks={
     # 4.15: the first screen lives in TodayScreen.kt; numbers and tasks stay actionable.
     'Home interactive metrics': 'onStockFocus(StockFocus.CRITICAL)' in today and 'onStockFocus(StockFocus.UNLOCATED)' in today and 'onActivityFocus(ActivityFocus.LOANS, 0)' in today,
     'Home item drilldown': 'onItemFocus(move.itemId)' in today,
-    'Home opens settings and team': 'goSettings={go(Tab.SETTINGS)}' in main and 'goTeam={go(Tab.TEAM)}' in main and 'Tab.TEAM -> TeamScreen(model)' in main,
+    'Home opens settings and team': 'goSettings={go(Tab.SETTINGS)}' in main and 'goTeam={go(Tab.TEAM)}' in main and 'Tab.TEAM -> TeamScreen(model,' in main and 'StockSections(movements=true' in main,
     'Inventory filters': 'StockFocus.IDLE_90 -> item.id !in idleIds' in screens,
     'Manager card navigation': 'onActivityFocus(ActivityFocus.INBOUND,days)' in report,
     'Manager idle drilldown': 'onStockFocus(StockFocus.IDLE_90)' in report,

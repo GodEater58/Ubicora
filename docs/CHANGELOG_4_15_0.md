@@ -14,9 +14,12 @@
 | **Righe più leggibili** | Nome su due righe, ubicazione in evidenza, «Scorta bassa» solo quando serve. «Vista compatta» mostra più articoli togliendo foto e codice |
 | **Scansiona nella barra in basso** | Tasto centrale della barra di navigazione, sempre nello stesso punto: non c'è più il pulsante flottante sopra le liste |
 | **Prima schermata «Oggi»** | Al posto dei riquadri con i numeri: tre contatori compatti, l'elenco «Da fare adesso» (articoli sotto scorta, utensili fuori da più di 7 giorni, articoli senza ubicazione, conflitti della squadra), stato della squadra in una riga e ultimi movimenti. Le Impostazioni si aprono dall'ingranaggio in alto |
-| **Barra in basso** | Oggi · Articoli · Scansiona · Mappa · Squadra. Movimenti si apre da «Tutti» in Oggi, le Impostazioni dall'ingranaggio |
+| **Barra in basso** | Oggi · Articoli · Scansiona · Mappa · Squadra. L'ingranaggio delle Impostazioni è in alto a destra in ogni sezione |
+| **Giacenze / Movimenti** | Articoli ha due linguette: la lista e lo storico. «Tutti» in Oggi porta allo storico |
+| **Chi ha fatto il movimento** | Con la squadra attiva ogni movimento ricorda la lettera del telefono (A = centrale, B, C…) e la mostra in Oggi e nello storico. Sul centrale i movimenti arrivati da un satellite portano la sua lettera. Vale dai movimenti fatti con la 4.15 in poi |
+| **Soglia dei prestiti** | Tieni premuto «Utensili fuori da più di 7 giorni» per scegliere 3, 7, 14 o 30 giorni |
 | **Sezione Squadra** | La sincronizzazione ha una sua sezione nella barra (resta anche nelle Impostazioni) |
-| **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. Nella Mappa un pannello mostra avanzamento, prossimo articolo, ubicazione e quantità; si conferma scansionando l'etichetta («Senza etichetta» se manca). In pianta: strutture già visitate in verde, prossima in arancio, tratto puntinato tra le due. Nelle altre sezioni resta una barra con «Vai» |
+| **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. La Mappa entra in modalità giro: spariscono gli strumenti di modifica, il titolo diventa «Prelievo guidato · 2 di 5» con la barra di avanzamento, e il pannello in basso indica prossimo articolo, ubicazione e quantità. Si conferma scansionando l'etichetta; se la lettura fallisce o viene chiusa compare «Etichetta illeggibile? Conferma a mano». In pianta: strutture visitate con il segno di spunta, prossima in arancio, tratto puntinato ad angolo retto che evita le strutture quando può. Nelle altre sezioni resta una barra con «Vai» |
 | **Prestito dal prelievo a raffica** | «Segna come prestito» accanto a «Salta»: chiede chi lo prende e prosegue |
 | **Mappa: doppio tocco** | Due tocchi sul pavimento vuoto ingrandiscono su quel punto; a zoom già alto tornano alla pianta intera |
 | **Mappa: etichette e contatori** | Le etichette si spostano o si nascondono invece di finire sotto i contatori degli articoli |
@@ -26,7 +29,10 @@
 - Mentre un articolo aspetta la conferma, le etichette di **altri** articoli vengono ignorate: premi «Preleva» o «Salta» prima di passare al successivo. Evita che un'etichetta vicina sostituisca quella giusta.
 - Lo scanner a schermo intero resta per le altre letture (scheda articolo, strutture, QR della squadra).
 
+- In modalità aziendale gli indicatori di gestione sono in fondo a Oggi, chiusi: si aprono con «Mostra indicatori».
+- La lettera di chi ha fatto il movimento è salvata accanto ai movimenti, senza cambiare la loro tabella né il formato del backup: dopo un ripristino da backup le lettere dei movimenti passati non ci sono più.
+
 ## Da provare sul telefono
 Questa versione è verificata con i test automatici, non su un dispositivo: fotocamera, torcia, suono, vibrazione, pausa di 2 secondi tra due letture della stessa etichetta, scorrimento sulle righe (anche con i guanti), pannello dal basso e doppio tocco sulla mappa vanno collaudati in officina.
 
-Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `GuidedPickTest` (ordine del percorso, guida sulla mappa, prestiti scaduti, quantità digitate).
+Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `GuidedPickTest` (ordine del percorso, guida sulla mappa, tratto ad angolo, prestiti scaduti, quantità digitate).

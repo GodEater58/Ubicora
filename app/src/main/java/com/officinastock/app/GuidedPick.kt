@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,6 +50,31 @@ object PickRoute {
         val done = lines.filter { it.done }.mapNotNull { placeOf(it)?.id }.toSet() - waiting
         val from = lines.lastOrNull { it.done }?.let { placeOf(it) }?.takeIf { it.id != next?.id }
         return PickGuide(done, next, from)
+    }
+
+    /**
+     * Corner of the right-angled stretch between two structures: of the two possible corners, the
+     * one whose legs cross fewer other structures (it is a hint on the plan, not a route planner).
+     */
+    fun elbow(from: Placement, to: Placement, placements: List<Placement>): PointMetres {
+        val others = placements.filter { it.id != from.id && it.id != to.id && it.kind != "Corridoio" && it.kind != "Porta" }
+        fun crossed(corner: PointMetres): Int {
+            var hits = 0
+            for (other in others) {
+                var inside = false
+                for (step in 0..12) {
+                    val t = step / 12f
+                    val first = PointMetres(from.x + (corner.x - from.x) * t, from.y + (corner.y - from.y) * t)
+                    val second = PointMetres(corner.x + (to.x - corner.x) * t, corner.y + (to.y - corner.y) * t)
+                    if (PlanGeometry.contains(first, other, 0f) || PlanGeometry.contains(second, other, 0f)) { inside = true; break }
+                }
+                if (inside) hits++
+            }
+            return hits
+        }
+        val horizontalFirst = PointMetres(to.x, from.y)
+        val verticalFirst = PointMetres(from.x, to.y)
+        return if (crossed(verticalFirst) < crossed(horizontalFirst)) verticalFirst else horizontalFirst
     }
 
     private fun walk(stops: List<PickStop>): List<PickStop> {
@@ -100,17 +126,7 @@ object PickRoute {
             Button(onClick = { if (placeId != null) model.showOnMap(placeId) else model.openGuidedMap() }, modifier = Modifier.height(48.dp),
                 shape = RoundedCornerShape(16.dp)) { Text("Vai", fontWeight = FontWeight.Bold) }
         } else Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Prelievo guidato · $done di $total fatti", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = model::clearPickList) { Text("Chiudi lista") }
-            }
-            // One segment per article: taken, next, still to take.
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                repeat(total.coerceAtMost(24)) { index ->
-                    Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
-                        .background(if (index < done) Mint else if (index == done) Amber else Surface2))
-                }
-            }
+            // Title and progress are at the top of the map (GuidedMapHeader): here only what to take.
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("PROSSIMO", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -141,8 +157,30 @@ object PickRoute {
                 Text(if (route.size > 1) "Poi: " + route.drop(1).take(2).joinToString(" · ") { it.item.name + (it.place?.let { p -> " (${p.label})" } ?: "") }
                     else "Ultimo articolo della lista", color = TextSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f))
-                // Not in the first design: a worn or missing label must not block the walk.
-                TextButton(onClick = { model.confirmPick(next.item.id) }, enabled = !u.busy && take > 0.0) { Text("Senza etichetta") }
+            }
+            // Only after a reading that failed or was closed: a worn or missing label must not block the walk.
+            if (u.pickScanMissedId == next.item.id && take > 0.0) TextButton(onClick = { model.confirmPick(next.item.id) }, enabled = !u.busy,
+                modifier = Modifier.fillMaxWidth()) { Text("Etichetta illeggibile? Conferma a mano") }
+        }
+    }
+}
+
+/** 4.15: title of the map during a guided picking, with one segment per article (taken, next, to take). */
+@Composable fun GuidedMapHeader(lines: List<PickLine>, onClose: () -> Unit) {
+    val total = lines.size
+    val done = lines.count { it.done }
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FilledTonalIconButton(onClick = onClose, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Close, "Chiudi il prelievo guidato") }
+            Column(Modifier.weight(1f)) {
+                Text("Prelievo guidato", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("$done di $total fatti", color = TextSecondary, fontSize = 13.sp)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(total.coerceAtMost(24)) { index ->
+                Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp))
+                    .background(if (index < done) Mint else if (index == done) Amber else Surface2))
             }
         }
     }

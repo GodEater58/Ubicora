@@ -1,7 +1,9 @@
 package com.officinastock.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +29,9 @@ object TodayTasks {
     /** Open loans older than [days]: tools that are probably forgotten somewhere. */
     fun overdueLoans(loans: List<Loan>, now: Long, days: Int = LOAN_DAYS): Int =
         loans.count { it.returnedAt == null && now - it.createdAt > days * 86_400_000L }
+    /** "B · 2 ore fa": the phone that made the movement, when known. */
+    fun who(actor: String?, time: String): String = if (actor.isNullOrBlank()) time else "$actor · $time"
+    val LOAN_DAY_CHOICES = listOf(3, 7, 14, 30)
     fun signed(delta: Double): String = (if (delta > 0) "+" else "−") + amount(kotlin.math.abs(delta))
 }
 
@@ -42,13 +48,18 @@ object TodayTasks {
     val count = u.items.size
     val critical = u.items.count { it.lowStock }
     val unlocated = u.items.count { it.placementId == null }
-    val overdue = remember(u.loans) { TodayTasks.overdueLoans(u.loans, System.currentTimeMillis()) }
+    val loanDays = UiPrefs.loanDays
+    val overdue = remember(u.loans, loanDays) { TodayTasks.overdueLoans(u.loans, System.currentTimeMillis(), loanDays) }
+    var askLoanDays by remember { mutableStateOf(false) }
+    // Business mode: the indicators stay one tap away, closed by default, so the screen is the same for everyone.
+    var showIndicators by rememberSaveable { mutableStateOf(false) }
     val team = u.team.takeIf { it.role != TeamRole.NONE && it.warehouseId == u.warehouse?.id }
     val conflicts = team?.conflicts?.size ?: 0
     val managerPending = if (!u.businessMode) 0 else u.orders.count { it.status in listOf("DRAFT", "APPROVED", "ORDERED") } +
         u.stockCounts.count { it.status == "PENDING" } + u.stockTransfers.count { it.status in listOf("REQUESTED", "IN_TRANSIT") } +
         u.maintenanceWork.count { it.status == "OPEN" }
     val recent = u.movements.take(4)
+    if (askLoanDays) LoanDaysDialog(loanDays) { askLoanDays = false }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item {
@@ -58,7 +69,7 @@ object TodayTasks {
                     Text("${u.warehouse?.location?.ifBlank { "Area di lavoro" }}  ·  ${u.profile?.name}", color = TextSecondary, fontSize = 13.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                FilledTonalIconButton(onClick = goSettings, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Settings, "Impostazioni") }
+                SettingsGear(goSettings)
             }
         }
         if (team != null) item { TeamStatusRow(team, goTeam) }
@@ -74,18 +85,18 @@ object TodayTasks {
             TodayTask(critical, Amber, if (critical == 1) "Articolo sotto scorta" else "Articoli sotto scorta", "Apri la lista da ordinare") { onStockFocus(StockFocus.CRITICAL) }
         }
         if (overdue > 0) item {
-            TodayTask(overdue, Sky, if (overdue == 1) "Utensile fuori da più di ${TodayTasks.LOAN_DAYS} giorni" else "Utensili fuori da più di ${TodayTasks.LOAN_DAYS} giorni",
-                "Vedi chi li ha") { onActivityFocus(ActivityFocus.LOANS, 0) }
+            TodayTask(overdue, Sky, if (overdue == 1) "Utensile fuori da più di $loanDays giorni" else "Utensili fuori da più di $loanDays giorni",
+                "Vedi chi li ha · tieni premuto per cambiare i giorni", onLong = { askLoanDays = true }) { onActivityFocus(ActivityFocus.LOANS, 0) }
         }
         if (unlocated > 0) item {
             TodayTask(unlocated, TextPrimary, if (unlocated == 1) "Articolo senza ubicazione" else "Articoli senza ubicazione", "Assegna sulla mappa") { onStockFocus(StockFocus.UNLOCATED) }
         }
         if (conflicts > 0) item {
-            TodayTask(conflicts, Danger, if (conflicts == 1) "Conflitto dalla squadra" else "Conflitti dalla squadra", "Rivedi cosa non è stato applicato", goTeam)
+            TodayTask(conflicts, Danger, if (conflicts == 1) "Conflitto dalla squadra" else "Conflitti dalla squadra", "Rivedi cosa non è stato applicato", onClick = goTeam)
         }
         if (managerPending > 0) item {
             TodayTask(managerPending, Mint, if (managerPending == 1) "Attività di gestione aperta" else "Attività di gestione aperte",
-                "Acquisti, conteggi, trasferimenti, manutenzioni", goManager)
+                "Acquisti, conteggi, trasferimenti, manutenzioni", onClick = goManager)
         }
         if (critical == 0 && overdue == 0 && unlocated == 0 && conflicts == 0 && managerPending == 0) item {
             Surface(color = PanelBg, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -94,8 +105,16 @@ object TodayTasks {
             }
         }
         if (critical > 0) item { ReorderShareButton(model, Modifier.fillMaxWidth()) }
-        if (u.businessMode) item { PrimaryAction("Apri gestione aziendale", goManager, modifier = Modifier.fillMaxWidth()) }
-        if (u.businessMode) item { ManagerAnalyticsPanel(u.items, u.manager, onStockFocus = onStockFocus, onActivityFocus = onActivityFocus, onItemFocus = onItemFocus) }
+        // 4.15: the management indicators live in the Gestione section; here the screen is the same for everyone.
+        if (u.businessMode) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = goManager) { Text("Gestione aziendale") }
+                TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Mostra indicatori") }
+            }
+        }
+        if (u.businessMode && showIndicators) item {
+            ManagerAnalyticsPanel(u.items, u.manager, onStockFocus = onStockFocus, onActivityFocus = onActivityFocus, onItemFocus = onItemFocus)
+        }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { TodayLabel("ULTIMI MOVIMENTI") }
@@ -109,7 +128,7 @@ object TodayTasks {
                 Text(TodayTasks.signed(move.delta), color = if (move.delta >= 0) Mint else Amber, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                     modifier = Modifier.widthIn(min = 52.dp))
                 Text(move.itemName, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(ago(move.createdAt), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                Text(TodayTasks.who(move.actor, ago(move.createdAt)), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
             }
         }
     }
@@ -128,8 +147,10 @@ object TodayTasks {
     }
 }
 
-@Composable private fun TodayTask(number: Int, color: Color, title: String, subtitle: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = PanelBg) {
+@OptIn(ExperimentalFoundationApi::class)
+@Composable private fun TodayTask(number: Int, color: Color, title: String, subtitle: String, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLong),
+        shape = RoundedCornerShape(16.dp), color = PanelBg) {
         Row(Modifier.heightIn(min = 68.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
@@ -142,6 +163,21 @@ object TodayTasks {
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = TextSecondary)
         }
     }
+}
+
+/** 4.15: after how many days a tool on loan is worth a reminder. */
+@Composable private fun LoanDaysDialog(current: Int, onClose: () -> Unit) {
+    AlertDialog(onDismissRequest = onClose, title = { Text("Utensili in prestito") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Avvisami quando un utensile è fuori da più di:", color = TextSecondary, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TodayTasks.LOAN_DAY_CHOICES.forEach { days ->
+                        FilterChip(selected = days == current, onClick = { UiPrefs.updateLoanDays(days); onClose() }, label = { Text("$days gg") })
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = onClose) { Text("Chiudi") } })
 }
 
 /** State of the team in one line; the whole line opens the Squadra section. */
@@ -164,11 +200,41 @@ object TodayTasks {
     }
 }
 
+/** 4.15: the same gear, top right, in every section of the bottom bar. */
+@Composable fun SettingsGear(onClick: () -> Unit) {
+    FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Settings, "Impostazioni") }
+}
+
+/**
+ * 4.15: Articoli holds two pages, the stock and its history ("Giacenze" / "Movimenti"): who looks
+ * for what happened to a piece starts from the list of the pieces.
+ */
+@Composable fun StockSections(movements: Boolean, onSelect: (movements: Boolean) -> Unit, goSettings: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(false to "Giacenze", true to "Movimenti").forEach { (target, label) ->
+            val active = target == movements
+            Surface(onClick = { onSelect(target) }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp),
+                color = if (active) Mint.copy(alpha = .16f) else Surface2) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(label, color = if (active) TextPrimary else TextSecondary, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
+                }
+            }
+        }
+        SettingsGear(goSettings)
+    }
+}
+
 /** 4.15: the team has its own section of the bottom bar (it used to be inside Settings only). */
-@Composable fun TeamScreen(model: StockViewModel) {
+@Composable fun TeamScreen(model: StockViewModel, goSettings: () -> Unit) {
     val u = model.ui
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { SectionTitle("Squadra", "Sincronizzazione tra i telefoni, senza internet") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { SectionTitle("Squadra", "Sincronizzazione tra i telefoni, senza internet") }
+                SettingsGear(goSettings)
+            }
+        }
         if (u.team.role != TeamRole.NONE && u.team.warehouseId == u.warehouse?.id) item { SyncCard(model) }
         item { TeamSyncPanel(model) }
     }

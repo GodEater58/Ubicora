@@ -24,6 +24,26 @@ import java.util.zip.GZIPOutputStream
  * Stock is merged by adding movements, never by copying quantities, and every change carries a
  * per-phone sequence number: importing the same file twice changes nothing.
  */
+/**
+ * 4.15: letter of the phone behind every movement (A = central, B…Z = satellites), kept beside the
+ * movements so their table and the backup format stay as they are. Written by a trigger, so every
+ * code path that moves stock is covered. Without a team nothing is recorded.
+ */
+object MovementActors {
+    fun create(db: SQLiteDatabase) {
+        fun s(key: String) = "(SELECT value FROM team_sync_settings WHERE key='$key')"
+        // While a central update is applied on a satellite the movement comes from the central;
+        // while the central imports a satellite's file ("actor") it comes from that satellite.
+        val letter = """CASE WHEN COALESCE(${s("applying")},'0')='1' THEN 'A'
+            ELSE COALESCE(NULLIF(${s("actor")},''), CASE ${s("role")} WHEN 'central' THEN 'A' WHEN 'satellite' THEN ${s("letter")} END) END"""
+        db.execSQL("CREATE TABLE IF NOT EXISTS team_sync_settings(key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS movement_actors(
+            movement_id INTEGER PRIMARY KEY NOT NULL REFERENCES movements(id) ON DELETE CASCADE, letter TEXT NOT NULL)""")
+        db.execSQL("""CREATE TRIGGER IF NOT EXISTS movement_actor AFTER INSERT ON movements WHEN $letter IS NOT NULL
+            BEGIN INSERT OR REPLACE INTO movement_actors(movement_id,letter) VALUES(NEW.id,$letter); END""")
+    }
+}
+
 object TeamSyncSchema {
     fun create(db: SQLiteDatabase) {
         fun addColumn(table: String, column: String) {
@@ -431,6 +451,8 @@ class TeamSync(private val stock: StockDb) {
             else if (known.first != letter) sql.update("team_sync_peers", ContentValues().apply { put("letter", letter) },
                 "device_uid=?", arrayOf(device))
             var processed = known?.second ?: 0L
+            // 4.15: movements applied from this file belong to that satellite (rolled back with the transaction on failure).
+            TeamSyncSchema.put(sql, "actor", letter)
             val scope = setting("scope:$letter")?.let { lines(it).toSet() }
             fun outside(itemId: Long?): Boolean = scope != null && itemId != null &&
                 sql.rawQuery("SELECT category FROM items WHERE id=?", arrayOf(itemId.toString())).use { it.moveToFirst() && it.getString(0) !in scope }
@@ -492,6 +514,7 @@ class TeamSync(private val stock: StockDb) {
             }
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))
+            TeamSyncSchema.put(sql, "actor", "")
             sql.setTransactionSuccessful()
             return TeamImportResult(articles, moves, locations, skipped, conflicts, letter)
         } finally { sql.endTransaction() }

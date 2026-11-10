@@ -136,6 +136,7 @@ class BurstPickingTest {
         model.scanToConfirmPick(vite.id); assertNotEquals(0L, model.ui.scanRequest); model.consumeScanRequest()
         model.handleScannedCode(ArticleCodes.payload(dado.warehouseId, dado.sku))
         assertNotNull(model.ui.message); assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertEquals("after a wrong label the confirmation by hand is offered", vite.id, model.ui.pickScanMissedId)
         model.scanToConfirmPick(vite.id); model.consumeScanRequest()
         model.handleScannedCode(ArticleCodes.payload(vite.warehouseId, vite.sku)); awaitIdle()
         assertEquals(2.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)

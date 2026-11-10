@@ -50,6 +50,15 @@ class GuidedPickTest {
         assertEquals(PickGuide(), PickRoute.guide(emptyList(), items, places))
     }
 
+    @Test fun stretchTurnsAtTheCornerThatCrossesFewerStructures() {
+        // From A (0,0) to B (6,4). A shelf sits on the horizontal leg, at (3,0): the corner goes the other way.
+        val a = shelf(1, "A", 0f, 0f); val b = shelf(2, "B", 6f, 4f); val obstacle = shelf(3, "X", 3f, 0f)
+        assertEquals(PointMetres(0f, 4f), PickRoute.elbow(a, b, listOf(a, b, obstacle)))
+        // Nothing in the way: horizontal first.
+        assertEquals(PointMetres(6f, 0f), PickRoute.elbow(a, b, listOf(a, b)))
+        assertEquals("B \u00b7 ora", TodayTasks.who("B", "ora")); assertEquals("ora", TodayTasks.who(null, "ora"))
+    }
+
     @Test fun firstScreenCountsToolsOutForTooLong() {
         val day = 86_400_000L
         val now = 100 * day
