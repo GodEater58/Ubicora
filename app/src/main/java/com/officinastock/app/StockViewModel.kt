@@ -888,6 +888,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     // ---- 4.8 phone-to-phone sync ----
     fun becomeTeamCentral(password:String) = execute { team.becomeCentral(requireWarehouse(),password) }
     fun leaveTeam(force:Boolean=false) { link.stop();execute { team.leave(force) } }
+    /** 4.15: this satellite replaces a central phone that is lost. */
+    fun promoteToCentral() { link.stop();execute { team.promoteToCentral() } }
     /** Central: opens the short-range network for the synced warehouse. */
     fun startCentralLink() {
         val t=ui.team; val w=ui.warehouse

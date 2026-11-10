@@ -269,4 +269,68 @@ class TeamSyncTest {
         satellite.validateRestoredData()
         assertEquals(TeamRole.SATELLITE, TeamSync(satellite).status().role)
     }
+
+    /** 4.15: every phone sees who has which tool; a returned tool disappears at the next exchange. */
+    @Test fun openLoansTravelToEveryPhoneAndDisappearWhenReturned() {
+        val whB = join(satellite, "B"); val whC = join(other, "C")
+        val viteB = satellite.items(whB).single().id
+        satellite.lend(viteB, "Luca", 2.0)
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(8.0, qty(central, warehouse, "Vite M8"), 0.0)
+        val seen = TeamSync(central).status().loans.single()
+        assertEquals("B", seen.letter); assertEquals("Luca", seen.borrower); assertEquals("Vite M8", seen.itemName); assertEquals(2.0, seen.quantity, 0.0)
+        central.lend(central.items(warehouse).single().id, "Sara", 1.0)
+        // C sees both; B sees only the central's (its own loan is already in its list).
+        TeamSync(other).importState(ByteArrayInputStream(state()))
+        assertEquals(setOf("A" to "Sara", "B" to "Luca"), TeamSync(other).status().loans.map { it.letter to it.borrower }.toSet())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(listOf("A" to "Sara"), TeamSync(satellite).status().loans.map { it.letter to it.borrower })
+        // Returned on B: gone from the central and from C after the exchanges; stock back.
+        satellite.returnLoan(satellite.activeLoans(whB).single().id)
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertTrue(TeamSync(central).status().loans.isEmpty())
+        TeamSync(other).importState(ByteArrayInputStream(state()))
+        assertEquals(listOf("Sara"), TeamSync(other).status().loans.map { it.borrower })
+        assertEquals(9.0, qty(other, whC, "Vite M8"), 0.0)   // 10 - 1 (Sara) - 2 + 2
+    }
+
+    /** 4.15: the letter of the phone stays with each movement. */
+    @Test fun everyMovementRemembersThePhoneThatMadeIt() {
+        val whB = join(satellite, "B")
+        satellite.movement(satellite.items(whB).single().id, -3.0, "Prelievo")
+        assertEquals("B", satellite.movements(whB).first().actor)
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        central.movement(central.items(warehouse).single().id, -1.0, "Prelievo")
+        val onCentral = central.movements(warehouse)
+        assertEquals("A", onCentral.first { it.delta == -1.0 }.actor)
+        assertEquals("B", onCentral.first { it.delta == -3.0 }.actor)
+    }
+
+    /** 4.15: a satellite replaces a lost central without applying twice what was already delivered. */
+    @Test fun satelliteReplacesALostCentralAndTheOthersCarryOn() {
+        val whB = join(satellite, "B"); val whC = join(other, "C")
+        // C delivers a withdrawal to the central; everyone gets the update.
+        other.movement(other.items(whC).single().id, -1.0, "Prelievo")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(other)))
+        satellite.movement(satellite.items(whB).single().id, -3.0, "Prelievo")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        TeamSync(satellite).importState(ByteArrayInputStream(state())); TeamSync(other).importState(ByteArrayInputStream(state()))
+        assertEquals(6.0, qty(satellite, whB, "Vite M8"), 0.0)
+        // The central is lost. Meanwhile C has withdrawn two more, never delivered.
+        other.movement(other.items(whC).single().id, -2.0, "Prelievo")
+        TeamSync(satellite).promoteToCentral()
+        assertEquals(TeamRole.CENTRAL, TeamSync(satellite).status().role)
+        rejects { TeamSync(central).promoteToCentral() }
+        fun newState() = ByteArrayOutputStream().also { TeamSync(satellite).exportState(it) }.toByteArray()
+        // C keeps working with the new central: only the two undelivered pieces are applied, once.
+        TeamSync(other).importState(ByteArrayInputStream(newState()))
+        assertEquals(4.0, qty(other, whC, "Vite M8"), 0.0)
+        val file = changes(other)
+        assertEquals(1, TeamSync(satellite).importChanges(ByteArrayInputStream(file)).movements)
+        assertEquals(4.0, qty(satellite, whB, "Vite M8"), 0.0)
+        assertEquals(0, TeamSync(satellite).importChanges(ByteArrayInputStream(file)).movements)
+        assertEquals(4.0, qty(satellite, whB, "Vite M8"), 0.0)
+        TeamSync(other).importState(ByteArrayInputStream(newState()))
+        assertEquals(4.0, qty(other, whC, "Vite M8"), 0.0); assertEquals(0, TeamSync(other).status().pending)
+    }
 }

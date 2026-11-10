@@ -39,6 +39,9 @@ object MovementActors {
         db.execSQL("CREATE TABLE IF NOT EXISTS team_sync_settings(key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)")
         db.execSQL("""CREATE TABLE IF NOT EXISTS movement_actors(
             movement_id INTEGER PRIMARY KEY NOT NULL REFERENCES movements(id) ON DELETE CASCADE, letter TEXT NOT NULL)""")
+        // 4.15: open loans of the other phones, as told by the last exchange (read-only copy, rebuilt at every sync).
+        db.execSQL("""CREATE TABLE IF NOT EXISTS team_loans(
+            letter TEXT NOT NULL, item_uid TEXT NOT NULL, borrower TEXT NOT NULL, quantity REAL NOT NULL, created_at INTEGER NOT NULL)""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS movement_actor AFTER INSERT ON movements WHEN $letter IS NOT NULL
             BEGIN INSERT OR REPLACE INTO movement_actors(movement_id,letter) VALUES(NEW.id,$letter); END""")
     }
@@ -142,8 +145,11 @@ data class TeamSyncStatus(
     /** Central: departments per satellite letter. */
     val scopes: Map<String, List<String>> = emptyMap(),
     /** 4.11: the team password is not readable on this phone (e.g. backup restored on a new phone). */
-    val needsPassword: Boolean = false
+    val needsPassword: Boolean = false,
+    /** 4.15: tools on loan from the other phones of the team (read-only here: they are returned where they were lent). */
+    val loans: List<TeamLoan> = emptyList()
 )
+data class TeamLoan(val letter: String, val itemId: Long?, val itemName: String, val borrower: String, val quantity: Double, val createdAt: Long)
 data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
                             val letter: String? = null, val removed: Int = 0)
 
@@ -176,7 +182,75 @@ class TeamSync(private val stock: StockDb) {
             buildList { while (c.moveToNext()) add(TeamConflict(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4))) } }
         return TeamSyncStatus(role, setting("warehouse_id")?.toLongOrNull(), setting("letter"),
             if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts,
-            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null)
+            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null, loans = teamLoans())
+    }
+
+    // ---------------------------------------------------------------- 4.15 loans of the team
+
+    private fun teamLoans(): List<TeamLoan> {
+        val warehouse = setting("warehouse_id") ?: return emptyList()
+        return db.rawQuery("""SELECT t.letter,i.id,COALESCE(i.name,'Articolo non più presente'),t.borrower,t.quantity,t.created_at
+            FROM team_loans t LEFT JOIN items i ON i.uid=t.item_uid AND i.warehouse_id=? ORDER BY t.created_at""", arrayOf(warehouse)).use { c ->
+            buildList { while (c.moveToNext()) add(TeamLoan(c.getString(0), if (c.isNull(1)) null else c.getLong(1), c.getString(2),
+                c.getString(3), c.getDouble(4), c.getLong(5))) } }
+    }
+    /** Open loans made on this phone, for the other phones to see. */
+    private fun ownLoans(read: SQLiteDatabase, warehouseId: Long, letter: String, into: JSONArray = JSONArray()): JSONArray {
+        read.rawQuery("""SELECT i.uid,l.borrower,l.quantity,l.created_at FROM loans l JOIN items i ON i.id=l.item_id
+            WHERE i.warehouse_id=? AND l.returned_at IS NULL AND i.uid IS NOT NULL ORDER BY l.id LIMIT 2000""", arrayOf(warehouseId.toString())).use { c ->
+            while (c.moveToNext()) into.put(JSONObject().put("letter", letter).put("item", c.getString(0)).put("borrower", c.getString(1))
+                .put("quantity", c.getDouble(2)).put("at", c.getLong(3)))
+        }
+        return into
+    }
+    /** Stores the loans of a file; [forced] = they all belong to that letter (a satellite's file), otherwise each row says whose it is. */
+    private fun storeLoans(sql: SQLiteDatabase, loans: JSONArray, forced: String?, skip: String?) {
+        require(loans.length() <= 5000) { "File troppo grande" }
+        for (i in 0 until loans.length()) {
+            val o = loans.getJSONObject(i)
+            val letter = forced ?: o.optString("letter")
+            val quantity = o.optDouble("quantity")
+            if (letter.length != 1 || letter == skip || !(quantity > 0.0) || !quantity.isFinite()) continue
+            sql.insertOrThrow("team_loans", null, ContentValues().apply {
+                put("letter", letter); put("item_uid", o.optString("item").take(64)); put("borrower", o.optString("borrower").take(120))
+                put("quantity", quantity); put("created_at", o.optLong("at"))
+            })
+        }
+    }
+
+    /**
+     * 4.15: this satellite takes the place of a central phone that is lost or broken. It keeps its
+     * stock (its own unsent changes are already in it) and starts from what the last update said
+     * about the other satellites, so the changes they had already delivered are not applied twice.
+     * What only the old central knew after its last update to this phone is lost with it.
+     */
+    fun promoteToCentral() {
+        require(setting("role") == "satellite") { "Solo un satellite può prendere il posto del centrale" }
+        requireTeamPw()
+        val me = deviceUid()
+        val myLetter = setting("letter")
+        val known = setting("known_peers")?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val sql = db
+        sql.beginTransaction()
+        try {
+            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts")) sql.delete(t, null, null)
+            val letters = known?.optJSONObject("letters"); val processed = known?.optJSONObject("processed"); val scopes = known?.optJSONObject("scopes")
+            letters?.keys()?.forEach { device ->
+                val letter = letters.optString(device)
+                if (device != me && letter != myLetter && ArticleCodes.isSatelliteLetter(letter))
+                    sql.insertWithOnConflict("team_sync_peers", null, ContentValues().apply {
+                        put("device_uid", device); put("letter", letter); put("processed_seq", processed?.optLong(device, 0L) ?: 0L)
+                    }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            scopes?.keys()?.forEach { letter ->
+                val categories = scopes.optJSONArray(letter)
+                if (letter != myLetter && categories != null && categories.length() > 0)
+                    TeamSyncSchema.put(sql, "scope:$letter", (0 until categories.length()).joinToString("\n") { categories.getString(it) })
+            }
+            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor')", null)
+            TeamSyncSchema.put(sql, "role", "central")
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
     }
 
     // ---------------------------------------------------------------- set-up
@@ -287,7 +361,7 @@ class TeamSync(private val stock: StockDb) {
         sql.beginTransaction()
         try {
             sql.delete("team_sync_settings", "key<>'device_uid'", null)
-            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts")) sql.delete(t, null, null)
+            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts", "team_loans")) sql.delete(t, null, null)
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
     }
@@ -426,6 +500,13 @@ class TeamSync(private val stock: StockDb) {
                 c.getString(12), if (c.isNull(13)) null else c.getInt(13)))
         }
         state.put("placements", placements).put("walls", walls).put("items", items)
+        // 4.15: who has which tool, from every phone (older versions ignore this field).
+        val loans = ownLoans(read, warehouseId, "A")
+        read.rawQuery("SELECT letter,item_uid,borrower,quantity,created_at FROM team_loans ORDER BY created_at", null).use { c ->
+            while (c.moveToNext()) loans.put(JSONObject().put("letter", c.getString(0)).put("item", c.getString(1)).put("borrower", c.getString(2))
+                .put("quantity", c.getDouble(3)).put("at", c.getLong(4)))
+        }
+        state.put("loans", loans)
         write(out, state)
         TeamSyncSchema.put(db, "last_sync", System.currentTimeMillis().toString())
     }
@@ -515,6 +596,11 @@ class TeamSync(private val stock: StockDb) {
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))
             TeamSyncSchema.put(sql, "actor", "")
+            // 4.15: the satellite's open loans replace what was known of it (a file of an older version has none: nothing changes).
+            changes.optJSONArray("loans")?.let { loans ->
+                sql.delete("team_loans", "letter=?", arrayOf(letter))
+                storeLoans(sql, loans, forced = letter, skip = null)
+            }
             sql.setTransactionSuccessful()
             return TeamImportResult(articles, moves, locations, skipped, conflicts, letter)
         } finally { sql.endTransaction() }
@@ -561,7 +647,7 @@ class TeamSync(private val stock: StockDb) {
         }
         write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid"))
             .put("device_uid", deviceUid()).put("letter", setting("letter")).put("created_at", System.currentTimeMillis())
-            .put("events", events))
+            .put("events", events).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
         return events.length()
     }
 
@@ -682,6 +768,13 @@ class TeamSync(private val stock: StockDb) {
         }
         TeamSyncSchema.put(sql, "applying", "0")
         TeamSyncSchema.put(sql, "last_sync", System.currentTimeMillis().toString())
+        // 4.15: loans of the other phones, and what the central knows of the team (needed if this phone ever replaces it).
+        state.optJSONArray("loans")?.let { loans ->
+            sql.delete("team_loans", null, null)
+            storeLoans(sql, loans, forced = null, skip = setting("letter"))
+        }
+        TeamSyncSchema.put(sql, "known_peers", JSONObject().put("processed", state.getJSONObject("processed"))
+            .put("letters", state.getJSONObject("letters")).put("scopes", state.optJSONObject("scopes") ?: JSONObject()).toString())
         val stillPending = sql.rawQuery("SELECT COUNT(*) FROM team_sync_outbox", null).use { c -> c.moveToFirst(); c.getInt(0) }
         return TeamImportResult(updated, 0, 0, stillPending, 0, removed = removed)
     }

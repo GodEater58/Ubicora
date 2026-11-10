@@ -29,6 +29,7 @@ object TodayTasks {
     /** Open loans older than [days]: tools that are probably forgotten somewhere. */
     fun overdueLoans(loans: List<Loan>, now: Long, days: Int = LOAN_DAYS): Int =
         loans.count { it.returnedAt == null && now - it.createdAt > days * 86_400_000L }
+    fun overdueTeamLoans(loans: List<TeamLoan>, now: Long, days: Int = LOAN_DAYS): Int = loans.count { now - it.createdAt > days * 86_400_000L }
     /** "B · 2 ore fa": the phone that made the movement, when known. */
     fun who(actor: String?, time: String): String = if (actor.isNullOrBlank()) time else "$actor · $time"
     val LOAN_DAY_CHOICES = listOf(3, 7, 14, 30)
@@ -49,7 +50,9 @@ object TodayTasks {
     val critical = u.items.count { it.lowStock }
     val unlocated = u.items.count { it.placementId == null }
     val loanDays = UiPrefs.loanDays
-    val overdue = remember(u.loans, loanDays) { TodayTasks.overdueLoans(u.loans, System.currentTimeMillis(), loanDays) }
+    // 4.15: tools lent from the other phones count too.
+    val overdue = remember(u.loans, u.team.loans, loanDays) { val now = System.currentTimeMillis()
+        TodayTasks.overdueLoans(u.loans, now, loanDays) + TodayTasks.overdueTeamLoans(u.team.loans, now, loanDays) }
     var askLoanDays by remember { mutableStateOf(false) }
     // Business mode: the indicators stay one tap away, closed by default, so the screen is the same for everyone.
     var showIndicators by rememberSaveable { mutableStateOf(false) }
@@ -77,7 +80,7 @@ object TodayTasks {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TodayNumber(count.toString(), "Referenze", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
                 TodayNumber(critical.toString(), "Da riordinare", Amber, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
-                TodayNumber(u.loans.size.toString(), "In prestito", Sky, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
+                TodayNumber((u.loans.size + u.team.loans.size).toString(), "In prestito", Sky, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
             }
         }
         item { TodayLabel("DA FARE ADESSO") }
@@ -228,6 +231,7 @@ object TodayTasks {
 /** 4.15: the team has its own section of the bottom bar (it used to be inside Settings only). */
 @Composable fun TeamScreen(model: StockViewModel, goSettings: () -> Unit) {
     val u = model.ui
+    var askPromote by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -236,6 +240,31 @@ object TodayTasks {
             }
         }
         if (u.team.role != TeamRole.NONE && u.team.warehouseId == u.warehouse?.id) item { SyncCard(model) }
+        if (u.team.loans.isNotEmpty()) item {
+            Panel(Modifier.fillMaxWidth()) {
+                Text("In prestito dagli altri telefoni", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Aggiornato all'ultimo scambio. La restituzione si registra sul telefono che ha fatto il prestito.", color = TextSecondary, fontSize = 12.sp)
+                u.team.loans.take(30).forEach { loan ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(loan.letter, color = Sky, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 18.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(loan.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Text("${loan.borrower} · ${amount(loan.quantity)} · ${ago(loan.createdAt)}", color = TextSecondary, fontSize = 12.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
         item { TeamSyncPanel(model) }
+        if (u.team.role == TeamRole.SATELLITE && u.team.warehouseId == u.warehouse?.id) item {
+            OutlinedButton(onClick = { askPromote = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) { Text("Il centrale non c'è più: questo telefono lo sostituisce") }
+        }
     }
+    if (askPromote) AlertDialog(onDismissRequest = { askPromote = false }, title = { Text("Sostituire il telefono centrale?") },
+        text = { Text("Usalo solo se il centrale è perso o rotto. Questo telefono diventa il nuovo centrale con le giacenze che ha ora; gli altri satelliti " +
+            "si sincronizzeranno con lui. Quello che solo il vecchio centrale sapeva dopo il suo ultimo aggiornamento a questo telefono va perso. " +
+            "Se il vecchio centrale torna in funzione, scollegalo dalla squadra prima di usarlo.") },
+        confirmButton = { Button(onClick = { askPromote = false; model.promoteToCentral() }) { Text("Diventa centrale") } },
+        dismissButton = { TextButton(onClick = { askPromote = false }) { Text("Annulla") } })
 }

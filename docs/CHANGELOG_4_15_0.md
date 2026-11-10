@@ -18,6 +18,8 @@
 | **Giacenze / Movimenti** | Articoli ha due linguette: la lista e lo storico. «Tutti» in Oggi porta allo storico |
 | **Chi ha fatto il movimento** | Con la squadra attiva ogni movimento ricorda la lettera del telefono (A = centrale, B, C…) e la mostra in Oggi e nello storico. Sul centrale i movimenti arrivati da un satellite portano la sua lettera. Vale dai movimenti fatti con la 4.15 in poi |
 | **Soglia dei prestiti** | Tieni premuto «Utensili fuori da più di 7 giorni» per scegliere 3, 7, 14 o 30 giorni |
+| **Prestiti di tutta la squadra** | A ogni scambio i telefoni si dicono quali utensili hanno in prestito: «In prestito» e «Utensili fuori da più di N giorni» in Oggi contano anche quelli degli altri, e la sezione Squadra li elenca con la lettera del telefono. La restituzione si registra sul telefono che ha fatto il prestito |
+| **Sostituire il centrale** | Sezione Squadra di un satellite › «Il centrale non c'è più: questo telefono lo sostituisce». Il satellite diventa centrale con le sue giacenze; gli altri satelliti proseguono con lui senza ricollegarsi, e le modifiche che avevano già consegnato non vengono applicate due volte |
 | **Sezione Squadra** | La sincronizzazione ha una sua sezione nella barra (resta anche nelle Impostazioni) |
 | **Prelievo guidato** | «Aggiungi alla lista di prelievo» dal pannello di un articolo. La Mappa entra in modalità giro: spariscono gli strumenti di modifica, il titolo diventa «Prelievo guidato · 2 di 5» con la barra di avanzamento, e il pannello in basso indica prossimo articolo, ubicazione e quantità. Si conferma scansionando l'etichetta; se la lettura fallisce o viene chiusa compare «Etichetta illeggibile? Conferma a mano». In pianta: strutture visitate con il segno di spunta, prossima in arancio, tratto puntinato ad angolo retto che evita le strutture quando può. Nelle altre sezioni resta una barra con «Vai» |
 | **Prestito dal prelievo a raffica** | «Segna come prestito» accanto a «Salta»: chiede chi lo prende e prosegue |
@@ -32,7 +34,11 @@
 - In modalità aziendale gli indicatori di gestione sono in fondo a Oggi, chiusi: si aprono con «Mostra indicatori».
 - La lettera di chi ha fatto il movimento è salvata accanto ai movimenti, senza cambiare la loro tabella né il formato del backup: dopo un ripristino da backup le lettere dei movimenti passati non ci sono più.
 
+- Sostituzione del centrale: conviene promuovere il satellite che ha sincronizzato per ultimo. Quello che solo il vecchio centrale sapeva dopo il suo ultimo aggiornamento a quel telefono va perso. Se il vecchio centrale torna in funzione va scollegato dalla squadra prima di usarlo: due centrali sullo stesso magazzino non si riconciliano.
+- I prestiti degli altri telefoni arrivano solo quando entrambi hanno la 4.15; con un telefono su una versione precedente lo scambio funziona come prima, senza l'elenco dei prestiti.
+- Le foto degli articoli non viaggiano ancora tra i telefoni.
+
 ## Da provare sul telefono
 Questa versione è verificata con i test automatici, non su un dispositivo: fotocamera, torcia, suono, vibrazione, pausa di 2 secondi tra due letture della stessa etichetta, scorrimento sulle righe (anche con i guanti), pannello dal basso e doppio tocco sulla mappa vanno collaudati in officina.
 
-Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `GuidedPickTest` (ordine del percorso, guida sulla mappa, tratto ad angolo, prestiti scaduti, quantità digitate).
+Test: `BurstPickingTest` (stessa etichetta, etichetta di un altro articolo, annullamento), `BurstScanLogicTest` (quantità e filtro delle letture ripetute), `TeamSyncTest` (prestiti di squadra, lettera sui movimenti, sostituzione del centrale), `GuidedPickTest` (ordine del percorso, guida sulla mappa, tratto ad angolo, prestiti scaduti, quantità digitate).

@@ -215,8 +215,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
         // 4.15 "tour mode": during a guided picking the editing tools leave the screen and the title follows the walk.
         val guiding=state.pickList.any{!it.done}
         LaunchedEffect(guiding) { if(guiding) { mode=EditorTool.VIEW;layer=MapLayer.NORMAL;wallAnchor=null;draftEnd=null;selectedWallId=null } }
-        if(guiding) GuidedMapHeader(state.pickList,onClose=model::clearPickList) else
-        Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        if(guiding) GuidedMapHeader(state.pickList,onClose=model::clearPickList)
+        if(!guiding) Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 Surface(shape=RoundedCornerShape(12.dp),color=Mint.copy(alpha=.11f)) {
                     Icon(Icons.Outlined.Architecture,"Progettazione",tint=Mint,modifier=Modifier.padding(10.dp).size(23.dp))
