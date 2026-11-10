@@ -316,6 +316,9 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                 // 4.10: scan → quantity → next article, until "Fine".
                 AssistChip(onClick=model::startBurst,enabled=!u.busy,label={Text("Prelievo a raffica")},
                     leadingIcon={Icon(Icons.Outlined.DocumentScanner,contentDescription=null,modifier=Modifier.size(18.dp))})
+                // 4.15: sweep a structure and see what is missing or misplaced.
+                AssistChip(onClick={model.startShelfCheck()},enabled=!u.busy,label={Text("Verifica scaffale")},
+                    leadingIcon={Icon(Icons.Outlined.FactCheck,contentDescription=null,modifier=Modifier.size(18.dp))})
                 Box {
                     AssistChip(onClick={sortMenu=true},label={Text(sort.label)},
                         leadingIcon={Icon(Icons.Outlined.Sort,contentDescription="Ordina",modifier=Modifier.size(18.dp))})

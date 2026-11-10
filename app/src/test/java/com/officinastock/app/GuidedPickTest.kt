@@ -77,4 +77,16 @@ class GuidedPickTest {
         assertTrue(QuickQuantity.valid(100.0, load = true, available = 4.0))
         assertFalse(QuickQuantity.valid(null, load = true, available = 4.0))
     }
+
+    @Test fun shelfCheckTellsFoundMissingAndMisplaced() {
+        val items = listOf(item(1, "Vite", 1), item(2, "Dado", 1), item(3, "Rondella", 2), item(4, "Senza posto", null))
+        // Before the label of the structure is read: only what was seen.
+        val open = ShelfChecks.summary(ShelfCheck(null, setOf(1L, 3L)), items)
+        assertEquals(listOf("Rondella", "Vite"), open.found.map { it.name }); assertTrue(open.missing.isEmpty()); assertTrue(open.strangers.isEmpty())
+        // Structure 1: Vite seen, Dado not seen, Rondella and "Senza posto" are there but belong elsewhere.
+        val onA = ShelfChecks.summary(ShelfCheck(1, setOf(1L, 3L, 4L)), items)
+        assertEquals(listOf("Vite"), onA.found.map { it.name })
+        assertEquals(listOf("Dado"), onA.missing.map { it.name })
+        assertEquals(listOf("Rondella", "Senza posto"), onA.strangers.map { it.name })
+    }
 }

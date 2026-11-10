@@ -24,3 +24,17 @@ class ScanGate(private val gapMs: Long = 2000) {
         return last == null || nowMs - last > gapMs
     }
 }
+
+/** 4.15 shelf check: the structure being checked (null until its label is read) and the articles seen so far. */
+data class ShelfCheck(val placementId: Long? = null, val seen: Set<Long> = emptySet())
+
+/** What a shelf check says: what should be there and was seen, what was not seen, what is there but belongs elsewhere. */
+data class ShelfSummary(val found: List<StockItem>, val missing: List<StockItem>, val strangers: List<StockItem>)
+object ShelfChecks {
+    fun summary(check: ShelfCheck, items: List<StockItem>): ShelfSummary {
+        val seen = items.filter { it.id in check.seen }.sortedBy { it.name.lowercase() }
+        if (check.placementId == null) return ShelfSummary(seen, emptyList(), emptyList())
+        val expected = items.filter { it.placementId == check.placementId }.sortedBy { it.name.lowercase() }
+        return ShelfSummary(expected.filter { it.id in check.seen }, expected.filter { it.id !in check.seen }, seen.filter { it.placementId != check.placementId })
+    }
+}

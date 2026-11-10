@@ -53,6 +53,30 @@ class MainActivity: ComponentActivity() {
         if(!isChangingConfigurations && !externalActivityPending) model.lockForBackground()
         super.onStop()
     }
+    // 4.15: while the app is in front, an NFC tag touched with the phone is read (or written) here.
+    override fun onResume() {
+        super.onResume()
+        runCatching {
+            android.nfc.NfcAdapter.getDefaultAdapter(this)?.enableReaderMode(this,{ tag -> onNfcTag(tag) },
+                android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B or
+                    android.nfc.NfcAdapter.FLAG_READER_NFC_F or android.nfc.NfcAdapter.FLAG_READER_NFC_V,null)
+        }
+    }
+    override fun onPause() {
+        runCatching { android.nfc.NfcAdapter.getDefaultAdapter(this)?.disableReaderMode(this) }
+        super.onPause()
+    }
+    /** Called on an NFC thread: tag access happens here, the model is touched on the main thread. */
+    private fun onNfcTag(tag:android.nfc.Tag) {
+        val toWrite=model.nfcWritePayload
+        if(toWrite!=null) {
+            val failure=runCatching { NfcLabels.write(tag,toWrite) }.exceptionOrNull()
+            runOnUiThread { model.nfcWritten(toWrite,failure?.let { it.message ?: "Scrittura non riuscita: riavvicina il tag e tienilo fermo" }) }
+        } else {
+            val text=runCatching { NfcLabels.read(tag) }.getOrNull()
+            runOnUiThread { model.handleNfcText(text) }
+        }
+    }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         externalActivityPending=savedInstanceState?.getBoolean("externalActivityPending") ?: false
@@ -189,6 +213,7 @@ class MainActivity: ComponentActivity() {
         }
         if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
+        if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfCheck!=null) ShelfCheckScreen(model)
       }
     }
     // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
@@ -202,6 +227,12 @@ class MainActivity: ComponentActivity() {
         if(data.scanRequest!=0L) { val burst=data.burstMode; model.consumeScanRequest(); if(!burst) onScan() }
     }
     if(data.profile!=null && !data.sessionLocked) TeamLinkDialog(model)
+    // 4.15: waiting for a tag to write the label of an article on.
+    data.nfcWrite?.let { label ->
+        AlertDialog(onDismissRequest=model::cancelNfcWrite,title={Text("Avvicina il tag NFC")},
+            text={Text("Appoggia il tag sul retro del telefono e tienilo fermo un secondo. Verrà scritta l'etichetta di: $label. Quello che il tag conteneva viene sostituito.")},
+            confirmButton={TextButton(onClick=model::cancelNfcWrite){Text("Annulla")}})
+    }
     if(data.busy && data.initialized) androidx.compose.ui.window.Dialog(
         onDismissRequest={},
         properties=androidx.compose.ui.window.DialogProperties(dismissOnBackPress=false,dismissOnClickOutside=false)

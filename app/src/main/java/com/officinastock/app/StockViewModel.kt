@@ -76,6 +76,10 @@ data class StockUiState(
     val pickScanItemId: Long? = null,
     /** 4.15: article whose label could not be read: the panel then offers the confirmation by hand. */
     val pickScanMissedId: Long? = null,
+    /** 4.15: name of the article whose label is waiting to be written on an NFC tag (null = not writing). */
+    val nfcWrite: String? = null,
+    /** 4.15 shelf check: the camera sweeps a structure and ticks what it finds (nothing is moved or counted). */
+    val shelfCheck: ShelfCheck? = null,
     /** 4.15: the guided bar asks to open the map (token, 0 = none). */
     val guidedMapRequest: Long = 0,
     /** 4.15: outcome of the last reading, for the sound and the vibration of the scanner screen. */
@@ -102,7 +106,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { link.stop();ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null,teamQr=null,scanRequest=0);clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { link.stop();nfcWritePayload=null;ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null,teamQr=null,scanRequest=0,nfcWrite=null,shelfCheck=null);clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
@@ -128,6 +132,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             else ui=ui.copy(message="Etichetta diversa: serve ${ui.items.firstOrNull { it.id==expected }?.name ?: "l'articolo della lista"}.")
             return
         }
+        ui.shelfCheck?.let { check -> handleShelfScan(raw,warehouse,check); return }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
         ArticleCodes.parseLocationScan(raw)?.let { location ->
             ui=when {
@@ -182,6 +187,47 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             if(ui.burstMode) requestScan()
         },light=true) {
             db.movement(itemId,-quantity,"Prelievo a raffica")
+        }
+    }
+    // ---- 4.15 NFC tags ----
+    /** Read by the NFC thread of the activity: the label to write on the next tag, or null. */
+    @Volatile var nfcWritePayload:String?=null
+        private set
+    fun requestNfcWrite(itemId:Long) {
+        val item=ui.items.firstOrNull { it.id==itemId } ?: return
+        nfcWritePayload=ArticleCodes.payload(item.warehouseId,item.sku)
+        ui=ui.copy(nfcWrite=item.name,message=null)
+    }
+    fun cancelNfcWrite() { nfcWritePayload=null; ui=ui.copy(nfcWrite=null) }
+    fun nfcWritten(payload:String,failure:String?) {
+        if(nfcWritePayload!=payload) return
+        if(failure==null) { nfcWritePayload=null; ui=ui.copy(nfcWrite=null,scanSignal=ScanSignal(true,System.nanoTime()),message=null) }
+        else ui=ui.copy(message=failure)   // the dialog stays: the tag can be touched again
+    }
+    /** A tag touched with the phone does what a scan of the same label does. */
+    fun handleNfcText(text:String?) {
+        if(ui.profile==null || ui.sessionLocked || ui.warehouse==null || ui.busy) return
+        if(text==null) ui=ui.copy(message="Tag NFC vuoto o non di Ubicora. Per prepararlo: tieni premuto un articolo › «Scrivi su tag NFC».")
+        else handleScannedCode(text)
+    }
+    // ---- 4.15 shelf check ----
+    fun startShelfCheck(placementId:Long?=null) { if(!ui.busy) ui=ui.copy(shelfCheck=ShelfCheck(placementId?.takeIf{id->ui.placements.any{it.id==id}}),burstMode=false,burstItemId=null,message=null) }
+    fun endShelfCheck() { ui=ui.copy(shelfCheck=null,scanSignal=null) }
+    private fun handleShelfScan(raw:String,warehouse:Warehouse,check:ShelfCheck) {
+        ArticleCodes.parseLocationScan(raw)?.let { location ->
+            val known=location.warehouseId==warehouse.id && ui.placements.any { it.id==location.placementId }
+            ui=if(known) ui.copy(shelfCheck=check.copy(placementId=location.placementId),message=null,scanSignal=ScanSignal(true,System.nanoTime()))
+                else ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
+            return
+        }
+        val item=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+            ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
+        when {
+            item==null -> ui=ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
+            item.id in check.seen -> Unit   // already ticked: silence
+            // The second tone tells that the piece is here but belongs somewhere else.
+            else -> ui=ui.copy(shelfCheck=check.copy(seen=check.seen+item.id),
+                scanSignal=ScanSignal(check.placementId==null || item.placementId==check.placementId,System.nanoTime()))
         }
     }
     // ---- 4.15 guided picking ----
@@ -338,7 +384,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
-            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,
+            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,
+            shelfCheck=ui.shelfCheck?.takeIf{snapshot.warehouse?.id==ui.warehouse?.id},
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},

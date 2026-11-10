@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,6 +116,8 @@ import androidx.compose.ui.unit.sp
 @Composable fun ArticleActionsSheet(item: StockItem, place: Placement?, model: StockViewModel, onDismiss: () -> Unit,
     onOpen: () -> Unit, onLabel: () -> Unit, onQuantity: (load: Boolean) -> Unit) {
     val favorite = UiPrefs.isFavorite(item.warehouseId, item.id)
+    val context = LocalContext.current
+    val hasNfc = remember { runCatching { android.nfc.NfcAdapter.getDefaultAdapter(context) != null }.getOrDefault(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 24.dp)) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
@@ -131,6 +134,7 @@ import androidx.compose.ui.unit.sp
             }
             SheetAction(Icons.Outlined.PlaylistAdd, "Aggiungi alla lista di prelievo") { model.addToPickList(item.id); onDismiss() }
             SheetAction(Icons.Outlined.QrCode2, "Etichetta QR") { onDismiss(); onLabel() }
+            if (hasNfc) SheetAction(Icons.Outlined.Nfc, "Scrivi su tag NFC") { onDismiss(); model.requestNfcWrite(item.id) }
             SheetAction(if (favorite) Icons.Outlined.StarOutline else Icons.Outlined.Star,
                 if (favorite) "Togli dai preferiti" else "Aggiungi ai preferiti") { UiPrefs.toggleFavorite(item.warehouseId, item.id); onDismiss() }
             SheetAction(Icons.Outlined.Inventory2, "Apri la scheda articolo") { onDismiss(); onOpen() }

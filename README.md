@@ -34,6 +34,7 @@
 | 📷 | **Prelievo a raffica** | Una sola schermata con la fotocamera sempre accesa, suono e vibrazione a ogni lettura, «Segna come prestito» |
 | 🧭 | **Prelievo guidato** | Lista di prelievo in ordine di percorso; la mappa mostra la prossima struttura, quelle già visitate e il tratto da fare |
 | 🔧 | **Prestiti di squadra** | Ogni telefono vede gli utensili in prestito dagli altri; ogni movimento ricorda il telefono che l'ha fatto |
+| 📶 | **Tag NFC e verifica scaffale** | Un tag NFC vale come l'etichetta QR: basta toccarlo. «Verifica scaffale» passa la fotocamera su una struttura e dice cosa manca o è fuori posto |
 | 🔁 | **Centrale sostituibile** | Se il telefono centrale è perso, un satellite ne prende il posto e gli altri proseguono con lui |
 
 Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).

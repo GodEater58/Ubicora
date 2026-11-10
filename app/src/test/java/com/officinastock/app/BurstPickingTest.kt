@@ -142,4 +142,27 @@ class BurstPickingTest {
         assertEquals(2.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
         assertTrue(model.ui.pickList.isEmpty())
     }
+
+    /** 4.15: an NFC tag holds the text of the QR label and does what a scan does; a shelf check ticks what it reads. */
+    @Test fun nfcTagsActLikeLabelsAndShelfCheckTicksArticles() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }
+        val label = ArticleCodes.payload(vite.warehouseId, vite.sku)
+        assertEquals(label, NfcLabels.text(NfcLabels.message(label).records.single()))
+        assertNull(NfcLabels.text(android.nfc.NdefRecord.createUri("https://example.org")))
+
+        model.handleNfcText(null); assertNotNull(model.ui.message)
+        model.handleNfcText(label); assertEquals(vite.id, model.ui.scannedItemId)
+        model.acknowledgeScannedItem()
+
+        model.requestNfcWrite(vite.id); assertEquals(label, model.nfcWritePayload); assertEquals("Vite M8", model.ui.nfcWrite)
+        model.nfcWritten(label, "Tag protetto"); assertNotNull(model.ui.nfcWrite); assertEquals("Tag protetto", model.ui.message)
+        model.nfcWritten(label, null); assertNull(model.ui.nfcWrite); assertNull(model.nfcWritePayload)
+
+        model.startShelfCheck()
+        model.handleScannedCode(label); model.handleScannedCode(label)
+        assertEquals(setOf(vite.id), model.ui.shelfCheck!!.seen)
+        assertNull("a shelf check never opens the article page", model.ui.scannedItemId)
+        model.handleScannedCode("altro"); assertEquals(false, model.ui.scanSignal?.ok)
+        model.endShelfCheck(); assertNull(model.ui.shelfCheck)
+    }
 }
