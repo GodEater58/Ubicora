@@ -363,6 +363,8 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     }
     LaunchedEffect(requestedFocus){activeFocus=requestedFocus}
     var add by remember{mutableStateOf(false)}
+    var menuItemId by remember{mutableStateOf<Long?>(null)}
+    var quantityFor by remember{mutableStateOf<Pair<Long,Boolean>?>(null)}
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
     LaunchedEffect(u.scannedItemId,u.items) {
@@ -399,10 +401,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
-            FilledTonalIconButton(onClick=onScan) {
-                Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR articolo")
-            }
-            Spacer(Modifier.width(6.dp))
+            // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
             FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -422,6 +421,7 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                         }
                     }
                 }
+                FilterChip(selected=UiPrefs.compactList,onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)},label={Text("Vista compatta")})
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
@@ -432,45 +432,12 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
                 }
             }
         }
-        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=18.dp,end=18.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=12.dp,end=18.dp,bottom=18.dp),verticalArrangement=Arrangement.spacedBy(if(UiPrefs.compactList) 6.dp else 10.dp)) {
+            item { Text("Scorri a destra per prelevare, a sinistra per caricare. Tieni premuto per le altre azioni.",color=TextSecondary,fontSize=11.sp) }
             items(filtered,key={it.id}) { entry ->
-                Panel(Modifier.fillMaxWidth().clickable{selected=entry}) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        if(entry.photoFile!=null) ArticleThumbnail(entry.photoFile)
-                        else Surface(color=if(entry.lowStock)Amber.copy(alpha=.13f) else Mint.copy(alpha=.12f),shape=RoundedCornerShape(14.dp)) {
-                            Icon(Icons.Outlined.Inventory2,null,tint=if(entry.lowStock)Amber else Mint,modifier=Modifier.padding(12.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Text(entry.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f,fill=false))
-                                val star=entry.id.let { UiPrefs.isFavorite(entry.warehouseId,it) }
-                                IconButton(onClick={UiPrefs.toggleFavorite(entry.warehouseId,entry.id)},modifier=Modifier.size(30.dp)) {
-                                    Icon(if(star) Icons.Outlined.Star else Icons.Outlined.StarOutline,
-                                        contentDescription=if(star)"Togli dai preferiti" else "Aggiungi ai preferiti",
-                                        tint=if(star) Amber else TextSecondary.copy(alpha=.6f),modifier=Modifier.size(18.dp))
-                                }
-                            }
-                            Text("${entry.sku}  ·  ${entry.category}",color=TextSecondary,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            // 4.7.2: where to find it, without opening the item.
-                            val place=entry.placementId?.let { placementById[it] }
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Place,contentDescription=null,tint=if(place==null)Amber else Sky,modifier=Modifier.size(13.dp))
-                                Spacer(Modifier.width(3.dp))
-                                Text(Locations.describe(place,entry),color=if(place==null)Amber else Sky,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            }
-                        }
-                        Column(horizontalAlignment=Alignment.End) {
-                            Text("${amount(entry.quantity)} ${entry.unit}",color=if(entry.lowStock)Amber else TextPrimary,fontWeight=FontWeight.Bold)
-                            Text(if(entry.lowStock)"Scorta bassa" else "Disponibile",color=if(entry.lowStock)Amber else Mint,fontSize=11.sp)
-                            // Quick ±1: the same traced movement as the item page, with "Annulla" afterwards.
-                            Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.padding(top=4.dp)) {
-                                QuickStep(Icons.Outlined.Remove,"Preleva 1 ${entry.unit}",enabled=!u.busy && entry.quantity>=1.0) { model.quickMovement(entry.id,-1.0) }
-                                QuickStep(Icons.Outlined.Add,"Carica 1 ${entry.unit}",enabled=!u.busy) { model.quickMovement(entry.id,1.0) }
-                            }
-                        }
-                    }
-                }
+                // 4.15: swipe, long press and compact rows live in ArticleRow.
+                ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,
+                    onOpen={selected=entry},onMenu={menuItemId=entry.id},onQuantity={load->quantityFor=entry.id to load})
             }
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
         }
@@ -480,6 +447,15 @@ fun sortStock(items:List<StockItem>,sort:StockSort,lastMoved:Map<Long,Long>):Lis
     })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})
+    }
+    menuItemId?.let { id ->
+        val current=u.items.firstOrNull{it.id==id}
+        if(current==null) menuItemId=null else ArticleActionsSheet(current,current.placementId?.let { placementById[it] },model,
+            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onQuantity={load->quantityFor=current.id to load})
+    }
+    quantityFor?.let { (id,load) ->
+        val current=u.items.firstOrNull{it.id==id}
+        if(current==null) quantityFor=null else QuickQuantityDialog(current,load,model,onClose={quantityFor=null})
     }
     selected?.let { item ->
         val current=u.items.firstOrNull{it.id==item.id}

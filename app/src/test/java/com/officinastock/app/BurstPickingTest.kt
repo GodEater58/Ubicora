@@ -107,4 +107,28 @@ class BurstPickingTest {
         model.handleScannedCode("non-una-etichetta")
         assertEquals(false, model.ui.scanSignal?.ok); assertNull(model.ui.burstItemId)
     }
+
+    /** 4.15 guided picking: the list withdraws what it asks, never more than the shelf, and can be undone. */
+    @Test fun guidedPickWithdrawsTheListAndStopsAtTheShelf() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }   // 5 on the shelf
+        val dado = model.ui.items.single { it.name == "Dado M8" }   // 4 on the shelf
+        model.addToPickList(vite.id); model.addToPickList(vite.id); model.addToPickList(dado.id)
+        assertEquals(2.0, model.ui.pickList.single { it.itemId == vite.id }.quantity, 0.0)
+        repeat(9) { model.addToPickList(dado.id) }   // asks 10, only 4 there
+
+        model.confirmPick(vite.id); awaitIdle()
+        assertEquals(3.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue(model.ui.pickList.none { it.itemId == vite.id })
+        assertEquals(-2.0, model.ui.movementUndo!!.delta, 0.0)
+
+        model.skipPick(dado.id); assertTrue(model.ui.pickList.single().skipped)
+        model.confirmPick(dado.id); awaitIdle()
+        assertEquals(0.0, model.ui.items.single { it.id == dado.id }.quantity, 0.0)
+        assertTrue(model.ui.pickList.isEmpty())
+
+        // Nothing left: the list keeps the line and says why.
+        model.addToPickList(dado.id); model.confirmPick(dado.id); awaitIdle()
+        assertEquals(1, model.ui.pickList.size); assertNotNull(model.ui.message)
+        model.clearPickList(); assertTrue(model.ui.pickList.isEmpty())
+    }
 }

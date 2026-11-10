@@ -21,6 +21,8 @@ object UiPrefs {
     var autoSync by mutableStateOf(true); private set
     /** 4.15: beep of the burst scanner (the vibration always stays). */
     var scanSound by mutableStateOf(true); private set
+    /** 4.15: article list without photo and code, to see more rows. */
+    var compactList by mutableStateOf(false); private set
     /** "warehouseId:itemId" of the favourite articles. */
     var favorites by mutableStateOf(emptySet<String>()); private set
 
@@ -33,6 +35,7 @@ object UiPrefs {
         screenshots = p.getBoolean("screenshots", false)
         autoSync = p.getBoolean("auto_sync", true)
         scanSound = p.getBoolean("scan_sound", true)
+        compactList = p.getBoolean("compact_list", false)
         favorites = p.getStringSet("favorites", emptySet())!!.toSet()
     }
 
@@ -40,6 +43,7 @@ object UiPrefs {
     fun updateGlove(value: Boolean) { glove = value; prefs?.edit()?.putBoolean("glove", value)?.apply() }
     fun updateAutoSync(value: Boolean) { autoSync = value; prefs?.edit()?.putBoolean("auto_sync", value)?.apply() }
     fun updateScanSound(value: Boolean) { scanSound = value; prefs?.edit()?.putBoolean("scan_sound", value)?.apply() }
+    fun updateCompactList(value: Boolean) { compactList = value; prefs?.edit()?.putBoolean("compact_list", value)?.apply() }
     fun updateScreenshots(value: Boolean) { screenshots = value; prefs?.edit()?.putBoolean("screenshots", value)?.apply() }
 
     private fun key(warehouseId: Long, itemId: Long) = "$warehouseId:$itemId"

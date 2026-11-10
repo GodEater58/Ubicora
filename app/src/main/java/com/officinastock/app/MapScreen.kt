@@ -298,6 +298,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                 }
                 // One gesture owner. Unlike overlapping tap/drag handlers, this cannot steal its own wall strokes.
                 Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
+                    // 4.15: double tap on the empty floor.
+                    var lastTapAt=0L
+                    var lastTapPos=PointMetres(0f,0f)
                     awaitEachGesture {
                         val down=awaitFirstDown(requireUnconsumed=false)
                         val cameraNow=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
@@ -363,6 +366,21 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                         if(picking) {
                             if(!dragged && hit!=null) pick(hit)
                             return@awaitEachGesture
+                        }
+                        // 4.15: a second tap on the same spot of the empty floor zooms there; when already close, back to the whole plan.
+                        if(!dragged && hit==null && mode==EditorTool.VIEW) {
+                            val now=down.uptimeMillis
+                            if(now-lastTapAt<320L && PlanGeometry.distance(initial,lastTapPos)<minDrag*4f) {
+                                lastTapAt=0L
+                                if(zoom>=3.2f) { zoom=1f;panX=0f;panY=0f }
+                                else {
+                                    val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                                    val next=current.transformed(1.8f,initial,PointMetres(0f,0f))
+                                    zoom=next.zoom;panX=next.panX;panY=next.panY
+                                }
+                                return@awaitEachGesture
+                            }
+                            lastTapAt=now;lastTapPos=initial
                         }
                         val tappedWall=if(!dragged && hit==null && mode!=EditorTool.WALL)
                             liveWalls.minByOrNull{PlanGeometry.distanceToWall(startWorld,it)}
@@ -494,6 +512,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit) {
                                 camera.insetCoordinate(center.y-fh/2,size.height,badgePx)
                             )
                             drawCircle(if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
+                            // 4.15: labels keep clear of the counters instead of being cut by them.
+                            occupiedLabelBoxes.add(android.graphics.RectF(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
                             drawIntoCanvas { cv ->
                                 cv.nativeCanvas.drawText(count.toString(),bubble.x,
                                     bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)

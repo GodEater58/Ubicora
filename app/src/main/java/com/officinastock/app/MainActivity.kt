@@ -242,17 +242,8 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds) {
         if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null) go(Tab.MAP)
     }
-    Scaffold(containerColor=Ink, floatingActionButton={
-        if(tab==Tab.HOME || tab==Tab.STOCK) {
-            ExtendedFloatingActionButton(
-                onClick=onScan,
-                icon={ Icon(Icons.Outlined.QrCodeScanner,contentDescription=null) },
-                text={ Text("Scansiona QR") },
-                containerColor=Mint,
-                contentColor=OnMint
-            )
-        }
-    }, bottomBar={
+    // 4.15: no floating button over the lists; the scanner sits in the middle of the bottom bar.
+    Scaffold(containerColor=Ink, bottomBar={
         NavigationBar(containerColor=PanelBg) {
             Tab.entries.filter{it!=Tab.MANAGER}.forEach { item ->
                 val icon=when(item){
@@ -266,6 +257,10 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                 NavigationBarItem(selected=tab==item,onClick={go(item)},
                     icon={Icon(icon,contentDescription=item.label)},
                     label={Text(item.label,maxLines=1)},alwaysShowLabel=tab==item)
+                if(item==Tab.STOCK) NavigationBarItem(selected=false,onClick=onScan,
+                    icon={ Surface(color=Mint,shape=androidx.compose.foundation.shape.CircleShape) {
+                        Icon(Icons.Outlined.QrCodeScanner,contentDescription="Scansiona QR",tint=OnMint,modifier=Modifier.padding(10.dp)) } },
+                    label={Text("Scansiona",maxLines=1)},alwaysShowLabel=false)
             }
         }
     }) { padding ->
@@ -295,6 +290,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
                 }
             }
+            GuidedPickBar(model,onMapTab=tab==Tab.MAP)
             data.movementUndo?.let { undo ->
                 // 4.15: at the bottom, next to the thumb. Visible for 6 seconds; disappears earlier if anything else changes the archive.
                 LaunchedEffect(undo.token) { kotlinx.coroutines.delay(6000); model.dismissMovementUndo(undo.token) }
