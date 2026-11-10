@@ -161,7 +161,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun consumeTeamQr() { ui=ui.copy(teamQr=null) }
     /** Scanner closed without reading: a burst session ends there. */
     fun scanCancelled() { if(ui.burstMode) endBurst(); ui.pickScanItemId?.let { waiting -> ui=ui.copy(pickScanItemId=null,pickScanMissedId=waiting) } }
-    fun startBurst() { if(!ui.busy) { ui=ui.copy(burstMode=true,burstItemId=null,burstQty=1.0,burstCount=0,scanSignal=null,message=null); requestScan() } }
+    fun startBurst() { if(!ui.busy) { ui=ui.copy(burstMode=true,burstItemId=null,burstQty=1.0,burstCount=0,scanSignal=null,shelfCheck=null,message=null); requestScan() } }
     fun endBurst() { ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null) }
     fun burstSkip() { ui=ui.copy(burstItemId=null,burstQty=1.0); requestScan() }
     /** 4.15: the big +/- of the scanner screen, within what is on the shelf. */

@@ -697,7 +697,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     }
                 }
             }
-        }else{
+        }else if(!guiding){   // 4.16: nothing but the plan during a guided picking
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).padding(bottom=3.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("${state.placements.count{it.holdsStock}} strutture · ${state.items.count{it.placementId==null}} articoli senza ubicazione",
                     fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
