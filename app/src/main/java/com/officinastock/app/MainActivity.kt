@@ -188,6 +188,7 @@ class MainActivity: ComponentActivity() {
             else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
         if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
+        if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
       }
     }
     // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
@@ -197,9 +198,10 @@ class MainActivity: ComponentActivity() {
     }
     // 4.10: screens ask for the scanner through the model (burst picking, team QR).
     LaunchedEffect(data.scanRequest) {
-        if(data.scanRequest!=0L) { model.consumeScanRequest(); onScan() }
+        // 4.15: burst picking has its own screen with the camera inside, so it never opens the separate scanner.
+        if(data.scanRequest!=0L) { val burst=data.burstMode; model.consumeScanRequest(); if(!burst) onScan() }
     }
-    if(data.profile!=null && !data.sessionLocked) { BurstPickDialog(model); TeamLinkDialog(model) }
+    if(data.profile!=null && !data.sessionLocked) TeamLinkDialog(model)
     if(data.busy && data.initialized) androidx.compose.ui.window.Dialog(
         onDismissRequest={},
         properties=androidx.compose.ui.window.DialogProperties(dismissOnBackPress=false,dismissOnClickOutside=false)
@@ -276,8 +278,25 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                     }
                 }
             }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when(tab) {
+                    Tab.HOME -> DashboardScreen(model,
+                        goStock={openStock(StockFocus.ALL)},
+                        goMap={go(Tab.MAP)},
+                        goMoves={openActivity(ActivityFocus.ALL)},
+                        goManager={go(Tab.MANAGER)},
+                        onStockFocus={openStock(it)},
+                        onActivityFocus={focus,days->openActivity(focus,days)},
+                        onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
+                    Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
+                    Tab.MAP -> NativeMapScreen(model,onAr)
+                    Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
+                    Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
+                    Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
+                }
+            }
             data.movementUndo?.let { undo ->
-                // Visible for 6 seconds; disappears earlier if anything else changes the archive.
+                // 4.15: at the bottom, next to the thumb. Visible for 6 seconds; disappears earlier if anything else changes the archive.
                 LaunchedEffect(undo.token) { kotlinx.coroutines.delay(6000); model.dismissMovementUndo(undo.token) }
                 Surface(color=Surface2) {
                     Row(Modifier.fillMaxWidth().padding(start=14.dp,end=6.dp,top=2.dp,bottom=2.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -285,21 +304,6 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         TextButton(onClick=model::undoMovement,enabled=!data.busy){Text("Annulla",color=Mint,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)}
                     }
                 }
-            }
-            when(tab) {
-                Tab.HOME -> DashboardScreen(model,
-                    goStock={openStock(StockFocus.ALL)},
-                    goMap={go(Tab.MAP)},
-                    goMoves={openActivity(ActivityFocus.ALL)},
-                    goManager={go(Tab.MANAGER)},
-                    onStockFocus={openStock(it)},
-                    onActivityFocus={focus,days->openActivity(focus,days)},
-                    onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
-                Tab.STOCK -> InventoryScreen(model,onScan,stockFocus)
-                Tab.MAP -> NativeMapScreen(model,onAr)
-                Tab.MOVES -> MovementsScreen(model,activityFocus,activityDays)
-                Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
-                Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
             }
         }
     }

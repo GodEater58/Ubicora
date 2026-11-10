@@ -19,6 +19,8 @@ object UiPrefs {
     var screenshots by mutableStateOf(false); private set
     /** 4.13: nearby phones of the team exchange on their own while the app is open. */
     var autoSync by mutableStateOf(true); private set
+    /** 4.15: beep of the burst scanner (the vibration always stays). */
+    var scanSound by mutableStateOf(true); private set
     /** "warehouseId:itemId" of the favourite articles. */
     var favorites by mutableStateOf(emptySet<String>()); private set
 
@@ -30,12 +32,14 @@ object UiPrefs {
         glove = p.getBoolean("glove", false)
         screenshots = p.getBoolean("screenshots", false)
         autoSync = p.getBoolean("auto_sync", true)
+        scanSound = p.getBoolean("scan_sound", true)
         favorites = p.getStringSet("favorites", emptySet())!!.toSet()
     }
 
     fun updateLight(value: Boolean) { light = value; prefs?.edit()?.putBoolean("light", value)?.apply() }
     fun updateGlove(value: Boolean) { glove = value; prefs?.edit()?.putBoolean("glove", value)?.apply() }
     fun updateAutoSync(value: Boolean) { autoSync = value; prefs?.edit()?.putBoolean("auto_sync", value)?.apply() }
+    fun updateScanSound(value: Boolean) { scanSound = value; prefs?.edit()?.putBoolean("scan_sound", value)?.apply() }
     fun updateScreenshots(value: Boolean) { screenshots = value; prefs?.edit()?.putBoolean("screenshots", value)?.apply() }
 
     private fun key(warehouseId: Long, itemId: Long) = "$warehouseId:$itemId"

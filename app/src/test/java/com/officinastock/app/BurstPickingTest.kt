@@ -69,4 +69,42 @@ class BurstPickingTest {
         model.undoMovement(); awaitIdle()
         assertEquals(5.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
     }
+
+    /** 4.15: one screen. The same label adds one, another label waits, every reading has its signal. */
+    @Test fun sameLabelAddsOneAndOtherLabelsWaitForConfirmation() = runBlocking {
+        val vite = model.ui.items.single { it.name == "Vite M8" }
+        val dado = model.ui.items.single { it.name == "Dado M8" }
+        val viteQr = ArticleCodes.payload(vite.warehouseId, vite.sku)
+        model.startBurst()
+
+        model.handleScannedCode(viteQr)
+        assertEquals(vite.id, model.ui.burstItemId); assertEquals(1.0, model.ui.burstQty, 0.0)
+        assertEquals(true, model.ui.scanSignal?.ok)
+        model.handleScannedCode(viteQr)
+        assertEquals(2.0, model.ui.burstQty, 0.0)
+
+        // Another article while the first waits: ignored, nothing replaced.
+        model.handleScannedCode(ArticleCodes.payload(dado.warehouseId, dado.sku))
+        assertEquals(vite.id, model.ui.burstItemId); assertEquals(2.0, model.ui.burstQty, 0.0)
+
+        // Never more than the shelf holds (5): the extra reading is refused.
+        repeat(5) { model.handleScannedCode(viteQr) }
+        assertEquals(5.0, model.ui.burstQty, 0.0)
+        assertEquals(false, model.ui.scanSignal?.ok)
+        model.burstAdjust(false); assertEquals(4.0, model.ui.burstQty, 0.0)
+
+        model.burstPick(vite.id, model.ui.burstQty); awaitIdle()
+        assertEquals(1.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertEquals(1.0, model.ui.burstQty, 0.0)
+        assertEquals(-4.0, model.ui.movementUndo!!.delta, 0.0)
+
+        // Undo gives the pieces back and the session goes on.
+        model.undoMovement(); awaitIdle()
+        assertEquals(5.0, model.ui.items.single { it.id == vite.id }.quantity, 0.0)
+        assertTrue(model.ui.burstMode)
+
+        // A label that is not an article: refused with its own signal.
+        model.handleScannedCode("non-una-etichetta")
+        assertEquals(false, model.ui.scanSignal?.ok); assertNull(model.ui.burstItemId)
+    }
 }
