@@ -1,4 +1,34 @@
-# Test report · Officina Stock 4.0 Native Alpha
+# Stato dei test · Ubicora 4.15.0
+
+Aggiornato il 10 novembre 2026. Sostituisce il rapporto della 4.0, conservato in fondo.
+
+## Verificato in automatico (GitHub Actions, a ogni pull request)
+
+| Controllo | Esito sulla 4.15.0 |
+|---|---|
+| Controlli di struttura in Python (`tests/`) | Passano |
+| Lint Android | Nessun errore |
+| Test JVM/Robolectric, varianti debug e release (180 casi `@Test` nel sorgente) | Passano |
+| Compilazione APK debug, release e test strumentali | Riuscita |
+
+Coperti da test nella 4.15: quantità e letture ripetute del prelievo a raffica, prelievo guidato (ordine, guida sulla mappa, conferma con etichetta), prestiti di squadra, lettera del telefono sui movimenti, sostituzione del centrale, testo dei tag NFC, verifica scaffale.
+
+## Non verificato
+
+Nessuna prova su un telefono è registrata per la 4.15. Restano da collaudare a mano:
+
+- fotocamera integrata, torcia, suono e vibrazione nel prelievo a raffica e nella verifica scaffale;
+- scorrimento sulle righe, pressione lunga e pannello dal basso, anche con i guanti;
+- doppio tocco, modalità giro e tratto del percorso sulla mappa;
+- lettura e scrittura dei tag NFC, in particolare su utensili metallici;
+- scambio tra telefoni reali con prestiti, e sostituzione del centrale;
+- i criteri di `BETA_RELEASE_GATE.md`: tre dispositivi, ripristino di un backup su un secondo telefono, 14 giorni di uso.
+
+I due test strumentali (`EncryptedArchiveTest`, `ProfileGateUiTest`) vengono compilati; l'archivio cifrato è eseguito su emulatore dal workflow dedicato.
+
+---
+
+## Rapporto storico · Officina Stock 4.0 Native Alpha
 
 Data: 8 ottobre 2026.
 
