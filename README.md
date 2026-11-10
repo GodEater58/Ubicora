@@ -35,6 +35,8 @@
 | 🧭 | **Prelievo guidato** | Lista di prelievo in ordine di percorso; la mappa mostra la prossima struttura, quelle già visitate e il tratto da fare |
 | 🔧 | **Prestiti di squadra** | Ogni telefono vede gli utensili in prestito dagli altri; ogni movimento ricorda il telefono che l'ha fatto |
 | 📶 | **Tag NFC e verifica scaffale** | Un tag NFC vale come l'etichetta QR: basta toccarlo. «Verifica scaffale» passa la fotocamera su una struttura e dice cosa manca o è fuori posto |
+| 🖼️ | **Foto di squadra** | Le foto degli articoli arrivano su tutti i telefoni con gli scambi |
+| 💻 | **Squadra sul PC** | Ubicora Web apre l'aggiornamento cifrato del centrale e mostra il magazzino della squadra |
 | 🔁 | **Centrale sostituibile** | Se il telefono centrale è perso, un satellite ne prende il posto e gli altri proseguono con lui |
 
 Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).
@@ -90,7 +92,7 @@ Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md).
 ## Documentazione
 
 - **Per chi usa l'app:** [guida illustrata 4.12](docs/guida/Ubicora_Guida_4.12.pdf) · [novità versione per versione](docs/CHANGELOG.md)
-- **Approfondimenti:** [mappa](docs/PLANIMETRIA_4_1.md) · [gestione aziendale](docs/MANAGER_4_3_GUIDA.md) · [indicatori](docs/MANAGER_INDICATORI_4_6.md) · [pianificazione e tracciabilità](docs/PLANNING_4_6.md) · [server](docs/ENTERPRISE_4_4_SERVER.md)
+- **Approfondimenti:** [tabelle dell'archivio](docs/SCHEMA.md) · [mappa](docs/PLANIMETRIA_4_1.md) · [gestione aziendale](docs/MANAGER_4_3_GUIDA.md) · [indicatori](docs/MANAGER_INDICATORI_4_6.md) · [pianificazione e tracciabilità](docs/PLANNING_4_6.md) · [server](docs/ENTERPRISE_4_4_SERVER.md)
 - **Rilascio:** [criteri beta](docs/BETA_RELEASE_GATE.md) · [checklist commerciale](docs/COMMERCIAL_RELEASE_CHECKLIST.md) · [stato dei test](docs/TEST_REPORT.md)
 
 ## Stato e informazioni legali

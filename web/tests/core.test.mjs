@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate,upgrade,nextLabel} from '../core.mjs';
+import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate,upgrade,nextLabel,teamEncrypt,teamDecrypt,importTeam} from '../core.mjs';
 const stock=()=>demo();
 test('Reservations release without stock change and consumption is exactly once',()=>{
  let s=stock(),i=s.items[0],r=s.reservations[0];assert.equal(available(s,i),20);
@@ -249,4 +249,36 @@ test('Removing a structure clears shelves so the CSV stays importable on Android
  // An old archive that still has a shelf without location never exports it.
  const old=structuredClone(s);old.items[0].shelfLevel=4;assert.match(exportCsv(old,wid),/;"";""$/);
  assert.throws(()=>apply(apply(s,{type:'placement',warehouseId:wid,name:'B',x:5,y:1,width:1,depth:1}),{type:'placement',warehouseId:wid,name:'B',x:8,y:1,width:1,depth:1}),/già una struttura/);
+});
+
+const teamSnapshot=()=>({format:'UBICORA_SYNC_STATE',version:1,warehouse_uid:'w',warehouse:{name:'Officina',location:'Rovigo',width:12,height:8},
+ placements:[{uid:'p1',kind:'Scaffale',label:'Scaffale A',x:3,y:3,width:1.6,depth:.75,rotation:90,levels:3,slots:4},{uid:'p2',kind:'Scaffale',label:'Scaffale A',x:9,y:6,width:1.6,depth:.75,rotation:0,levels:1,slots:1}],
+ walls:[{x1:0,y1:0,x2:12,y2:0,source:'manual'},{x1:1,y1:1,x2:1.05,y2:1,source:'manual'}],
+ items:[{uid:'i1',sku:'RIC-000001',name:'Vite M8',category:'Ricambi',quantity:10,minimum:2,unit:'pz',placement:'p1',level:2,slot:1,note:'',cost:null,supplier:'',lead:null,photo:null},
+  {uid:'i2',sku:'DPI-B000001',name:'Guanti',category:'DPI',quantity:0,minimum:1,unit:'paia',placement:null,level:null,slot:null,note:'',cost:3.5,supplier:'ACME',lead:7}]});
+test('Team file: phone format round trip, wrong password and tampering refused',async()=>{
+ const padded={...teamSnapshot(),pad:Array.from({length:40000},(_,i)=>i*7919%1000).join('-')}; // more than one 64 KiB frame after gzip? forces several reads either way
+ const file=await teamEncrypt(padded,'squadra-2026');
+ assert.equal(new TextDecoder().decode(file.slice(0,8)),'OSTOCKB2');
+ assert.deepEqual(await teamDecrypt(file,'squadra-2026'),padded);
+ await assert.rejects(()=>teamDecrypt(file,'sbagliata-2026'),/password della squadra errata/);
+ const bad=file.slice();bad[bad.length-20]^=1;await assert.rejects(()=>teamDecrypt(bad,'squadra-2026'));
+ await assert.rejects(()=>teamDecrypt(file.slice(0,file.length-5),'squadra-2026'));
+ await assert.rejects(()=>teamDecrypt(new Uint8Array(100),'squadra-2026'),/non è un file di sincronizzazione/);
+ await assert.rejects(()=>teamEncrypt(padded,'corta'));
+});
+test('Team update becomes a new site with plan, structures, stock and locations',()=>{
+ const before=demo(),r=importTeam(before,teamSnapshot(),'squadra 10/11',1000),s=r.state,w=s.warehouses.at(-1);
+ assert.equal(w.name,'Officina · squadra 10/11');assert.equal(w.width,12);assert.equal(w.depth,8);assert.equal(r.items,2);
+ const mine=x=>x.warehouseId===w.id,places=s.placements.filter(mine);
+ // Rotated a quarter turn: the footprint is swapped; the centre (3,3) becomes the top-left corner.
+ assert.deepEqual([places[0].name,places[0].x,places[0].y,places[0].width,places[0].depth],['Scaffale A',2.625,2.2,.75,1.6]);
+ assert.notEqual(places[1].name,'Scaffale A'); // same label twice on the phone: kept apart here
+ assert.equal(s.walls.filter(mine).length,1); // the 5 cm wall is dropped
+ const vite=s.items.find(i=>mine(i)&&i.sku==='RIC-000001'),guanti=s.items.find(i=>mine(i)&&i.sku==='DPI-B000001');
+ assert.deepEqual([vite.quantity,vite.location,vite.placementId,vite.shelfLevel,vite.shelfSlot],[10,'Scaffale A',places[0].id,2,1]);
+ assert.deepEqual([guanti.quantity,guanti.placementId,guanti.cost,guanti.leadDays],[0,null,3.5,7]);
+ assert.equal(s.movements.filter(m=>m.itemId===vite.id).length,1);assert.equal(s.movements.some(m=>m.itemId===guanti.id),false);
+ assert.equal(s.items.length,before.items.length+2); // the other sites are untouched
+ assert.throws(()=>importTeam(before,{format:'UBICORA_SYNC_CHANGES',version:1}),/telefono centrale/);
 });

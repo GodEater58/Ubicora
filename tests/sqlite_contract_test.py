@@ -43,3 +43,14 @@ except sqlite3.IntegrityError:
 con.execute("DELETE FROM profiles WHERE id=1")
 assert con.execute("SELECT count(*) FROM items").fetchone()[0]==0
 print('SQLite: 9 tabelle, 5 indici e 5 controlli integrità OK')
+
+# 4.15: every table created in the code is listed in docs/SCHEMA.md (the single index of the archive).
+import re as _re, glob as _glob
+_root=Path(__file__).resolve().parents[1]
+_doc=(_root/'docs/SCHEMA.md').read_text(encoding='utf-8')
+_tables=set()
+for _f in _glob.glob(str(_root/'app/src/main/java/com/officinastock/app/*.kt')):
+    _tables.update(_re.findall(r'CREATE TABLE (?:IF NOT EXISTS )?(\w+)',Path(_f).read_text(encoding='utf-8')))
+_missing=sorted(t for t in _tables if '`'+t+'`' not in _doc)
+assert not _missing, 'Tabelle non elencate in docs/SCHEMA.md: '+', '.join(_missing)
+print('Schema: '+str(len(_tables))+' tabelle elencate in docs/SCHEMA.md')

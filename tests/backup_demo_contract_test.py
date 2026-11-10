@@ -4,7 +4,8 @@ import sqlite3,re
 root=Path(__file__).resolve().parents[1]
 source=(root/'app/src/main/java/com/officinastock/app/StockDb.kt').read_text(encoding='utf-8')
 backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf-8')
-ui=(root/'app/src/main/java/com/officinastock/app/Screens.kt').read_text(encoding='utf-8')
+# 4.15: the screens are split in several files.
+ui=''.join((root/'app/src/main/java/com/officinastock/app'/f).read_text(encoding='utf-8') for f in ['Screens.kt','ProfileScreens.kt','InventoryScreen.kt','ItemScreens.kt','MovementsScreen.kt','SettingsScreen.kt'])
 main=(root/'app/src/main/java/com/officinastock/app/MainActivity.kt').read_text(encoding='utf-8')
 assert 'null, 12)' in source and 'oldVersion < 6' in source
 assert 'CREATE TABLE IF NOT EXISTS demo_assets' in source

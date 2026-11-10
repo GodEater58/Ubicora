@@ -2,7 +2,8 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 p=r/'app/src/main/java/com/officinastock/app'
-screens=(p/'Screens.kt').read_text(encoding='utf-8')
+# 4.15: the screens are split in several files.
+screens=''.join((p/f).read_text(encoding='utf-8') for f in ['Screens.kt','ProfileScreens.kt','InventoryScreen.kt','ItemScreens.kt','MovementsScreen.kt','SettingsScreen.kt'])
 today=(p/'TodayScreen.kt').read_text(encoding='utf-8')
 main=(p/'MainActivity.kt').read_text(encoding='utf-8')
 report=(p/'ManagerDashboard.kt').read_text(encoding='utf-8')

@@ -2,7 +2,8 @@ import re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 manifest=(ROOT/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
-screens=(ROOT/'app/src/main/java/com/officinastock/app/Screens.kt').read_text(encoding='utf-8')
+# 4.15: the screens are split in several files.
+screens=''.join((ROOT/'app/src/main/java/com/officinastock/app'/f).read_text(encoding='utf-8') for f in ['Screens.kt','ProfileScreens.kt','InventoryScreen.kt','ItemScreens.kt','MovementsScreen.kt','SettingsScreen.kt'])
 labels=(ROOT/'app/src/main/java/com/officinastock/app/QrLabels.kt').read_text(encoding='utf-8')
 backup=(ROOT/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf-8')
 gradle=(ROOT/'app/build.gradle.kts').read_text(encoding='utf-8')

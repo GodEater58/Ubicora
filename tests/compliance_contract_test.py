@@ -10,8 +10,8 @@ assert 'ArPrivacyNoticeDialog(' in load('app/src/main/java/com/officinastock/app
 assert 'arcore_notice_ack_v1' in load('app/src/main/java/com/officinastock/app/MainActivity.kt')
 assert 'if(disclosurePrefs.getBoolean' in load('app/src/main/java/com/officinastock/app/MainActivity.kt')
 assert 'onProceed' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt')
-assert 'PRIVACY E LICENZE' in load('app/src/main/java/com/officinastock/app/Screens.kt')
-assert 'LegalInfoDialog(' in load('app/src/main/java/com/officinastock/app/Screens.kt')
+assert 'PRIVACY E LICENZE' in load('app/src/main/java/com/officinastock/app/SettingsScreen.kt')
+assert 'LegalInfoDialog(' in load('app/src/main/java/com/officinastock/app/SettingsScreen.kt')
 assert 'legal/Apache-2.0.txt' in load('app/src/main/java/com/officinastock/app/LegalInfo.kt')
 assert (match := re.search(r'\bversionCode\s*=\s*(\d+)', load('app/build.gradle.kts'))) and int(match.group(1)) >= 420
 assert 'android:value="optional"' in load('app/src/main/AndroidManifest.xml')
