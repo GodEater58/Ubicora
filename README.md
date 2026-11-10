@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.16.0-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.16.1-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 

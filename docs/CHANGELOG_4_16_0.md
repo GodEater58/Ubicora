@@ -7,15 +7,8 @@
 | **Verifica scaffale: più codici insieme** | La fotocamera legge tutti i codici QR presenti nel fotogramma, non uno alla volta |
 | **Ubicora Web 1.1.0: il magazzino della squadra sul PC** | «Dati e connessione» › «Apri aggiornamento della squadra»: il file esportato dal telefono centrale, aperto con la password della squadra, diventa una nuova sede con pianta, strutture, articoli e giacenze. È una copia da consultare: dal PC non torna nulla ai telefoni |
 
-## Correzioni alla 4.15
-| Problema | Correzione |
-|---|---|
-| Lo scorrimento su una riga scattava con un movimento breve del pollice | Serve trascinare la riga per circa un terzo della larghezza |
-| Durante il prelievo guidato sotto la pianta restava la riga con «Rilievo AR» | In modalità giro resta solo la pianta |
-| Dopo la sostituzione del centrale restavano in elenco i prestiti fatti dal vecchio centrale, senza modo di chiuderli | Escono dall'elenco alla sostituzione |
-
 ## Comportamento da conoscere
-- Foto: servono due scambi perché una foto nuova arrivi su un satellite (al primo scopre che gli manca, al secondo la riceve). Una foto oltre 2 MB non viaggia. Una foto scattata su un satellite non viene mai cancellata da un aggiornamento: se il centrale non ha una foto di quell'articolo la riceve dal satellite, se ne ha già una vale quella del centrale. Una foto tolta sul centrale sparisce dai satelliti solo se l'avevano ricevuta da lui.
+- Foto: servono due scambi perché una foto nuova arrivi su un satellite (al primo scopre che gli manca, al secondo la riceve). Una foto oltre 2 MB non viaggia. Una foto cambiata su un satellite per un articolo già del centrale non risale: le foto degli articoli le decide il centrale.
 - Le foto viaggiano solo tra telefoni con la 4.16; con una versione precedente lo scambio funziona come prima, senza foto.
 - Il PC legge lo stato della squadra ma non è un satellite: non invia carichi o prelievi ai telefoni, e non mostra foto, prestiti e storico.
 
