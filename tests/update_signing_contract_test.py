@@ -34,6 +34,12 @@ assert "app/build/outputs/apk/release/app-release.apk" in signed
 assert "name: ubicora-signed-update-code-" in signed
 assert 'cancel-in-progress: false' in signed
 assert 'UBICORA_KEYSTORE_BASE64' not in debug
+# The signed APK also goes to a DRAFT release, from a separate job that never sees the keystore.
+release_job = signed.split("draft-release:", 1)[1]
+assert "--draft" in release_job and "needs: build-signed-update" in release_job
+assert "contents: write" in release_job and "secrets." not in release_job
+assert signed.split("jobs:", 1)[0].count("contents: read") == 1
+assert '!= "true"' in release_job   # a published release is never replaced
 
 assert "verify-update-on-device.ps1" in guide
 assert "NON" in guide or "non" in guide

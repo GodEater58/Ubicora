@@ -83,7 +83,7 @@ Lo script chiede le password in modo riservato, legge il certificato dal keystor
 3. Fai superare i test e integra il codice in `main`.
 4. GitHub → **Actions → Ubicora Stable Signed Update → Run workflow**, scegli `main` e indica lo stesso `expected_version_code` del Gradle.
 5. Il workflow fallisce se manca un secret, se il certificato non combacia con la fingerprint permanente, se non è `com.ubicora.app` o se la versione indicata è sbagliata.
-6. Scarica esclusivamente l'artefatto `ubicora-signed-update-code-...`; estrai `app-release.apk`. Prima del primo aggiornamento di una installazione reale, esegui lo script di compatibilità.
+6. Scarica l'APK in uno di due modi. **Dal telefono**: GitHub › Releases › bozza «Ubicora X.Y.Z» › `Ubicora-X.Y.Z.apk` (un tocco, niente zip; la bozza la vede solo chi può scrivere nel repository, con l'accesso fatto nel browser). **Dal PC**: l'artefatto `ubicora-signed-update-code-...` dell'esecuzione, da cui estrarre `app-release.apk`. Non usare mai gli APK del workflow di debug. Prima del primo aggiornamento di una installazione reale, esegui lo script di compatibilità.
 7. Installa il nuovo APK sopra quello esistente senza disinstallare. Se Android dice "app non installata" o "conflitto", **non disinstallare**, controlla la firma e la versione.
 
 Il file APK **debug** generato da `android-build.yml` non è un APK di aggiornamento stabile. La release firmata usa lo stesso certificato solo se i segreti sono configurati e mantenuti costanti.
