@@ -14,18 +14,32 @@ data class PlanViewport(
     val widthPx: Float, val heightPx: Float,
     val roomWidth: Float, val roomHeight: Float,
     val zoom: Float=1f, val panX: Float=0f, val panY: Float=0f,
-    val marginPx: Float=34f
+    val marginPx: Float=34f,
+    /**
+     * 4.20: the plan is shown turned a quarter clockwise (the room's x axis points down the screen),
+     * so a long room fills a portrait phone. Only the drawing turns: the metres stay the same.
+     */
+    val turned: Boolean=false
 ) {
-    val scale: Float get() = minOf((widthPx - 2*marginPx)/roomWidth,(heightPx - 2*marginPx)/roomHeight).coerceAtLeast(.1f)*zoom
-    val originX: Float get() = (widthPx-roomWidth*scale)/2f + panX
-    val originY: Float get() = (heightPx-roomHeight*scale)/2f + panY
-    fun toScreen(p:PointMetres) = PointMetres(originX+p.x*scale,originY+p.y*scale)
-    fun toWorld(p:PointMetres):PointMetres = PointMetres((p.x-originX)/scale,(p.y-originY)/scale)
+    /** Room size as drawn on screen, in metres: swapped when [turned]. */
+    val shownWidth: Float get() = if(turned) roomHeight else roomWidth
+    val shownHeight: Float get() = if(turned) roomWidth else roomHeight
+    val scale: Float get() = minOf((widthPx - 2*marginPx)/shownWidth,(heightPx - 2*marginPx)/shownHeight).coerceAtLeast(.1f)*zoom
+    val originX: Float get() = (widthPx-shownWidth*scale)/2f + panX
+    val originY: Float get() = (heightPx-shownHeight*scale)/2f + panY
+    /** Extra rotation, in degrees, for anything drawn along the room's axes. */
+    val turnDegrees: Float get() = if(turned) 90f else 0f
+    fun toScreen(p:PointMetres) = if(turned) PointMetres(originX+(roomHeight-p.y)*scale,originY+p.x*scale)
+        else PointMetres(originX+p.x*scale,originY+p.y*scale)
+    fun toWorld(p:PointMetres):PointMetres = if(turned) PointMetres((p.y-originY)/scale,roomHeight-(p.x-originX)/scale)
+        else PointMetres((p.x-originX)/scale,(p.y-originY)/scale)
+    /** A finger movement on screen, in pixels, as a movement in the room, in metres. */
+    fun toWorldDelta(dx:Float,dy:Float):PointMetres = if(turned) PointMetres(dy/scale,-dx/scale) else PointMetres(dx/scale,dy/scale)
     fun inside(p:PointMetres) = p.x in 0f..roomWidth && p.y in 0f..roomHeight
     fun bounded(p:PointMetres) = PointMetres(p.x.coerceIn(0f,roomWidth),p.y.coerceIn(0f,roomHeight))
     /** Keep part of the plan visible while allowing navigation at high zoom. */
-    fun panLimitX(): Float = ((roomWidth*scale-widthPx)/2f).coerceAtLeast(0f) + widthPx*.16f
-    fun panLimitY(): Float = ((roomHeight*scale-heightPx)/2f).coerceAtLeast(0f) + heightPx*.16f
+    fun panLimitX(): Float = ((shownWidth*scale-widthPx)/2f).coerceAtLeast(0f) + widthPx*.16f
+    fun panLimitY(): Float = ((shownHeight*scale-heightPx)/2f).coerceAtLeast(0f) + heightPx*.16f
     fun clampedPan(x:Float,y:Float) = PointMetres(x.coerceIn(-panLimitX(),panLimitX()),y.coerceIn(-panLimitY(),panLimitY()))
 
     fun transformed(factor:Float, anchor:PointMetres, translation:PointMetres):PlanViewport {
@@ -36,9 +50,34 @@ data class PlanViewport(
         return next.copy(panX=pan.x,panY=pan.y)
     }
 
+    /**
+     * 4.20: zoom and pan that show the box [minX]..[maxX] × [minY]..[maxY] of the room (metres) centred,
+     * never closer than [maxZoom] and never farther than the whole plan.
+     */
+    fun fitting(minX:Float,minY:Float,maxX:Float,maxY:Float,maxZoom:Float=3f):PlanViewport {
+        val base=copy(zoom=1f,panX=0f,panY=0f)
+        val a=base.toScreen(PointMetres(minX,minY)); val b=base.toScreen(PointMetres(maxX,maxY))
+        val boxW=kotlin.math.abs(b.x-a.x).coerceAtLeast(1f); val boxH=kotlin.math.abs(b.y-a.y).coerceAtLeast(1f)
+        val room=minOf((widthPx-2*marginPx)/boxW,(heightPx-2*marginPx)/boxH)
+        val z=room.coerceIn(1f,maxZoom.coerceAtLeast(1f))
+        val zoomed=base.copy(zoom=z)
+        val centre=zoomed.toScreen(PointMetres((minX+maxX)/2f,(minY+maxY)/2f))
+        val pan=zoomed.clampedPan(widthPx/2f-centre.x,heightPx/2f-centre.y)
+        return zoomed.copy(panX=pan.x,panY=pan.y)
+    }
+
     fun insetCoordinate(value:Float,extent:Float,inset:Float):Float =
         if(extent<=2*inset) extent/2f else value.coerceIn(inset,extent-inset)
 
+    companion object {
+        /** True when turning the plan makes it clearly larger on this screen (at least 15%). */
+        fun shouldTurn(widthPx:Float,heightPx:Float,roomWidth:Float,roomHeight:Float,marginPx:Float=34f):Boolean {
+            if(roomWidth<=0f || roomHeight<=0f || widthPx<=2*marginPx || heightPx<=2*marginPx) return false
+            val flat=PlanViewport(widthPx,heightPx,roomWidth,roomHeight,marginPx=marginPx).scale
+            val turned=PlanViewport(widthPx,heightPx,roomWidth,roomHeight,marginPx=marginPx,turned=true).scale
+            return turned>flat*1.15f
+        }
+    }
 }
 object PlanGeometry {
     fun snap(value:Float,spacing:Float=.25f):Float = round(value/spacing)*spacing

@@ -13,7 +13,9 @@ data class StockItem(
 ) { val lowStock get() = quantity <= minimum }
 data class Placement(val id: Long, val warehouseId: Long, val kind: String, val label: String,
     val x: Float, val y: Float, val locked: Boolean, val width: Float = 1.6f, val depth: Float = 0.75f, val rotation: Float = 0f,
-    val levels: Int = 1, val slots: Int = 1) {
+    val levels: Int = 1, val slots: Int = 1,
+    /** 4.20: id shared by every phone of the team (the local [id] differs on each satellite). */
+    val uid: String? = null) {
     /** Doors, columns and corridors orient people on the plan but never hold stock. */
     val holdsStock get() = PlacementKinds.holdsStock(kind)
     val hasPositions get() = levels > 1 || slots > 1
@@ -111,15 +113,29 @@ object ArticleCodes {
 
     data class ScanTarget(val warehouseId: Long?, val sku: String)
     /** QR stuck on a shelf: opens the structure and its contents, never moves stock. */
-    fun locationPayload(warehouseId: Long, placementId: Long): String =
-        "UBICORA-LOC:1:W$warehouseId:P$placementId"
-    data class LocationTarget(val warehouseId: Long, val placementId: Long)
+    // 4.20: version 2 carries the team-wide id of the structure, so a label or a tag printed on the central
+    // opens the same shelf on every satellite (version 1 carried the local number, different on each phone).
+    fun locationPayload(warehouseId: Long, placementId: Long, uid: String? = null): String =
+        if (uid != null && UID.matches(uid)) "UBICORA-LOC:2:W$warehouseId:U${uid.lowercase(java.util.Locale.ROOT)}"
+        else "UBICORA-LOC:1:W$warehouseId:P$placementId"
+    private val UID = Regex("^[0-9a-fA-F]{32}$")
+    /** [placementId] for version 1 labels, [uid] for version 2: exactly one of the two is set. */
+    data class LocationTarget(val warehouseId: Long, val placementId: Long?, val uid: String? = null)
     fun parseLocationScan(raw: String): LocationTarget? {
-        val match=Regex("^UBICORA-LOC:1:W([0-9]{1,18}):P([0-9]{1,18})$").matchEntire(raw.trim().uppercase(java.util.Locale.ROOT)) ?: return null
+        val input=raw.trim().uppercase(java.util.Locale.ROOT)
+        Regex("^UBICORA-LOC:2:W([0-9]{1,18}):U([0-9A-F]{32})$").matchEntire(input)?.let { match ->
+            val warehouseId=match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+            return LocationTarget(warehouseId,null,match.groupValues[2].lowercase(java.util.Locale.ROOT))
+        }
+        val match=Regex("^UBICORA-LOC:1:W([0-9]{1,18}):P([0-9]{1,18})$").matchEntire(input) ?: return null
         val warehouseId=match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
         val placementId=match.groupValues[2].toLongOrNull()?.takeIf { it > 0 } ?: return null
         return LocationTarget(warehouseId,placementId)
     }
+    /** The structure a label points to among [placements] of the open site, or null. */
+    fun resolve(target: LocationTarget, placements: List<Placement>): Placement? =
+        if (target.uid != null) placements.firstOrNull { it.uid.equals(target.uid, ignoreCase = true) }
+        else placements.firstOrNull { it.id == target.placementId }
     /** Accetta i QR generati dall'app e, per compatibilità, i vecchi QR con solo codice. */
     fun parseScan(raw: String): ScanTarget? {
         val input=raw.trim().uppercase(java.util.Locale.ROOT)

@@ -128,7 +128,7 @@ import androidx.compose.ui.unit.sp
             Spacer(Modifier.height(8.dp))
             SheetAction(Icons.Outlined.Remove, "Preleva una quantità…", enabled = item.quantity > 0.0) { onDismiss(); onQuantity(false) }
             SheetAction(Icons.Outlined.Add, "Carica una quantità…") { onDismiss(); onQuantity(true) }
-            if (place != null) SheetAction(Icons.Outlined.Map, "Mostra in pianta") { onDismiss(); model.showOnMap(place.id) }
+            if (place != null) SheetAction(Icons.Outlined.Map, "Dov'è sulla mappa") { onDismiss(); model.showItemOnMap(item.id) }
             SheetAction(Icons.Outlined.Place, if (place == null) "Assegna un'ubicazione sulla mappa" else "Sposta scegliendo sulla mappa") {
                 onDismiss(); model.startLocationPick(listOf(item.id))
             }

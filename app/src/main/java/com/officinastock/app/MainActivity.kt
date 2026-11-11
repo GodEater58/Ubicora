@@ -68,17 +68,34 @@ class MainActivity: ComponentActivity() {
     private fun onNfcTag(tag:android.nfc.Tag) {
         val toWrite=model.nfcWritePayload
         if(toWrite!=null) {
-            val failure=runCatching { NfcLabels.write(tag,toWrite) }.exceptionOrNull()
+            val failure=runCatching { NfcLabels.write(tag,toWrite,packageName) }.exceptionOrNull()
             runOnUiThread { model.nfcWritten(toWrite,failure?.let { it.message ?: "Scrittura non riuscita: riavvicina il tag e tienilo fermo" }) }
         } else {
             val text=runCatching { NfcLabels.read(tag) }.getOrNull()
             runOnUiThread { model.handleNfcText(text) }
         }
     }
+    /** 4.20: a Ubicora tag touched with the app closed opens it here; the text waits for the PIN. */
+    private fun readTagIntent(intent:Intent?) {
+        if(intent?.action!=android.nfc.NfcAdapter.ACTION_NDEF_DISCOVERED) return
+        model.queueTagCode(runCatching { NfcLabels.firstText(tagMessages(intent)) }.getOrNull())
+        // Read once: a later recreation of the activity must not open the same shelf again.
+        setIntent(Intent(intent).setAction(Intent.ACTION_MAIN))
+    }
+    @Suppress("DEPRECATION")
+    private fun tagMessages(intent:Intent):List<android.nfc.NdefMessage> =
+        if(android.os.Build.VERSION.SDK_INT>=33)
+            intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES,android.nfc.NdefMessage::class.java)?.toList().orEmpty()
+        else intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES)?.filterIsInstance<android.nfc.NdefMessage>().orEmpty()
+    override fun onNewIntent(intent:Intent) {
+        super.onNewIntent(intent)
+        readTagIntent(intent)
+    }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         externalActivityPending=savedInstanceState?.getBoolean("externalActivityPending") ?: false
         UiPrefs.init(this)
+        if(savedInstanceState==null) readTagIntent(intent)
         // Screens are protected unless the user allows screenshots (Impostazioni › Visualizzazione).
         if(!UiPrefs.screenshots) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
@@ -203,6 +220,8 @@ class MainActivity: ComponentActivity() {
             else -> StockShell(model,onAr,onCsv,onCsvImport,onManagerCsv,onManagerPdf,onBackup,onRestore,onScan)
         }
         if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
+        // 4.20: a shelf seen from the front, over any tab (opened from the map, its label or its NFC tag).
+        if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfOpenId!=null) ShelfFrontScreen(model)
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfCheck!=null) ShelfCheckScreen(model)
         if(scanning && data.profile!=null && !data.sessionLocked && !data.burstMode) QuickScanScreen(model) { scanning=false }
@@ -212,6 +231,10 @@ class MainActivity: ComponentActivity() {
     LaunchedEffect(data.sessionLocked,data.team.role,data.team.warehouseId,data.warehouse?.id,UiPrefs.autoSync) {
         if(data.sessionLocked || data.warehouse==null || data.team.role==TeamRole.NONE || !UiPrefs.autoSync) return@LaunchedEffect
         while(true) { model.autoLink(); kotlinx.coroutines.delay(10*60_000L) }
+    }
+    // 4.20: the tag that opened the app is read as soon as the PIN is entered and a site is open.
+    LaunchedEffect(data.pendingCode,data.sessionLocked,data.warehouse?.id,data.busy,data.initialized) {
+        if(data.pendingCode!=null && data.initialized) model.consumePendingCode()
     }
     // 4.10: screens ask for the scanner through the model (burst picking, team QR).
     LaunchedEffect(data.scanRequest) {
@@ -263,8 +286,8 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
     }
     LaunchedEffect(data.teamQr) { if(data.teamQr!=null) go(Tab.TEAM) }
     // "Mostra in pianta", shelf QR and "Scegli sulla mappa" all open the map.
-    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds,data.guidedMapRequest) {
-        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null || data.guidedMapRequest!=0L) { go(Tab.MAP); model.consumeGuidedMap() }
+    LaunchedEffect(data.mapFocusPlacementId,data.locationPickItemIds,data.guidedMapRequest,data.mapFindItemId) {
+        if(data.mapFocusPlacementId!=null || data.locationPickItemIds!=null || data.guidedMapRequest!=0L || data.mapFindItemId!=null) { go(Tab.MAP); model.consumeGuidedMap() }
     }
     // 4.15: no floating button over the lists; the scanner sits in the middle of the bottom bar.
     Scaffold(containerColor=Ink, bottomBar={

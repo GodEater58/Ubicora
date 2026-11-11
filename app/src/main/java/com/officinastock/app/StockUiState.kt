@@ -90,7 +90,13 @@ data class StockUiState(
     /** 4.10: a screen asks MainActivity to open the scanner (token, 0 = none). */
     val scanRequest: Long = 0,
     /** 4.10: team invite read from the central's QR, waiting for the join dialog. */
-    val teamQr: TeamQr.Invite? = null
+    val teamQr: TeamQr.Invite? = null,
+    /** 4.20: structure shown from the front, over any tab (null = closed). */
+    val shelfOpenId: Long? = null,
+    /** 4.20: article the map has to show ("dov'è"), consumed by the map. */
+    val mapFindItemId: Long? = null,
+    /** 4.20: text of an NFC tag that opened the app; it is read once the PIN is entered. */
+    val pendingCode: String? = null
 )
 
 data class MovementUndo(val itemId: Long, val delta: Double, val label: String, val token: Long) {

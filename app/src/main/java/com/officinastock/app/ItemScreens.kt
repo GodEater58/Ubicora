@@ -185,7 +185,7 @@ private fun EditItemDetailsDialog(
                 OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.weight(1f)) {
                     Text("Ubicazione: ${Locations.describe(location,item)}",maxLines=2,overflow=TextOverflow.Ellipsis)
                 }
-                if(location!=null) FilledTonalIconButton(onClick={model.showOnMap(location.id);onDismiss()}) {
+                if(location!=null) FilledTonalIconButton(onClick={model.showItemOnMap(item.id);onDismiss()}) {
                     Icon(Icons.Outlined.Map,contentDescription="Mostra in pianta")
                 }
             }

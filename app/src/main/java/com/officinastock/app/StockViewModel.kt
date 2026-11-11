@@ -32,14 +32,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingCsvImport: Pair<Long,List<CsvImportRow>>? = null
     var pendingBackupPassword=""
     var pendingRestorePassword=""
-    fun lockForBackground() { link.stop();nfcWritePayload=null;ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null,teamQr=null,scanRequest=0,nfcWrite=null,shelfCheck=null);clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
+    fun lockForBackground() { link.stop();nfcWritePayload=null;ui=ui.copy(burstMode=false,burstItemId=null,burstQty=1.0,scanSignal=null,teamQr=null,scanRequest=0,nfcWrite=null,shelfCheck=null,shelfOpenId=null,mapFindItemId=null,pendingCode=null);clearMapHistory();pendingWalls.clear();ui=ui.copy(locationPickItemIds=null,mapFocusPlacementId=null);backgroundGeneration++;archiveAuthorization=null;pendingCsvImport=null;pendingBackupPassword="";pendingRestorePassword="";ui=ui.copy(sessionLocked=true,createdItemId=null,scannedItemId=null,csvPreviewCount=null) }
 
     private var pendingNewItem: Long? = null
     fun acknowledgeNewItem() { ui = ui.copy(createdItemId = null) }
     fun acknowledgeScannedItem() { ui = ui.copy(scannedItemId = null) }
     /** Navigation from dashboards: same detail handoff used by the QR scanner. */
     fun openItemDetails(itemId: Long) {
-        if(ui.items.any { it.id==itemId }) ui=ui.copy(scannedItemId=itemId,message=null)
+        if(ui.items.any { it.id==itemId }) ui=ui.copy(scannedItemId=itemId,shelfOpenId=null,message=null)
     }
     /** Lookup locale. Nessuna movimentazione viene mai eseguita automaticamente da una scansione. */
     fun handleScannedCode(raw: String) {
@@ -61,12 +61,25 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui.shelfCheck?.let { check -> handleShelfScan(raw,warehouse,check); return }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
         readLocationLabel(raw)?.let { location ->
-            siteOfLabel(location.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
-            ui=when {
-                location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
-                ui.placements.none { it.id==location.placementId } -> ui.copy(scannedItemId=null,message="Struttura non trovata: potrebbe essere stata eliminata.")
-                else -> ui.copy(scannedItemId=null,mapFocusPlacementId=location.placementId,message=null)
+            // 4.20: a version 2 label names the structure by its team-wide id, valid on every phone and site.
+            val here=placementOfLabel(location,warehouse)
+            if(here==null) {
+                siteOfLabel(location.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
+                ui=ui.copy(scannedItemId=null,message=if(location.warehouseId!=warehouse.id && location.uid==null)
+                    "Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova."
+                    else "Struttura non trovata: potrebbe essere stata eliminata.")
+                return
             }
+            // 4.20: while choosing where to put an article, the label (or tag) of the shelf is the answer.
+            if(ui.locationPickItemIds!=null) {
+                if(!here.holdsStock) { ui=ui.copy(message="${here.kind}: scegli uno scaffale, armadio o area"); return }
+                if(here.hasPositions) ui=ui.copy(shelfOpenId=here.id,scannedItemId=null,message=null)
+                else completeLocationPick(here.id,null,null)
+                return
+            }
+            // A door or a column holds nothing: it is shown on the map instead.
+            ui=if(here.holdsStock) ui.copy(scannedItemId=null,shelfOpenId=here.id,message=null)
+                else ui.copy(scannedItemId=null,mapFocusPlacementId=here.id,message=null)
             return
         }
         val target=readArticleLabel(raw)
@@ -80,7 +93,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             return
         }
         val item=ui.items.firstOrNull { it.sku.equals(target.sku,ignoreCase=true) }
-        ui=if(item!=null) ui.copy(scannedItemId=item.id,message=null)
+        ui=if(item!=null) ui.copy(scannedItemId=item.id,shelfOpenId=null,message=null)
         else ui.copy(scannedItemId=null,message="Articolo ${target.sku} non trovato in ${warehouse.name}.")
     }
     // ---- 4.10 scanner requests, burst picking, team QR ----
@@ -126,7 +139,27 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         nfcWritePayload=ArticleCodes.payload(item.warehouseId,item.sku)
         ui=ui.copy(nfcWrite=item.name,message=null)
     }
+    /** 4.20: the tag of a shelf: touching it opens the shelf seen from the front. */
+    fun requestNfcWritePlacement(placementId:Long) {
+        val p=ui.placements.firstOrNull { it.id==placementId } ?: return
+        nfcWritePayload=ArticleCodes.locationPayload(p.warehouseId,p.id,p.uid)
+        ui=ui.copy(nfcWrite=p.label.ifBlank { p.kind },message=null)
+    }
     fun cancelNfcWrite() { nfcWritePayload=null; ui=ui.copy(nfcWrite=null) }
+    /** 4.20: a tag touched with Ubicora closed opened the app: it is read after the PIN. */
+    fun queueTagCode(text:String?) { ui=ui.copy(pendingCode=text?.takeIf { it.isNotBlank() }?.take(512) ?: "") }
+    fun consumePendingCode() {
+        val code=ui.pendingCode ?: return
+        if(ui.profile==null || ui.sessionLocked || ui.warehouse==null || ui.busy) return
+        ui=ui.copy(pendingCode=null)
+        handleNfcText(code.ifBlank { null })
+    }
+    // ---- 4.20 shelf seen from the front, "dov'è" on the map ----
+    fun openShelf(placementId:Long) { if(ui.placements.any { it.id==placementId && it.holdsStock }) ui=ui.copy(shelfOpenId=placementId,message=null) }
+    fun closeShelf() { ui=ui.copy(shelfOpenId=null) }
+    /** Shows on the map where an article is (or that it has no place yet). */
+    fun showItemOnMap(itemId:Long) { if(ui.items.any { it.id==itemId }) ui=ui.copy(mapFindItemId=itemId,shelfOpenId=null,scannedItemId=null) }
+    fun consumeMapFind() { ui=ui.copy(mapFindItemId=null) }
     fun nfcWritten(payload:String,failure:String?) {
         if(nfcWritePayload!=payload) return
         if(failure==null) { nfcWritePayload=null; ui=ui.copy(nfcWrite=null,scanSignal=ScanSignal(true,System.nanoTime()),message=null) }
@@ -143,8 +176,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun endShelfCheck() { ui=ui.copy(shelfCheck=null,scanSignal=null) }
     private fun handleShelfScan(raw:String,warehouse:Warehouse,check:ShelfCheck) {
         readLocationLabel(raw)?.let { location ->
-            val known=location.warehouseId==warehouse.id && ui.placements.any { it.id==location.placementId }
-            ui=if(known) ui.copy(shelfCheck=check.copy(placementId=location.placementId),message=null,scanSignal=ScanSignal(true,System.nanoTime()))
+            val known=placementOfLabel(location,warehouse)
+            ui=if(known!=null) ui.copy(shelfCheck=check.copy(placementId=known.id),message=null,scanSignal=ScanSignal(true,System.nanoTime()))
                 else ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
             return
         }
@@ -315,7 +348,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,siteHits=ui.siteHits,
             shelfCheck=ui.shelfCheck?.takeIf{snapshot.warehouse?.id==ui.warehouse?.id},
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
-            scanRequest=ui.scanRequest,teamQr=ui.teamQr,
+            scanRequest=ui.scanRequest,teamQr=ui.teamQr,pendingCode=ui.pendingCode,mapFindItemId=ui.mapFindItemId,
+            shelfOpenId=ui.shelfOpenId?.takeIf{id->snapshot.placements.any{it.id==id}},
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},
             mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
         pendingNewItem = null
@@ -330,11 +364,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Zoom/pan survive tab switches; reset when the room is resized. */
     fun mapCamera(warehouseId:Long):Triple<Float,Float,Float> = mapCameras[warehouseId] ?: Triple(1f,0f,0f)
     fun saveMapCamera(warehouseId:Long,zoom:Float,panX:Float,panY:Float) { mapCameras[warehouseId]=Triple(zoom,panX,panY) }
-    fun showOnMap(placementId:Long) { if(ui.placements.any{it.id==placementId}) ui=ui.copy(mapFocusPlacementId=placementId,scannedItemId=null) }
+    fun showOnMap(placementId:Long) { if(ui.placements.any{it.id==placementId}) ui=ui.copy(mapFocusPlacementId=placementId,scannedItemId=null,shelfOpenId=null) }
     fun acknowledgeMapFocus() { ui=ui.copy(mapFocusPlacementId=null) }
     fun startLocationPick(itemIds:List<Long>) {
         val ids=itemIds.filter{id->ui.items.any{it.id==id}}.distinct()
-        if(ids.isNotEmpty()) ui=ui.copy(locationPickItemIds=ids,scannedItemId=null,message=null)
+        // 4.20: the map is needed to choose, so a shelf open from the front gives way to it.
+        if(ids.isNotEmpty()) ui=ui.copy(locationPickItemIds=ids,scannedItemId=null,shelfOpenId=null,message=null)
     }
     fun cancelLocationPick() { ui=ui.copy(locationPickItemIds=null) }
     fun completeLocationPick(placementId:Long,level:Int?,slot:Int?) {
@@ -361,6 +396,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope.isNotEmpty() && category!=null && category !in t.scope
     }
     private fun department()=if(pickOnly) "solo prelievo" else ui.team.scope.joinToString(", ")
+    /** 4.20: false on a satellite, where the map comes from the central (same rule as [requireMapEditable]). */
+    val mapEditable:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
     /** 4.19.2: a satellite that can only withdraw and lend here. */
     val pickOnly:Boolean get() { val t=ui.team; return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope==listOf(TeamSync.PICK_ONLY) }
     /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
@@ -453,6 +490,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private fun localSite(id:Long?):Long? = if(id==null) null else ui.team.labelIds[id] ?: id
     private fun readArticleLabel(raw:String) = ArticleCodes.parseScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId)) }
     private fun readLocationLabel(raw:String) = ArticleCodes.parseLocationScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId) ?: it.warehouseId) }
+    /**
+     * 4.20: the structure of the open site a label points to. A version 1 label is accepted only for its own
+     * site (its number is local to the phone that printed it); a version 2 one wherever its id is found.
+     */
+    private fun placementOfLabel(location:ArticleCodes.LocationTarget,warehouse:Warehouse):Placement? =
+        if(location.uid==null && location.warehouseId!=warehouse.id) null else ArticleCodes.resolve(location,ui.placements)
     /** 4.19: moves pieces of an article to another site of the company. */
     fun transferToSite(itemId:Long,site:Warehouse,quantity:Double) {
         val t=ui.team

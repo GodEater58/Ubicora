@@ -32,23 +32,43 @@ object NfcLabels {
         return String(payload, 1 + language, payload.size - 1 - language, charset).takeIf { it.isNotBlank() }
     }
 
-    fun message(payload: String): NdefMessage = NdefMessage(arrayOf(NdefRecord.createTextRecord("it", payload)))
+    /**
+     * The label as a text record. 4.20: with [appPackage], an Android Application Record follows it, so touching
+     * the tag opens Ubicora even when it is closed (Android starts the app and hands it the text).
+     */
+    fun message(payload: String, appPackage: String? = null): NdefMessage {
+        val text = NdefRecord.createTextRecord("it", payload)
+        return if (appPackage.isNullOrBlank()) NdefMessage(arrayOf(text))
+        else NdefMessage(arrayOf(text, NdefRecord.createApplicationRecord(appPackage)))
+    }
 
-    /** Writes the label on a blank or rewritable tag; the message says why when it cannot. */
-    fun write(tag: Tag, payload: String) {
-        val message = message(payload)
+    /** First Ubicora text among [messages] (the payload of a tag that opened the app), or null. */
+    fun firstText(messages: List<NdefMessage>): String? =
+        messages.asSequence().flatMap { it.records.asSequence() }.firstNotNullOfOrNull { text(it) }
+
+    /**
+     * Writes the label on a blank or rewritable tag; the message says why when it cannot. When the tag is too
+     * small for the record that opens the app, the label alone is written: it still works with Ubicora open.
+     */
+    fun write(tag: Tag, payload: String, appPackage: String? = null) {
+        val full = message(payload, appPackage)
+        val plain = message(payload)
         val ndef = Ndef.get(tag)
         if (ndef != null) {
             ndef.connect()
             try {
                 require(ndef.isWritable) { "Questo tag è protetto dalla scrittura" }
+                val message = if (ndef.maxSize >= full.toByteArray().size) full else plain
                 require(ndef.maxSize >= message.toByteArray().size) { "Questo tag è troppo piccolo per l'etichetta" }
                 ndef.writeNdefMessage(message)
             } finally { runCatching { ndef.close() } }
         } else {
             val blank = requireNotNull(NdefFormatable.get(tag)) { "Tag non compatibile: servono tag NFC di tipo NDEF (per esempio NTAG213)" }
             blank.connect()
-            try { blank.format(message) } finally { runCatching { blank.close() } }
+            try {
+                // An unformatted tag does not tell its size before formatting: if the full message does not fit, retry with the label alone.
+                try { blank.format(full) } catch (e: java.io.IOException) { if (appPackage.isNullOrBlank()) throw e; blank.format(plain) }
+            } finally { runCatching { blank.close() } }
         }
     }
 }

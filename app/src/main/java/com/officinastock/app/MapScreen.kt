@@ -126,9 +126,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
     var showDimensions by remember {mutableStateOf(false)}
     var showRowFor by remember {mutableStateOf<Long?>(null)}
     var wallLengthFor by remember {mutableStateOf<Long?>(null)}
-    var pickPositionFor by remember {mutableStateOf<Long?>(null)}
     var qrFor by remember {mutableStateOf<Long?>(null)}
-    var showGrid by remember {mutableStateOf(true)}
+    var showGrid by remember {mutableStateOf(false)}   // 4.20: clean plan at rest; the grid is always on while editing
     var snapGrid by remember {mutableStateOf(true)}
     var magnet by remember {mutableStateOf(true)}
     var orthogonal by remember {mutableStateOf(false)}
@@ -167,6 +166,33 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
         }
     }
     val layerMax=layerValues.values.maxOrNull()?.takeIf{it>0f} ?: 1f
+    // 4.20: search, "dov'è" and the plan turned to fill a portrait phone.
+    var query by remember(warehouse.id){mutableStateOf("")}
+    var foundItemId by remember(warehouse.id){mutableStateOf<Long?>(null)}
+    var showUnplaced by remember{mutableStateOf(false)}
+    var quickPick by remember{mutableStateOf<Long?>(null)}
+    var openItemId by remember{mutableStateOf<Long?>(null)}
+    val editing=mode!=EditorTool.VIEW
+    val config=androidx.compose.ui.platform.LocalConfiguration.current
+    // Decided on the whole screen, not on the map box, so it does not flip while the results list opens.
+    val turned=remember(roomWidth,roomHeight,config.screenWidthDp,config.screenHeightDp){
+        PlanViewport.shouldTurn(config.screenWidthDp.toFloat(),config.screenHeightDp*.62f,roomWidth,roomHeight,20f)
+    }
+    fun viewport(w:Float,h:Float,z:Float,px:Float,py:Float,margin:Float)=PlanViewport(w,h,roomWidth,roomHeight,z,px,py,margin,turned)
+    val results=remember(query,state.items,state.placements){MapSearch.results(query,state.items,state.placements)}
+    val found=state.items.firstOrNull{it.id==foundItemId}
+    val foundPlace=found?.placementId?.let{id->state.placements.firstOrNull{it.id==id}}
+    val walk=remember(foundPlace,state.placements){foundPlace?.let{MapRoute.walk(state.placements,it)}}
+    val searching=query.isNotBlank() && found==null
+    val lit:Set<Long> = when { found!=null -> setOfNotNull(foundPlace?.id); searching -> results.lit; else -> emptySet() }
+    val dimming=lit.isNotEmpty()
+    val unplaced=remember(state.items,state.placements){
+        val ids=state.placements.map{it.id}.toSet()
+        state.items.filter{it.placementId==null || it.placementId !in ids}
+    }
+    androidx.activity.compose.BackHandler(enabled=found!=null) { foundItemId=null }
+    androidx.activity.compose.BackHandler(enabled=found==null && query.isNotEmpty()) { query="" }
+    androidx.activity.compose.BackHandler(enabled=editing && wallAnchor==null && state.locationPickItemIds==null) { mode=EditorTool.VIEW;selectedId=null;selectedWallId=null }
 
     LaunchedEffect(warehouse.id,zoom,panX,panY) { model.saveMapCamera(warehouse.id,zoom,panX,panY) }
     // "Mostra in pianta" and shelf QR: center, zoom and pulse the structure.
@@ -177,7 +203,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
         if(p!=null) {
             mode=EditorTool.VIEW;selectedWallId=null;selectedId=p.id;highlightId=p.id
             val z=2f
-            val cam=PlanViewport(canvasW,canvasH,roomWidth,roomHeight,z,0f,0f,marginPx)
+            val cam=viewport(canvasW,canvasH,z,0f,0f,marginPx)
             val at=cam.toScreen(PointMetres(p.x,p.y))
             val pan=cam.clampedPan(canvasW/2f-at.x,canvasH/2f-at.y)
             zoom=z;panX=pan.x;panY=pan.y
@@ -185,6 +211,27 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
         model.acknowledgeMapFocus()
     }
     LaunchedEffect(highlightId) { if(highlightId!=null) { delay(5000);highlightId=null } }
+    // 4.20: "Dov'è sulla mappa" from an article.
+    LaunchedEffect(state.mapFindItemId) {
+        val id=state.mapFindItemId ?: return@LaunchedEffect
+        mode=EditorTool.VIEW;selectedWallId=null;foundItemId=id
+        model.consumeMapFind()
+    }
+    // 4.20: what is lit (search results, the article found and its door) is framed on the screen.
+    var framed by remember(warehouse.id){mutableStateOf(false)}
+    LaunchedEffect(lit,walk?.from?.id,canvasW,canvasH,turned) {
+        // Search closed: back to the whole plan, as it was before the search framed the results.
+        if(lit.isEmpty()) { if(framed) { zoom=1f;panX=0f;panY=0f;framed=false }; return@LaunchedEffect }
+        if(canvasW<=0f || canvasH<=0f) return@LaunchedEffect
+        val boxes=state.placements.filter{it.id in lit}+listOfNotNull(walk?.from)
+        if(boxes.isEmpty()) return@LaunchedEffect
+        val pad=.8f
+        val fit=viewport(canvasW,canvasH,zoom,panX,panY,marginPx).fitting(
+            boxes.minOf{it.x-maxOf(it.width,it.depth)/2f}-pad,boxes.minOf{it.y-maxOf(it.width,it.depth)/2f}-pad,
+            boxes.maxOf{it.x+maxOf(it.width,it.depth)/2f}+pad,boxes.maxOf{it.y+maxOf(it.width,it.depth)/2f}+pad,
+            maxZoom=if(found!=null) 2.6f else 2f)
+        zoom=fit.zoom;panX=fit.panX;panY=fit.panY;framed=true
+    }
     // Animate only while a structure is highlighted: no continuous redraw otherwise.
     val pulse=if(highlightId!=null) {
         val value by rememberInfiniteTransition(label="focus").animateFloat(0f,1f,
@@ -203,11 +250,12 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
     fun pick(p:Placement) {
         if(!p.holdsStock) { Toast.makeText(context,"${p.kind}: scegli uno scaffale, armadio o area",Toast.LENGTH_SHORT).show();return }
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        if(p.hasPositions) pickPositionFor=p.id else model.completeLocationPick(p.id,null,null)
+        // 4.20: the shelf seen from the front shows where to put it, place by place.
+        if(p.hasPositions) model.openShelf(p.id) else model.completeLocationPick(p.id,null,null)
     }
     fun viewCentre():PointMetres {
         if(canvasW<=0f) return PointMetres(roomWidth/2f,roomHeight/2f)
-        val cam=PlanViewport(canvasW,canvasH,roomWidth,roomHeight,zoom,panX,panY,marginPx)
+        val cam=viewport(canvasW,canvasH,zoom,panX,panY,marginPx)
         return cam.bounded(cam.toWorld(PointMetres(canvasW/2f,canvasH/2f)))
     }
 
@@ -216,57 +264,119 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
         val guiding=state.pickList.any{!it.done}
         LaunchedEffect(guiding) { if(guiding) { mode=EditorTool.VIEW;layer=MapLayer.NORMAL;wallAnchor=null;draftEnd=null;selectedWallId=null } }
         if(guiding) GuidedMapHeader(state.pickList,onClose=model::clearPickList)
-        if(!guiding) Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                Surface(shape=RoundedCornerShape(12.dp),color=Mint.copy(alpha=.11f)) {
-                    Icon(Icons.Outlined.Architecture,"Progettazione",tint=Mint,modifier=Modifier.padding(10.dp).size(23.dp))
+        if(!guiding && editing) Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            // 4.20: drawing tools live here, behind "Modifica": the map at rest shows only the plan and the search.
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Button(onClick={mode=EditorTool.VIEW;selectedId=null;selectedWallId=null;wallAnchor=null;draftEnd=null},
+                    modifier=Modifier.heightIn(min=48.dp),shape=RoundedCornerShape(14.dp)) {
+                    Icon(Icons.Outlined.Check,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text("Fine")
                 }
-                // 4.19.3: short label and the site name alone, so the title fits; PDF, labels and sizes go in one menu.
                 Column(Modifier.weight(1f)) {
-                    Text("MAPPA",fontSize=9.sp,letterSpacing=1.7.sp,fontWeight=FontWeight.Bold,color=Mint,maxLines=1)
-                    Text(warehouse.name,fontSize=20.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text("MODIFICA PIANTA",fontSize=10.sp,letterSpacing=1.4.sp,fontWeight=FontWeight.Bold,color=Mint,maxLines=1)
+                    Text(warehouse.name,fontSize=18.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
-                var mapMenu by remember { mutableStateOf(false) }
+                var editMenu by remember { mutableStateOf(false) }
                 Box {
-                    FilledTonalIconButton(onClick={mapMenu=true}) {Icon(Icons.Outlined.MoreVert,"Altre azioni della mappa")}
-                    DropdownMenu(expanded=mapMenu,onDismissRequest={mapMenu=false}) {
-                        DropdownMenuItem(text={Text("Esporta pianta in PDF")},leadingIcon={Icon(Icons.Outlined.PictureAsPdf,null)},onClick={
-                            mapMenu=false;pdfLauncher.launch("Ubicora_pianta_${warehouse.id}.pdf")
-                        })
-                        DropdownMenuItem(text={Text("Etichette QR di tutte le strutture")},leadingIcon={Icon(Icons.Outlined.QrCode2,null)},
-                            enabled=state.placements.any{it.holdsStock},onClick={
-                            mapMenu=false
-                            val labels=state.placements.filter{it.holdsStock}.map{LabelSpec.placement(it)}
-                            try { QrLabels.printSheet(context,"Ubicazioni ${warehouse.name}",labels) }
-                            catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
-                        })
+                    FilledTonalIconButton(onClick={editMenu=true},modifier=Modifier.size(48.dp)) {Icon(Icons.Outlined.MoreVert,"Altri strumenti della pianta")}
+                    DropdownMenu(expanded=editMenu,onDismissRequest={editMenu=false}) {
                         DropdownMenuItem(text={Text("Dimensioni dell'ambiente")},leadingIcon={Icon(Icons.Outlined.Straighten,null)},onClick={
-                            mapMenu=false;showDimensions=true
+                            editMenu=false;showDimensions=true
+                        })
+                        DropdownMenuItem(text={Text("Rilievo AR delle pareti")},leadingIcon={Icon(Icons.Outlined.CameraAlt,null)},onClick={
+                            editMenu=false;onAr()
                         })
                     }
                 }
-                FilledTonalIconButton(onClick=onSettings) {Icon(Icons.Outlined.Settings,"Impostazioni")}
             }
-            Row(horizontalArrangement=Arrangement.spacedBy(5.dp),modifier=Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
                 listOf(
-                    Triple(EditorTool.VIEW, "Esplora", Icons.Outlined.PanToolAlt),
-                    Triple(EditorTool.WALL, "Pareti", Icons.Outlined.Edit),
-                    Triple(EditorTool.FURNITURE, "Strutture", Icons.Outlined.GridView)
+                    Triple(EditorTool.FURNITURE, "Strutture", Icons.Outlined.GridView),
+                    Triple(EditorTool.WALL, "Pareti", Icons.Outlined.Edit)
                 ).forEach { (tool,title,icon) ->
                     val active=mode==tool
                     Surface(
-                        modifier=Modifier.weight(1f).clickable {mode=tool;wallAnchor=null;draftEnd=null;selectedWallId=null},
+                        modifier=Modifier.weight(1f).heightIn(min=48.dp).clickable {mode=tool;wallAnchor=null;draftEnd=null;selectedWallId=null},
                         shape=RoundedCornerShape(14.dp),
                         color=if(active) Mint.copy(alpha=.15f) else Surface2,
                         border=BorderStroke(1.dp,if(active) Mint.copy(alpha=.66f) else Hairline.copy(alpha=.07f))
                     ) {
-                        Row(Modifier.padding(vertical=10.dp,horizontal=5.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                            Icon(icon,null,tint=if(active) Mint else TextSecondary,modifier=Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(title,color=if(active) TextPrimary else TextSecondary,fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Medium)
+                        Row(Modifier.padding(vertical=12.dp,horizontal=5.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                            Icon(icon,null,tint=if(active) Mint else TextSecondary,modifier=Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(title,color=if(active) TextPrimary else TextSecondary,fontSize=14.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Medium)
                         }
                     }
                 }
+            }
+        }
+        if(!guiding && !editing) Column(Modifier.padding(horizontal=16.dp).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(found!=null) {
+                // 4.20 "Dov'è": back to the results (or to the plan), and how far it is.
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    FilledTonalIconButton(onClick={foundItemId=null},modifier=Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.ArrowBack,if(query.isNotBlank()) "Torna ai risultati" else "Torna alla mappa")
+                    }
+                    Column(Modifier.weight(1f)) {
+                        val index=results.items.indexOfFirst{it.id==found.id}
+                        Text(if(query.isNotBlank() && index>=0) "Risultato ${index+1} di ${results.items.size} per «${query.trim()}»" else "Dov'è",
+                            fontSize=13.sp,color=TextSecondary,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(when { foundPlace==null -> "Non ha ancora un posto"; walk!=null -> MapRoute.describe(walk); else -> foundPlace.label },
+                            fontSize=15.sp,fontWeight=FontWeight.Bold,color=Amber,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    }
+                }
+            } else {
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                    OutlinedTextField(query,onValueChange={query=it.take(60)},singleLine=true,
+                        placeholder={Text("Cerca un articolo o uno scaffale",maxLines=1,overflow=TextOverflow.Ellipsis)},
+                        leadingIcon={Icon(Icons.Outlined.Search,null)},
+                        trailingIcon={ if(query.isNotEmpty()) IconButton(onClick={query=""}){Icon(Icons.Outlined.Close,"Cancella la ricerca")} },
+                        keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Search),
+                        keyboardActions=androidx.compose.foundation.text.KeyboardActions(onSearch={keyboard?.hide()}),
+                        shape=RoundedCornerShape(26.dp),modifier=Modifier.weight(1f))
+                    if(model.mapEditable) FilledTonalIconButton(onClick={mode=EditorTool.FURNITURE;selectedId=null;query=""},modifier=Modifier.size(52.dp)) {
+                        Icon(Icons.Outlined.Edit,"Modifica la pianta")
+                    }
+                }
+                if(query.isBlank()) Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text(warehouse.name,fontSize=17.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,fill=false))
+                    Spacer(Modifier.width(8.dp))
+                    Text("${numberM(roomWidth)} × ${numberM(roomHeight)}".replace(" m ×"," ×"),fontSize=13.sp,color=TextSecondary,maxLines=1,modifier=Modifier.weight(1f))
+                    var layersMenu by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick={layersMenu=true},modifier=Modifier.heightIn(min=44.dp)) {
+                            Icon(Icons.Outlined.Layers,null,Modifier.size(18.dp));Spacer(Modifier.width(6.dp))
+                            Text(if(layer==MapLayer.NORMAL) "Strati" else layer.label)
+                        }
+                        DropdownMenu(expanded=layersMenu,onDismissRequest={layersMenu=false}) {
+                            MapLayer.entries.forEach { option ->
+                                DropdownMenuItem(text={Text(option.label,fontWeight=if(option==layer) FontWeight.Bold else FontWeight.Normal)},
+                                    leadingIcon={ if(option==layer) Icon(Icons.Outlined.Check,null,tint=Mint) else Spacer(Modifier.size(24.dp)) },
+                                    onClick={layer=option;layersMenu=false})
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(text={Text("Griglia")},leadingIcon={ if(showGrid) Icon(Icons.Outlined.Check,null,tint=Mint) else Spacer(Modifier.size(24.dp)) },
+                                onClick={showGrid=!showGrid;layersMenu=false})
+                            DropdownMenuItem(text={Text("Nomi delle strutture")},leadingIcon={ if(showLabels) Icon(Icons.Outlined.Check,null,tint=Mint) else Spacer(Modifier.size(24.dp)) },
+                                onClick={showLabels=!showLabels;layersMenu=false})
+                            HorizontalDivider()
+                            DropdownMenuItem(text={Text("Esporta pianta in PDF")},leadingIcon={Icon(Icons.Outlined.PictureAsPdf,null)},onClick={
+                                layersMenu=false;pdfLauncher.launch("Ubicora_pianta_${warehouse.id}.pdf")
+                            })
+                            DropdownMenuItem(text={Text("Etichette QR di tutte le strutture")},leadingIcon={Icon(Icons.Outlined.QrCode2,null)},
+                                enabled=state.placements.any{it.holdsStock},onClick={
+                                layersMenu=false
+                                val labels=state.placements.filter{it.holdsStock}.map{LabelSpec.placement(it)}
+                                try { QrLabels.printSheet(context,"Ubicazioni ${warehouse.name}",labels) }
+                                catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
+                            })
+                            DropdownMenuItem(text={Text("Impostazioni")},leadingIcon={Icon(Icons.Outlined.Settings,null)},onClick={layersMenu=false;onSettings()})
+                        }
+                    }
+                }
+                if(searching) MapResultsCard(results,state.placements,model,query,
+                    onItem={ item -> foundItemId=item.id },
+                    onShelf={ shelf -> model.openShelf(shelf.id) })
             }
         }
         state.locationPickItemIds?.let { ids ->
@@ -286,12 +396,11 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                 val w=with(density){maxWidth.toPx()}
                 val h=with(density){maxHeight.toPx()}
                 SideEffect { canvasW=w;canvasH=h }
-                val camera=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,marginPx)
+                val camera=viewport(w,h,zoom,panX,panY,marginPx)
                 // Screen-space typography: never shrink text with the map camera.
                 val labelPx=with(density){14.sp.toPx()}
                 val selectedLabelPx=with(density){16.sp.toPx()}
-                val labelHeightPx=with(density){28.dp.toPx()}
-                val labelPadPx=with(density){9.dp.toPx()}
+                val labelHeightPx=with(density){22.dp.toPx()}
                 val labelGapPx=with(density){7.dp.toPx()}
                 val badgePx=with(density){12.dp.toPx()}
                 val badgeTextPx=with(density){11.sp.toPx()}
@@ -301,6 +410,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                 // Paints are allocated once per composition, not once per structure per frame.
                 val labelPaint=remember(labelPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
                     color=android.graphics.Color.WHITE;typeface=Typeface.create("sans-serif-medium",Typeface.BOLD);textAlign=AndroidPaint.Align.CENTER
+                    // 4.20: no box behind the names any more: a soft shadow keeps them readable on the floor and the grid.
+                    setShadowLayer(4f,0f,1f,android.graphics.Color.argb(220,7,18,31))
                 }}
                 val badgePaint=remember(badgeTextPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
                     color=android.graphics.Color.BLACK;textSize=badgeTextPx;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER
@@ -312,18 +423,18 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     color=android.graphics.Color.rgb(255,201,120);textSize=measurePx;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER
                 }}
                 LaunchedEffect(zoom,w,h,roomWidth,roomHeight) {
-                    val adjusted=PlanViewport(w,h,roomWidth,roomHeight,zoom,panX,panY,marginPx)
+                    val adjusted=viewport(w,h,zoom,panX,panY,marginPx)
                         .clampedPan(panX,panY)
                     panX=adjusted.x;panY=adjusted.y
                 }
                 // One gesture owner. Unlike overlapping tap/drag handlers, this cannot steal its own wall strokes.
-                Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight) {
+                Canvas(Modifier.fillMaxSize().clipToBounds().pointerInput(mode,warehouse.id,roomWidth,roomHeight,turned) {
                     // 4.15: double tap on the empty floor.
                     var lastTapAt=0L
                     var lastTapPos=PointMetres(0f,0f)
                     awaitEachGesture {
                         val down=awaitFirstDown(requireUnconsumed=false)
-                        val cameraNow=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                        val cameraNow=viewport(size.width.toFloat(),size.height.toFloat(),zoom,panX,panY,34.dp.toPx())
                         val initial=PointMetres(down.position.x,down.position.y)
                         val startWorld=cameraNow.bounded(cameraNow.toWorld(initial))
                         val hit=livePlacements.lastOrNull { PlanGeometry.contains(startWorld,it) }
@@ -345,7 +456,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                 draftCloses=false
                                 val pivot=e.calculateCentroid(useCurrent=false)
                                 val shift=e.calculatePan()
-                                val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                                val current=viewport(size.width.toFloat(),size.height.toFloat(),zoom,panX,panY,34.dp.toPx())
                                 val next=current.transformed(e.calculateZoom(),PointMetres(pivot.x,pivot.y),PointMetres(shift.x,shift.y))
                                 zoom=next.zoom;panX=next.panX;panY=next.panY
                                 e.changes.forEach{it.consume()}
@@ -368,9 +479,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                     draftEnd=landed.point
                                     draftCloses=landed.closes
                                 }else if(target!=null && !target.locked && initialFurniture!=null){
-                                    val dx=(last.x-initial.x)/cameraNow.scale
-                                    val dy=(last.y-initial.y)/cameraNow.scale
-                                    val pos=cameraNow.bounded(PointMetres(initialFurniture.x+dx,initialFurniture.y+dy))
+                                    // 4.20: the finger moves on the screen; on a turned plan that is another direction in the room.
+                                    val delta=cameraNow.toWorldDelta(last.x-initial.x,last.y-initial.y)
+                                    val pos=cameraNow.bounded(PointMetres(initialFurniture.x+delta.x,initialFurniture.y+delta.y))
                                     val mapped=if(snapGrid)PlanGeometry.snap(pos) else pos
                                     model.previewMove(target.id,mapped.x,mapped.y)
                                 }else if(mode!=EditorTool.WALL || picking){
@@ -394,7 +505,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                 lastTapAt=0L
                                 if(zoom>=3.2f) { zoom=1f;panX=0f;panY=0f }
                                 else {
-                                    val current=PlanViewport(size.width.toFloat(),size.height.toFloat(),roomWidth,roomHeight,zoom,panX,panY,34.dp.toPx())
+                                    val current=viewport(size.width.toFloat(),size.height.toFloat(),zoom,panX,panY,34.dp.toPx())
                                     val next=current.transformed(1.8f,initial,PointMetres(0f,0f))
                                     zoom=next.zoom;panX=next.panX;panY=next.panY
                                 }
@@ -402,7 +513,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             }
                             lastTapAt=now;lastTapPos=initial
                         }
-                        val tappedWall=if(!dragged && hit==null && mode!=EditorTool.WALL)
+                        // 4.20: walls are measured while editing; exploring, a tap on the floor does nothing.
+                        val tappedWall=if(!dragged && hit==null && mode==EditorTool.FURNITURE)
                             liveWalls.minByOrNull{PlanGeometry.distanceToWall(startWorld,it)}
                                 ?.takeIf{PlanGeometry.distanceToWall(startWorld,it)*cameraNow.scale<=wallTapPx} else null
                         if(mode==EditorTool.WALL){
@@ -437,27 +549,31 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                 }
                             }else if(!dragged)selectedId=null
                         }else if(!dragged){
-                            selectedWallId=null
-                            selectedId=hit?.id
-                            if(hit!=null)detailsId=hit.id
+                            selectedWallId=null;selectedId=null
+                            // 4.20: a structure opens seen from the front; doors and columns only say what they are.
+                            if(hit!=null) {
+                                if(hit.holdsStock) model.openShelf(hit.id)
+                                else Toast.makeText(context,"${hit.label.ifBlank{hit.kind}} · ${hit.kind}",Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 }) {
                     clipRect {
                     drawRect(Brush.verticalGradient(listOf(Color(0xFF0D2335),FloorBackground)),size=size)
                     val step=.5f
-                    if(showGrid){
-                        for(i in 0..ceil(roomWidth/step).toInt()) {
-                            val x=camera.toScreen(PointMetres(i*step,0f)).x
+                    // 4.20: the grid is a drawing aid: always while editing, on request while exploring.
+                    if(showGrid || editing){
+                        for(i in 0..ceil(camera.shownWidth/step).toInt()) {
+                            val x=camera.originX+i*step*camera.scale
                             if(x in 0f..size.width)drawLine(Color.White.copy(alpha=if(i%2==0).13f else .055f),Offset(x,0f),Offset(x,size.height),strokeWidth=if(i%2==0)1.1f else .7f)
                         }
-                        for(i in 0..ceil(roomHeight/step).toInt()){
-                            val y=camera.toScreen(PointMetres(0f,i*step)).y
+                        for(i in 0..ceil(camera.shownHeight/step).toInt()){
+                            val y=camera.originY+i*step*camera.scale
                             if(y in 0f..size.height)drawLine(Color.White.copy(alpha=if(i%2==0).13f else .055f),Offset(0f,y),Offset(size.width,y),strokeWidth=if(i%2==0)1.1f else .7f)
                         }
                     }
-                    val topLeft=camera.toScreen(PointMetres(0f,0f))
-                    val sizeFloor=Size(roomWidth*camera.scale,roomHeight*camera.scale)
+                    val topLeft=PointMetres(camera.originX,camera.originY)
+                    val sizeFloor=Size(camera.shownWidth*camera.scale,camera.shownHeight*camera.scale)
                     drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(topLeft.x+4f,topLeft.y+8f),size=sizeFloor,cornerRadius=CornerRadius(7f))
                     drawRoundRect(Brush.verticalGradient(listOf(FloorFill,Color(0xFF102734))),topLeft=Offset(topLeft.x,topLeft.y),size=sizeFloor,cornerRadius=CornerRadius(5f))
                     drawRoundRect(Color.White.copy(alpha=.23f),topLeft=Offset(topLeft.x,topLeft.y),size=sizeFloor,cornerRadius=CornerRadius(5f),style=Stroke(width=1.3f))
@@ -490,105 +606,132 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             }
                         }
                     }
-                    val occupiedLabelBoxes=mutableListOf<android.graphics.RectF>()
-                    for(f in state.placements.sortedBy { if(it.id==selectedId) 2 else if(it.kind=="Corridoio") 0 else 1 }){
+                    // 4.20: every structure's place on the screen first, so that no name is written over one of them.
+                    val footprints=state.placements.associate { f ->
+                        val c=camera.toScreen(PointMetres(f.x,f.y))
+                        f.id to MapLabels.footprint(c.x,c.y,f.width*camera.scale,f.depth*camera.scale,f.rotation+camera.turnDegrees)
+                    }
+                    for(f in state.placements.sortedBy { if(it.id==selectedId || it.id in lit) 2 else if(it.kind=="Corridoio") 0 else 1 }){
                         val pos=camera.toScreen(PointMetres(f.x,f.y));val center=Offset(pos.x,pos.y)
                         val fw=f.width*camera.scale;val fh=f.depth*camera.scale
                         val selected=f.id==selectedId
                         val items=mapItems[f.id].orEmpty()
+                        val isLit=f.id in lit
+                        val faded=dimming && !isLit && f.id!=walk?.from?.id   // the door where the walk starts stays visible
                         val fill=when {
+                            isLit -> Color(0xFF4A3A1A)
+                            faded -> Color(0xFF1B2D40)
                             !f.holdsStock || layer==MapLayer.NORMAL -> floorColor(f.kind)
                             layer==MapLayer.EMPTY -> if(items.isEmpty()) Amber.copy(alpha=.85f) else Idle
                             else -> (layerValues[f.id] ?: 0f).let { v -> if(v<=0f) Idle else heat(v/layerMax) }
                         }
-                        rotate(f.rotation,pivot=center){
+                        rotate(f.rotation+camera.turnDegrees,pivot=center){
                             val box=Offset(center.x-fw/2,center.y-fh/2)
-                            if(f.kind!="Corridoio")drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            if(f.kind!="Corridoio" && !faded)drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                             drawRoundRect(fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                             if(f.id in guide.done) {
                                 drawRoundRect(Mint.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                                 drawRoundRect(Mint,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=3f))
                             }
-                            if(f.id==guide.next?.id) {
-                                drawRoundRect(Amber.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            if(f.id==guide.next?.id || isLit) {
+                                if(!isLit) drawRoundRect(Amber.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                                 drawRoundRect(Amber,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=4f))
                                 drawRoundRect(Amber.copy(alpha=.5f),topLeft=Offset(box.x-9f,box.y-9f),size=Size(fw+18f,fh+18f),cornerRadius=CornerRadius(12f),style=Stroke(width=2f))
                             }
-                            when(f.kind) {
+                            if(!faded) when(f.kind) {
                                 "Porta" -> drawArc(Color.White.copy(alpha=.5f),270f,90f,false,topLeft=Offset(box.x-fw,box.y+fh-fw),size=Size(fw*2,fw*2),
                                     style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f))))
                                 "Colonna" -> { drawLine(Color.White.copy(alpha=.4f),box,Offset(box.x+fw,box.y+fh),1.2f);drawLine(Color.White.copy(alpha=.4f),Offset(box.x+fw,box.y),Offset(box.x,box.y+fh),1.2f) }
-                                else -> if(f.holdsStock) {
-                                    val dividers=if(f.slots>1) f.slots else if(f.kind=="Scaffale") 4 else 1
+                                else -> if(f.holdsStock && editing) {
+                                    // 4.20: the positions of a shelf are drawn only while editing; at rest the plan stays clean.
+                                    val dividers=if(f.slots>1) f.slots else 1
                                     for(i in 1 until dividers){
                                         val x=box.x+fw*i/dividers
                                         drawLine(Color.White.copy(alpha=.32f),Offset(x,box.y+2f),Offset(x,box.y+fh-2f),strokeWidth=1f)
                                     }
                                 }
                             }
-                            val outline=when { selected -> Amber; f.id in colliding -> Danger; else -> Color.White.copy(alpha=if(f.locked).35f else .68f) }
-                            drawRoundRect(outline,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),
-                                style=Stroke(width=if(selected||f.id in colliding)3f else 1.5f,
-                                    pathEffect=if(f.kind=="Corridoio") PathEffect.dashPathEffect(floatArrayOf(10f,7f)) else null))
+                            if(editing || selected || f.id in colliding) {
+                                val outline=when { selected -> Amber; f.id in colliding -> Danger; else -> Color.White.copy(alpha=if(f.locked).35f else .68f) }
+                                drawRoundRect(outline,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),
+                                    style=Stroke(width=if(selected||f.id in colliding)3f else 1.5f,
+                                        pathEffect=if(f.kind=="Corridoio") PathEffect.dashPathEffect(floatArrayOf(10f,7f)) else null))
+                            } else if(f.kind=="Corridoio") drawRoundRect(Color.White.copy(alpha=.25f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),
+                                style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(10f,7f))))
                             if(selected)drawRoundRect(Amber.copy(alpha=.17f),topLeft=Offset(box.x-6f,box.y-6f),size=Size(fw+12,fh+12),cornerRadius=CornerRadius(10f),style=Stroke(width=1.3f))
                             if(f.id==highlightId) drawRoundRect(Amber.copy(alpha=.25f+.5f*pulse),topLeft=Offset(box.x-10f-8f*pulse,box.y-10f-8f*pulse),
                                 size=Size(fw+20f+16f*pulse,fh+20f+16f*pulse),cornerRadius=CornerRadius(14f),style=Stroke(width=3f))
                         }
-                        val count=items.size
+                    }
+                    // 4.20: names beside the structures, without boxes, never over a structure or another name.
+                    // A name with no free place is left out (it appears zooming in), except the ones that matter now.
+                    val solid=state.placements.filter{it.kind!="Corridoio"}.mapNotNull{f->footprints[f.id]?.let{f.id to it}}
+                    val labelBoxes=mutableListOf<ScreenBox>()
+                    val guideIds=setOfNotNull(guide.next?.id,walk?.from?.id)+guide.done
+                    val badgeBoxes=mutableListOf<ScreenBox>()
+                    if(guiding) for(f in state.placements) {
+                        val count=mapItems[f.id].orEmpty().size
                         val visited=f.id in guide.done
-                        if(count>0 || visited){
-                            val bubble=Offset(
-                                camera.insetCoordinate(center.x+fw/2,size.width,badgePx),
-                                camera.insetCoordinate(center.y-fh/2,size.height,badgePx)
-                            )
-                            drawCircle(if(visited) Mint else if(items.any{it.lowStock})Amber else Mint,badgePx,bubble)
-                            // 4.15: labels keep clear of the counters instead of being cut by them.
-                            occupiedLabelBoxes.add(android.graphics.RectF(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
-                            drawIntoCanvas { cv ->
-                                // 4.15: a check mark replaces the count on the structures already visited by the guided picking.
-                                cv.nativeCanvas.drawText(if(visited) "\u2713" else count.toString(),bubble.x,
-                                    bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)
-                            }
+                        if(count==0 && !visited) continue
+                        val fp=footprints[f.id] ?: continue
+                        val bubble=Offset(camera.insetCoordinate(fp.right,size.width,badgePx),camera.insetCoordinate(fp.top,size.height,badgePx))
+                        drawCircle(if(visited) Mint else if(mapItems[f.id].orEmpty().any{it.lowStock})Amber else Mint,badgePx,bubble)
+                        badgeBoxes.add(ScreenBox(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
+                        drawIntoCanvas { cv ->
+                            cv.nativeCanvas.drawText(if(visited) "\u2713" else count.toString(),bubble.x,bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)
                         }
-                        if(showLabels && size.width>60f && size.height>60f){
-                            labelPaint.textSize=if(selected)selectedLabelPx else labelPx
-                            val original=f.label.ifBlank { f.kind }+(if(f.levels>1)" · ${f.levels}R" else "")
-                            val maxTextWidth=(size.width-2f*labelPadPx-18f).coerceAtLeast(24f)
+                    }
+                    if(showLabels && size.width>60f && size.height>60f) {
+                        val order=state.placements.sortedBy { f -> when { f.id in lit || f.id==selectedId || f.id==highlightId || f.id in guideIds -> 0; f.holdsStock -> 1; else -> 2 } }
+                        for(f in order) {
+                            val fp=footprints[f.id] ?: continue
+                            if(fp.right<0f || fp.left>size.width || fp.bottom<0f || fp.top>size.height) continue
+                            val important=f.id in lit || f.id==selectedId || f.id==highlightId || f.id in guideIds
+                            val strong=important && !(f.id in guide.done && f.id !in lit)
+                            labelPaint.textSize=if(strong) selectedLabelPx else labelPx
+                            labelPaint.color=when { strong -> android.graphics.Color.rgb(255,201,120); dimming -> android.graphics.Color.rgb(132,151,169); else -> android.graphics.Color.WHITE }
+                            val original=f.label.ifBlank { f.kind }
+                            val maxTextWidth=(size.width*.45f).coerceAtLeast(24f)
                             var cut=original.length
-                            while(cut>1 && labelPaint.measureText(
-                                if(cut<original.length)original.take(cut)+"…" else original
-                            )>maxTextWidth) cut--
+                            while(cut>1 && labelPaint.measureText(if(cut<original.length)original.take(cut)+"…" else original)>maxTextWidth) cut--
                             val label=if(cut<original.length)original.take(cut)+"…" else original
-                            val bubbleW=(labelPaint.measureText(label)+2f*labelPadPx)
-                                .coerceAtMost(size.width-12f)
-                            val centerX=center.x.coerceIn(bubbleW/2f+6f,size.width-bubbleW/2f-6f)
-                            val below=center.y+fh/2f+labelGapPx+labelHeightPx/2f
-                            val above=center.y-fh/2f-labelGapPx-labelHeightPx/2f
-                            val labelY=listOf(below,above).map { camera.insetCoordinate(it,size.height,labelHeightPx/2f+6f) }
-                            val clearY=labelY.firstOrNull { cy ->
-                                val rect=android.graphics.RectF(centerX-bubbleW/2f,cy-labelHeightPx/2f,
-                                    centerX+bubbleW/2f,cy+labelHeightPx/2f)
-                                occupiedLabelBoxes.none { android.graphics.RectF.intersects(it,rect) }
-                            }
-                            if(clearY!=null || selected || f.id==highlightId) {
-                            val centerY=clearY ?: labelY.first()
-                            val origin=Offset(centerX-bubbleW/2f,centerY-labelHeightPx/2f)
-                            occupiedLabelBoxes.add(android.graphics.RectF(origin.x,origin.y,origin.x+bubbleW,origin.y+labelHeightPx))
-                            drawRoundRect(
-                                Color(0xF20B2332),topLeft=origin,
-                                size=Size(bubbleW,labelHeightPx),cornerRadius=CornerRadius(8f)
-                            )
-                            drawRoundRect(
-                                if(selected)Amber.copy(alpha=.75f) else Mint.copy(alpha=.38f),
-                                topLeft=origin,size=Size(bubbleW,labelHeightPx),
-                                cornerRadius=CornerRadius(8f),style=Stroke(width=1.25f)
-                            )
+                            val count=if(f.id in lit && searching) results.countByPlacement[f.id] ?: 0 else 0
+                            val second=if(count>0) "$count ${if(count==1) "articolo" else "articoli"}" else null
+                            val textW=maxOf(labelPaint.measureText(label),second?.let{labelPaint.measureText(it)*.85f} ?: 0f)
+                            val textH=if(second!=null) labelHeightPx*1.8f else labelHeightPx
+                            // Inside the structure when it is big and square to the screen, else beside it.
+                            val square=((f.rotation+camera.turnDegrees)%90f+90f)%90f<.5f
+                            val inside=ScreenBox((fp.left+fp.right)/2f-textW/2f,(fp.top+fp.bottom)/2f-textH/2f,(fp.left+fp.right)/2f+textW/2f,(fp.top+fp.bottom)/2f+textH/2f)
+                            val others=solid.filter{it.first!=f.id}.map{it.second}+badgeBoxes+labelBoxes
+                            val fitsInside=square && f.kind!="Porta" && fp.right-fp.left>textW+12f && fp.bottom-fp.top>textH+6f &&
+                                others.none{it.intersects(inside)}
+                            val taken=solid.map{it.second}+badgeBoxes+labelBoxes
+                            val spot=if(fitsInside) inside
+                                else MapLabels.place(fp,textW,textH,labelGapPx,taken,size.width,size.height)
+                                    ?: if(important) MapLabels.place(fp,textW,textH,labelGapPx,emptyList(),size.width,size.height) ?: inside else null
+                            if(spot==null) continue
+                            labelBoxes.add(spot)
                             drawIntoCanvas { cv ->
-                                cv.nativeCanvas.drawText(label,centerX,
-                                    centerY-(labelPaint.ascent()+labelPaint.descent())/2f,labelPaint)
-                            }
+                                val x=(spot.left+spot.right)/2f
+                                val firstY=if(second==null) (spot.top+spot.bottom)/2f else spot.top+labelHeightPx/2f
+                                cv.nativeCanvas.drawText(label,x,firstY-(labelPaint.ascent()+labelPaint.descent())/2f,labelPaint)
+                                if(second!=null) {
+                                    val size2=labelPaint.textSize; val color2=labelPaint.color
+                                    labelPaint.textSize=size2*.8f; labelPaint.color=android.graphics.Color.rgb(240,247,255)
+                                    cv.nativeCanvas.drawText(second,x,spot.bottom-labelHeightPx*.4f-(labelPaint.ascent()+labelPaint.descent())/2f,labelPaint)
+                                    labelPaint.textSize=size2; labelPaint.color=color2
+                                }
                             }
                         }
+                    }
+                    // 4.20 "Dov'è": the walk from the entrance to the structure of the article.
+                    walk?.let { route ->
+                        val a=camera.toScreen(PointMetres(route.from.x,route.from.y));val b=camera.toScreen(PointMetres(route.to.x,route.to.y))
+                        val corner=camera.toScreen(route.corner)
+                        val dots=PathEffect.dashPathEffect(floatArrayOf(3f,16f))
+                        drawLine(Amber,Offset(a.x,a.y),Offset(corner.x,corner.y),strokeWidth=5f,cap=StrokeCap.Round,pathEffect=dots)
+                        drawLine(Amber,Offset(corner.x,corner.y),Offset(b.x,b.y),strokeWidth=5f,cap=StrokeCap.Round,pathEffect=dots)
+                        drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
                     }
                     // 4.15: dotted stretch from the last structure visited to the next one.
                     val guideFrom=guide.from;val guideNext=guide.next
@@ -602,48 +745,59 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                         drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
                     }
                     drawIntoCanvas { cv ->
-                        cv.nativeCanvas.drawText(numberM(roomWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
+                        cv.nativeCanvas.drawText(numberM(camera.shownWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
                         cv.nativeCanvas.save()
                         cv.nativeCanvas.rotate(-90f,topLeft.x-15f,topLeft.y+sizeFloor.height/2f)
-                        cv.nativeCanvas.drawText(numberM(roomHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,rulerPaint)
+                        cv.nativeCanvas.drawText(numberM(camera.shownHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,rulerPaint)
                         cv.nativeCanvas.restore()
                     }
                     }
                 }
-                Row(Modifier.align(Alignment.TopStart).padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-                    Surface(shape=RoundedCornerShape(11.dp),color=PanelBg.copy(alpha=.96f),border=BorderStroke(1.dp,Mint.copy(alpha=.23f))) {
-                        Row(Modifier.padding(horizontal=10.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
-                            Icon(Icons.Outlined.Layers,null,modifier=Modifier.size(13.dp),tint=Mint)
-                            Spacer(Modifier.width(6.dp))
-                            Text(if(layer==MapLayer.NORMAL)"PIANTA IN SCALA" else layer.label.uppercase(Locale.ITALY),fontSize=9.sp,color=Mint,fontWeight=FontWeight.Bold,letterSpacing=.8.sp)
-                        }
-                    }
-                    if(colliding.isNotEmpty()) Surface(shape=RoundedCornerShape(11.dp),color=Danger.copy(alpha=.2f)) {
-                        Text("${colliding.size} sovrapposte",Modifier.padding(horizontal=9.dp,vertical=9.dp),fontSize=9.sp,color=Danger)
+                // 4.20: at rest only what is needed: the active layer (with its legend), the articles without a place
+                // and "inquadra tutto". Undo, zoom buttons, overlaps and hints belong to editing.
+                if(layer!=MapLayer.NORMAL && !editing && !dimming) Surface(Modifier.align(Alignment.TopStart).padding(10.dp),shape=RoundedCornerShape(12.dp),
+                    color=PanelBg.copy(alpha=.96f),border=BorderStroke(1.dp,Mint.copy(alpha=.23f))) {
+                    Row(Modifier.padding(start=12.dp,end=2.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(layer.legend+if(layer!=MapLayer.EMPTY) " · rosso = massimo" else "",fontSize=11.sp,color=TextSecondary,modifier=Modifier.widthIn(max=230.dp))
+                        IconButton(onClick={layer=MapLayer.NORMAL}) {Icon(Icons.Outlined.Close,"Torna alla pianta normale",Modifier.size(18.dp))}
                     }
                 }
-                Row(Modifier.align(Alignment.TopEnd).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                if(editing && colliding.isNotEmpty()) Surface(Modifier.align(Alignment.TopStart).padding(12.dp),shape=RoundedCornerShape(11.dp),color=Danger.copy(alpha=.2f)) {
+                    Text("${colliding.size} sovrapposte",Modifier.padding(horizontal=9.dp,vertical=9.dp),fontSize=11.sp,color=Danger)
+                }
+                if(editing) Row(Modifier.align(Alignment.TopEnd).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                     SmallFloatingControl(Icons.Outlined.Undo,"Annulla ${state.mapUndoLabel ?: ""}",enabled=state.mapUndoLabel!=null && !state.busy,onClick=model::undoMap)
                     SmallFloatingControl(Icons.Outlined.Redo,"Ripeti ${state.mapRedoLabel ?: ""}",enabled=state.mapRedoLabel!=null && !state.busy,onClick=model::redoMap)
                 }
-                // 4.19.3: bottom right, above the hint, so they do not cover the middle of the plan.
-                Column(Modifier.align(Alignment.BottomEnd).padding(end=10.dp,bottom=64.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    SmallFloatingControl(Icons.Outlined.Add,"Zoom +",onClick={zoom=(zoom*1.25f).coerceAtMost(4f)})
-                    SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",onClick={zoom=(zoom/1.25f).coerceAtLeast(.7f)})
-                    SmallFloatingControl(Icons.Outlined.CenterFocusStrong,"Inquadra tutto",onClick={zoom=1f;panX=0f;panY=0f})
+                Column(Modifier.align(Alignment.BottomEnd).padding(end=10.dp,bottom=if(editing || state.locationPickItemIds!=null) 56.dp else 12.dp),
+                    verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    if(editing) {
+                        SmallFloatingControl(Icons.Outlined.Add,"Zoom +",onClick={zoom=(zoom*1.25f).coerceAtMost(4f)})
+                        SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",onClick={zoom=(zoom/1.25f).coerceAtLeast(.7f)})
+                    }
+                    Surface(shape=RoundedCornerShape(24.dp),color=PanelBg.copy(alpha=.97f),border=BorderStroke(1.dp,Hairline.copy(alpha=.12f))) {
+                        IconButton(onClick={zoom=1f;panX=0f;panY=0f},modifier=Modifier.size(48.dp)) {Icon(Icons.Outlined.CenterFocusStrong,"Inquadra tutta la pianta")}
+                    }
                 }
-                Surface(Modifier.align(Alignment.BottomStart).padding(10.dp),shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.96f)) {
+                if(!editing && !guiding && found==null && !searching && state.locationPickItemIds==null && unplaced.isNotEmpty())
+                    Surface(onClick={showUnplaced=true},modifier=Modifier.align(Alignment.BottomStart).padding(12.dp).heightIn(min=48.dp),
+                        shape=RoundedCornerShape(24.dp),color=PanelBg.copy(alpha=.97f),border=BorderStroke(1.dp,Amber.copy(alpha=.45f))) {
+                        Row(Modifier.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).background(Amber,RoundedCornerShape(5.dp)))
+                            Spacer(Modifier.width(10.dp))
+                            Text("${unplaced.size} ${if(unplaced.size==1) "articolo senza posto" else "articoli senza posto"}",fontSize=14.sp,fontWeight=FontWeight.Medium)
+                        }
+                    }
+                if(editing || state.locationPickItemIds!=null) Surface(Modifier.align(Alignment.BottomStart).padding(10.dp),shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.96f)) {
                     Text(when{
-                        state.locationPickItemIds!=null -> "Trascina per spostarti, tocca una struttura per sceglierla"
-                        layer!=MapLayer.NORMAL && mode==EditorTool.VIEW -> layer.legend+if(layer!=MapLayer.EMPTY) " · rosso = massimo" else ""
+                        state.locationPickItemIds!=null -> "Trascina per spostarti, tocca una struttura (o leggi la sua etichetta)"
                         mode==EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else if(draftCloses) "Rilascia: la forma si chiude" else "Tocca per continuare · vicino a un angolo la forma si chiude"
-                        mode==EditorTool.FURNITURE -> "Tocca una struttura; trascina solo se sbloccata"
-                        else -> "Tocca una struttura per il contenuto, una parete per misurarla"
-                    },Modifier.padding(horizontal=11.dp,vertical=8.dp),fontSize=10.sp,color=TextSecondary)
+                        else -> "Tocca una struttura o una parete; trascina solo se sbloccata"
+                    },Modifier.padding(horizontal=11.dp,vertical=8.dp).widthIn(max=260.dp),fontSize=11.sp,color=TextSecondary)
                 }
             }
         }
-        if(selectedWall!=null && mode!=EditorTool.WALL) {
+        if(selectedWall!=null && mode==EditorTool.FURNITURE) {
             Surface(Modifier.fillMaxWidth().padding(horizontal=12.dp),shape=RoundedCornerShape(16.dp),color=PanelBg,border=BorderStroke(1.dp,Amber.copy(alpha=.4f))) {
                 Row(Modifier.padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -656,7 +810,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                 }
             }
         }
-        if(!guiding) Row(Modifier.padding(horizontal=14.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
+        if(!guiding && editing) Row(Modifier.padding(horizontal=14.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
             when(mode) {
                 EditorTool.WALL -> {
                     FilterChip(selected=snapGrid,onClick={snapGrid=!snapGrid},label={Text("Griglia 25 cm",fontSize=11.sp)},leadingIcon={Icon(Icons.Outlined.GridOn,null,Modifier.size(15.dp))})
@@ -668,15 +822,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     FilterChip(selected=magnet,onClick={magnet=!magnet},label={Text("Magnete",fontSize=11.sp)})
                     FilterChip(selected=showLabels,onClick={showLabels=!showLabels},label={Text("Nomi",fontSize=11.sp)})
                 }
-                EditorTool.VIEW -> {
-                    MapLayer.entries.forEach { option ->
-                        if(option==MapLayer.NORMAL) FilterChip(selected=layer==option,onClick={layer=option},label={Text(option.label,fontSize=11.sp)})
-                        else FilterChip(selected=layer==option,onClick={layer=option},label={Text(option.label,fontSize=11.sp)},
-                            leadingIcon={Icon(Icons.Outlined.Palette,null,Modifier.size(14.dp))})
-                    }
-                    FilterChip(selected=showGrid,onClick={showGrid=!showGrid},label={Text("Griglia",fontSize=11.sp)})
-                    FilterChip(selected=showLabels,onClick={showLabels=!showLabels},label={Text("Nomi",fontSize=11.sp)})
-                }
+                EditorTool.VIEW -> Unit
             }
             Text("${(zoom*100).toInt()}%",color=Mint,fontSize=11.sp,fontWeight=FontWeight.Bold)
         }
@@ -711,14 +857,12 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     }
                 }
             }
-        }else if(!guiding){   // 4.16: nothing but the plan during a guided picking
-            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).padding(bottom=3.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("${state.placements.count{it.holdsStock}} strutture · ${state.items.count{it.placementId==null}} articoli senza ubicazione",
-                    fontSize=11.sp,color=TextSecondary,modifier=Modifier.weight(1f))
-                OutlinedButton(onClick=onAr,shape=RoundedCornerShape(13.dp)) {
-                    Icon(Icons.Outlined.CameraAlt,null,Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Rilievo AR")
-                }
-            }
+        }else if(!guiding && found!=null){
+            FoundPanel(found,foundPlace,state.placements,
+                onPick={quickPick=found.id},
+                onOpen={openItemId=found.id},
+                onShelf={ foundPlace?.let { model.openShelf(it.id) } },
+                onPlace={model.startLocationPick(listOf(found.id));foundItemId=null})
         }
     }
     if(showDimensions)MapDimensionDialog(warehouse.mapWidth,warehouse.mapHeight,onClose={showDimensions=false}) {w,h->
@@ -734,11 +878,17 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
     wallLengthFor?.let { id -> state.walls.firstOrNull{it.id==id}?.let { wall ->
         WallLengthDialog(wall,onClose={wallLengthFor=null}) { length -> model.setWallLength(wall.id,length);wallLengthFor=null }
     } }
-    pickPositionFor?.let { id -> state.placements.firstOrNull{it.id==id}?.let { p ->
-        PositionDialog(p,"Scegli la posizione",onClose={pickPositionFor=null}) { level,slot ->
-            model.completeLocationPick(p.id,level,slot);pickPositionFor=null
-        }
-    } }
+    quickPick?.let { id ->
+        val item=state.items.firstOrNull{it.id==id}
+        if(item==null) quickPick=null else QuickQuantityDialog(item,false,model,onClose={quickPick=null})
+    }
+    openItemId?.let { id ->
+        val item=state.items.firstOrNull{it.id==id}
+        if(item==null) openItemId=null else ItemDialog(item,state.placements,model,onDismiss={openItemId=null})
+    }
+    if(showUnplaced) UnplacedSheet(unplaced,onDismiss={showUnplaced=false}) { item ->
+        showUnplaced=false;model.startLocationPick(listOf(item.id))
+    }
     qrFor?.let { id -> state.placements.firstOrNull{it.id==id}?.let { p -> PlacementQrDialog(p,state.items,onDismiss={qrFor=null}) } }
     detailsId?.let { id ->
         state.placements.firstOrNull{it.id==id}?.let { f ->
