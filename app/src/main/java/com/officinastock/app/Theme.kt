@@ -33,7 +33,13 @@ val HeroBrush: Brush get() = if (UiPrefs.light)
         background = Ink, onBackground = TextPrimary, surface = PanelBg, onSurface = TextPrimary,
         surfaceVariant = Surface2, onSurfaceVariant = TextSecondary,
         secondaryContainer = Color(0xFFCDEBE2), onSecondaryContainer = TextPrimary,
-        outline = Color(0xFF9FB2B8), error = Danger
+        primaryContainer = Color(0xFFCDEBE2), onPrimaryContainer = TextPrimary,
+        // 4.19.3: dialogs, menus and switches use the surface containers; without them Material shows its grey-purple.
+        surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFF7FAF9), surfaceContainer = Color(0xFFF0F5F4),
+        surfaceContainerHigh = Color(0xFFFFFFFF), surfaceContainerHighest = Color(0xFFE1EAE7),
+        surfaceBright = Color(0xFFFFFFFF), surfaceDim = Color(0xFFDCE5E2),
+        inverseSurface = Color(0xFF17293B), inverseOnSurface = Color(0xFFF0F7FF), inversePrimary = Color(0xFF2DDEB3),
+        outline = Color(0xFF9FB2B8), outlineVariant = Color(0xFFC9D6D3), error = Danger
     ) else darkColorScheme(
         primary = Mint, onPrimary = OnMint, secondary = Sky, onSecondary = Ink,
         background = Ink, onBackground = TextPrimary, surface = PanelBg, onSurface = TextPrimary,
@@ -42,7 +48,12 @@ val HeroBrush: Brush get() = if (UiPrefs.light)
         primaryContainer = Color(0xFF123B34), onPrimaryContainer = TextPrimary,
         secondaryContainer = Color(0xFF1B3341), onSecondaryContainer = TextPrimary,
         tertiary = Amber, onTertiary = Ink, tertiaryContainer = Color(0xFF3A2E17), onTertiaryContainer = TextPrimary,
-        outline = Color(0xFF3B5061), error = Danger
+        // 4.19.3: dialogs (PIN, structure), menus (sort) and switches use the surface containers.
+        surfaceContainerLowest = Color(0xFF07121F), surfaceContainerLow = Color(0xFF0C1926), surfaceContainer = Color(0xFF101E2D),
+        surfaceContainerHigh = Color(0xFF14263A), surfaceContainerHighest = Color(0xFF1E3449),
+        surfaceBright = Color(0xFF243B50), surfaceDim = Color(0xFF07121F),
+        inverseSurface = Color(0xFFE3ECEA), inverseOnSurface = Color(0xFF0C1B27), inversePrimary = Color(0xFF0B8A6D),
+        outline = Color(0xFF3B5061), outlineVariant = Color(0xFF263B4D), error = Danger
     )
     // Glove mode: everything a bit larger, so buttons are easier to hit with gloves or dirty hands.
     val base = LocalDensity.current

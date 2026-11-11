@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.19.3](CHANGELOG_4_19_3.md) | ritocchi dal primo collaudo sul telefono: scanner nuovo, colori dei dialoghi, Squadra senza doppioni, scheda articolo e finestra struttura riordinate. |
 | [4.19.2 / Web 1.1.1](CHANGELOG_4_19_2.md) | correzioni dalla revisione: telefono di solo prelievo, trasferimenti da satellite, etichette dopo la sostituzione del centrale, tutte le sedi sul PC. |
 | [4.19.1](CHANGELOG_4_19_1.md) | solo ordine nel codice: tre file grandi divisi, nessun cambiamento per chi usa l'app. |
 | [4.19.0](CHANGELOG_4_19_0.md) | trasferimento di pezzi tra le sedi dell'azienda; tre livelli di permesso per i satelliti. |

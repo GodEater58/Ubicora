@@ -70,7 +70,9 @@ import java.util.Locale
     Row(verticalAlignment=Alignment.CenterVertically) {
         Text(label,fontSize=12.sp,color=TextSecondary,modifier=Modifier.weight(1f))
         IconButton(onClick={onChange((value-1).coerceIn(range))},enabled=value>range.first) {Icon(Icons.Outlined.Remove,"Diminuisci $label")}
-        Text(if(none&&value==0)"—" else value.toString(),fontWeight=FontWeight.Bold,fontSize=16.sp,modifier=Modifier.widthIn(min=28.dp))
+        // 4.19.3: "Non indicato" instead of a dash, which looked like a broken field.
+        if(none&&value==0) Text("Non indicato",fontSize=12.sp,color=TextSecondary,modifier=Modifier.widthIn(min=28.dp))
+        else Text(value.toString(),fontWeight=FontWeight.Bold,fontSize=16.sp,modifier=Modifier.widthIn(min=28.dp))
         IconButton(onClick={onChange((value+1).coerceIn(range))},enabled=value<range.last) {Icon(Icons.Outlined.Add,"Aumenta $label")}
     }
 }
@@ -178,56 +180,37 @@ import java.util.Locale
     val inside=items.filter{it.placementId==p.id && matches(it)}
         .sortedWith(compareBy({it.shelfLevel ?: 0},{it.shelfSlot ?: 0},{it.name.lowercase(Locale.ITALY)}))
     val free=items.filter{it.placementId==null && matches(it)}
-    AlertDialog(onDismissRequest=onDismiss,title={Text(p.label)},text={
+    // 4.19.3: two tabs. "Contenuto" (what people need while exploring) opens first; size, shelves and deletion are in "Modifica".
+    var editing by remember(p.id){mutableStateOf(false)}
+    AlertDialog(onDismissRequest=onDismiss,title={Text(p.label.ifBlank{p.kind},maxLines=1,overflow=TextOverflow.Ellipsis)},text={
         Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(name,{name=it.take(80)},label={Text("Nome")},singleLine=true,modifier=Modifier.weight(1f))
-                TextButton(onClick={model.renamePlacement(p.id,name)},enabled=name.isNotBlank()&&name.trim()!=p.label){Text("Rinomina")}
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected=!editing,onClick={editing=false},label={Text(if(p.holdsStock)"Contenuto" else "Informazioni")})
+                FilterChip(selected=editing,onClick={editing=true},label={Text("Modifica")},
+                    leadingIcon={Icon(Icons.Outlined.Edit,null,modifier=Modifier.size(16.dp))})
             }
-            Surface(color=Surface2,shape=RoundedCornerShape(12.dp)) {
-                Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Icon(if(p.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,null,tint=if(p.locked)Amber else Mint)
-                    Spacer(Modifier.width(8.dp));Text(if(p.locked)"Posizione bloccata" else "Trascinamento attivo",fontSize=12.sp,modifier=Modifier.weight(1f))
-                    Switch(checked=p.locked,onCheckedChange={model.lockPlacement(p.id,it)})
-                }
-            }
-            Text("INGOMBRO IN PIANTA",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Input(w,{w=it},"Larghezza m",Modifier.weight(1f),number=true)
-                Input(d,{d=it},"Profondità m",Modifier.weight(1f),number=true)
-            }
-            Text("Rotazione ${angle.toInt()}°",fontSize=12.sp,color=TextSecondary)
-            Slider(value=angle,onValueChange={angle=it},valueRange=0f..270f,steps=2)
-            Button(onClick={model.resizePlacement(p.id,wVal!!,dVal!!,angle)},enabled=valid,modifier=Modifier.fillMaxWidth()) {Text("Aggiorna dimensioni e rotazione")}
+            if(!editing) {
             if(!p.holdsStock) {
                 Text("${p.kind}: elemento di riferimento, non contiene articoli.",fontSize=12.sp,color=TextSecondary)
             } else {
-                Text("RIPIANI E POSIZIONI",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
-                Stepper("Ripiani (dal basso)",levels,1..PlacementKinds.MAX_LEVELS){levels=it}
-                Stepper("Posizioni per ripiano",slots,1..PlacementKinds.MAX_SLOTS){slots=it}
-                if(levels!=p.levels||slots!=p.slots) Button(onClick={model.updatePlacementLayout(p.id,levels,slots)},modifier=Modifier.fillMaxWidth()) {
-                    Text("Applica ${levels} × ${slots}")
-                }
-                OutlinedButton(onClick=onQr,modifier=Modifier.fillMaxWidth()) {
-                    Icon(Icons.Outlined.QrCode2,null);Spacer(Modifier.width(8.dp));Text("Etichetta QR della struttura")
-                }
-                Text("ARTICOLI COLLEGATI · ${items.count{it.placementId==p.id}}",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp)
-                Input(articleQuery,{articleQuery=it},"Cerca articolo o codice")
+                Text("ARTICOLI QUI · ${items.count{it.placementId==p.id}}",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp,letterSpacing=1.sp)
+                if(items.count{it.placementId==p.id}>6 || free.size>6) Input(articleQuery,{articleQuery=it},"Cerca articolo o codice")
                 if(inside.size>100 || free.size>100) Text("Mostrati i primi 100 risultati per elenco. Affina la ricerca.",fontSize=12.sp)
-                if(inside.isEmpty())Text("Nessun articolo in questa ubicazione",color=TextSecondary,fontSize=12.sp)
+                if(inside.isEmpty())Text("Nessun articolo in questa struttura",color=TextSecondary,fontSize=12.sp)
                 inside.take(100).forEach{item ->
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                         Column(Modifier.weight(1f)){
-                            Text(item.name,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            Text(item.name,fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                             Text(listOf(item.sku,"${amount(item.quantity)} ${item.unit}",Locations.code(item.shelfLevel,item.shelfSlot))
-                                .filter{it.isNotBlank()}.joinToString(" · "),fontSize=10.sp,color=if(item.lowStock)Amber else TextSecondary)
+                                .filter{it.isNotBlank()}.joinToString(" · "),fontSize=11.sp,color=if(item.lowStock)Amber else TextSecondary)
                         }
                         IconButton(onClick={model.assignItem(item.id,null)}){Icon(Icons.Outlined.RemoveCircleOutline,"Scollega",tint=Amber)}
                     }
                 }
                 if(free.isNotEmpty()){
+                    HorizontalDivider()
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        Text("ASSEGNA ARTICOLI SENZA UBICAZIONE",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp,modifier=Modifier.weight(1f))
+                        Text("METTI QUI GLI ARTICOLI SENZA POSTO",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp,letterSpacing=1.sp,modifier=Modifier.weight(1f))
                         TextButton(onClick={chosen=if(chosen.size==free.take(100).size) emptySet() else free.take(100).map{it.id}.toSet()}) {
                             Text(if(chosen.isNotEmpty()&&chosen.size==free.take(100).size)"Nessuno" else "Tutti",fontSize=11.sp)
                         }
@@ -238,16 +221,59 @@ import java.util.Locale
                             Text("${item.name} · ${item.sku}",fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                         }
                     }
-                    if(p.levels>1) Stepper("Ripiano",assignLevel,0..p.levels,none=true){assignLevel=it}
-                    if(p.slots>1) Stepper("Posizione",assignSlot,0..p.slots,none=true){assignSlot=it}
+                    if(chosen.isNotEmpty()) {
+                        if(p.levels>1) Stepper("Ripiano",assignLevel,0..p.levels,none=true){assignLevel=it}
+                        if(p.slots>1) Stepper("Posizione",assignSlot,0..p.slots,none=true){assignSlot=it}
+                    }
                     Button(onClick={
                         model.assignItems(chosen.toList(),p.id,assignLevel.takeIf{it>0},assignSlot.takeIf{it>0});chosen=emptySet()
                     },enabled=chosen.isNotEmpty(),modifier=Modifier.fillMaxWidth()) {
-                        Text(if(chosen.size<=1)"Assegna articolo" else "Assegna ${chosen.size} articoli")
+                        Text(when{chosen.isEmpty()->"Scegli gli articoli da mettere qui";chosen.size==1->"Metti qui 1 articolo";else->"Metti qui ${chosen.size} articoli"})
                     }
                 }
+                OutlinedButton(onClick=onQr,modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.QrCode2,null);Spacer(Modifier.width(8.dp));Text("Etichetta QR della struttura")
+                }
             }
+            } else {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(name,{name=it.take(80)},label={Text("Nome")},singleLine=true,modifier=Modifier.weight(1f))
+                TextButton(onClick={model.renamePlacement(p.id,name)},enabled=name.isNotBlank()&&name.trim()!=p.label){Text("Rinomina")}
+            }
+            Surface(color=Surface2,shape=RoundedCornerShape(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Icon(if(p.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,null,tint=if(p.locked)Amber else Mint)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Blocca la posizione",fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                        Text(if(p.locked)"Bloccata: non si sposta trascinandola" else "Sbloccata: si può trascinare sulla pianta",fontSize=11.sp,color=TextSecondary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Switch(checked=p.locked,onCheckedChange={model.lockPlacement(p.id,it)})
+                }
+            }
+            Text("INGOMBRO IN PIANTA",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Input(w,{w=it},"Larghezza m",Modifier.weight(1f),number=true)
+                Input(d,{d=it},"Profondità m",Modifier.weight(1f),number=true)
+            }
+            Text("Rotazione ${angle.toInt()}°",fontSize=12.sp,color=TextSecondary)
+            Slider(value=angle,onValueChange={angle=it},valueRange=0f..270f,steps=2)
+            val changed=wVal!=p.width||dVal!=p.depth||angle!=p.rotation
+            if(changed) Button(onClick={model.resizePlacement(p.id,wVal!!,dVal!!,angle)},enabled=valid,modifier=Modifier.fillMaxWidth()) {Text("Aggiorna dimensioni e rotazione")}
+            if(p.holdsStock) {
+                Text("RIPIANI E POSIZIONI",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
+                Stepper("Ripiani (dal basso)",levels,1..PlacementKinds.MAX_LEVELS){levels=it}
+                Stepper("Posizioni per ripiano",slots,1..PlacementKinds.MAX_SLOTS){slots=it}
+                if(levels!=p.levels||slots!=p.slots) Button(onClick={model.updatePlacementLayout(p.id,levels,slots)},modifier=Modifier.fillMaxWidth()) {
+                    Text("Applica ${levels} × ${slots}")
+                }
+            }
+            // 4.19.3: deletion well apart from the other buttons.
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
             TextButton(onClick={askDelete=true}) {Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(5.dp));Text("Elimina struttura",color=Danger)}
+            }
         }
     },confirmButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
     if(askDelete)AlertDialog(onDismissRequest={askDelete=false},title={Text("Eliminare ${p.label}?")},text={Text("Gli articoli rimangono nell'inventario senza ubicazione. Puoi annullare con il pulsante ↶ sulla mappa.")},confirmButton={TextButton(onClick={model.deletePlacement(p.id);askDelete=false;onDismiss()}){Text("Elimina",color=Danger)}},dismissButton={TextButton(onClick={askDelete=false}){Text("Annulla")}})

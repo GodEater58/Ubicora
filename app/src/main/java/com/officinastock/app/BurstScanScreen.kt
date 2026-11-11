@@ -279,7 +279,7 @@ import kotlinx.coroutines.delay
 }
 
 /** Camera preview that keeps reading QR codes; it follows the activity so the camera is released in the background. */
-@Composable private fun BurstCamera(torch: Boolean, multi: Boolean = false, onCode: (String) -> Unit) {
+@Composable internal fun BurstCamera(torch: Boolean, multi: Boolean = false, onCode: (String) -> Unit) {
     val context = LocalContext.current
     val current by rememberUpdatedState(onCode)
     val view = remember {

@@ -22,8 +22,6 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.SyncAlt
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -106,9 +104,6 @@ class MainActivity: ComponentActivity() {
                         result.data?.getStringExtra("map_json")?.let{model.importAr(it)}
                     }
                 }
-                val qrLauncher=rememberLauncherForActivityResult(ScanContract()) { result ->
-                    result.contents?.let { model.handleScannedCode(it) } ?: model.scanCancelled()
-                }
                 val csvLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
                     if(uri!=null) lifecycleScope.launch {
                         val failure=withContext(Dispatchers.IO) {runCatching {
@@ -175,14 +170,6 @@ class MainActivity: ComponentActivity() {
                 },onRestore={password ->
                     model.pendingRestorePassword=password
                     restoreLauncher.launch(arrayOf("*/*"))
-                },onScan = {
-                    qrLauncher.launch(ScanOptions()
-                        .setCaptureActivity(StockQrCaptureActivity::class.java)
-                        .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                        .setPrompt(if(model.ui.burstMode) "Prelievo a raffica: inquadra il prossimo articolo · Indietro per finire"
-                            else "Inquadra il QR di un articolo, di una struttura o del telefono centrale")
-                        .setBeepEnabled(false)
-                        .setOrientationLocked(false))
                 })
                 if(showArDisclosure) ArPrivacyNoticeDialog(
                     onProceed={
@@ -197,8 +184,12 @@ class MainActivity: ComponentActivity() {
     }
 }
 
-@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,onScan:()->Unit) {
+@Composable fun StockApp(model:StockViewModel,onAr:()->Unit,onCsv:()->Unit,onCsvImport:()->Unit,onManagerCsv:()->Unit,onManagerPdf:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
     val data=model.ui
+    // 4.19.3: the scanner is a screen of the app (QuickScanScreen), not a separate activity.
+    var scanning by remember { mutableStateOf(false) }
+    LaunchedEffect(data.sessionLocked) { if(data.sessionLocked) scanning=false }
+    val onScan:()->Unit = { scanning=true }
     Surface(color=Ink,modifier=Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
       Box(Modifier.fillMaxSize()) {
         when {
@@ -214,6 +205,7 @@ class MainActivity: ComponentActivity() {
         if(data.profile!=null && !data.sessionLocked) TeamLinkBanner(model,Modifier.align(Alignment.TopCenter))
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfCheck!=null) ShelfCheckScreen(model)
+        if(scanning && data.profile!=null && !data.sessionLocked && !data.burstMode) QuickScanScreen(model) { scanning=false }
       }
     }
     // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
@@ -327,7 +319,7 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         StockSections(movements=true,onSelect={ if(!it) go(Tab.STOCK) },goSettings={go(Tab.SETTINGS)})
                         MovementsScreen(model,activityFocus,activityDays)
                     }
-                    Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore)
+                    Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore,goTeam={go(Tab.TEAM)})
                     Tab.TEAM -> TeamScreen(model,goSettings={go(Tab.SETTINGS)})
                     Tab.MANAGER -> OperationsScreen(model,onBack={go(Tab.HOME)},onCsvExport=onManagerCsv,onPdfExport=onManagerPdf)
                 }

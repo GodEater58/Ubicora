@@ -221,17 +221,30 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                 Surface(shape=RoundedCornerShape(12.dp),color=Mint.copy(alpha=.11f)) {
                     Icon(Icons.Outlined.Architecture,"Progettazione",tint=Mint,modifier=Modifier.padding(10.dp).size(23.dp))
                 }
+                // 4.19.3: short label and the site name alone, so the title fits; PDF, labels and sizes go in one menu.
                 Column(Modifier.weight(1f)) {
-                    Text("STUDIO PLANIMETRICO",fontSize=9.sp,letterSpacing=1.7.sp,fontWeight=FontWeight.Bold,color=Mint)
-                    Text("${warehouse.name} · Piano 2D",fontSize=20.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text("MAPPA",fontSize=9.sp,letterSpacing=1.7.sp,fontWeight=FontWeight.Bold,color=Mint,maxLines=1)
+                    Text(warehouse.name,fontSize=20.sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
-                IconButton(onClick={pdfLauncher.launch("Ubicora_pianta_${warehouse.id}.pdf")}) {Icon(Icons.Outlined.PictureAsPdf,"Esporta pianta in PDF",tint=Sky)}
-                IconButton(onClick={
-                    val labels=state.placements.filter{it.holdsStock}.map{LabelSpec.placement(it)}
-                    try { QrLabels.printSheet(context,"Ubicazioni ${warehouse.name}",labels) }
-                    catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
-                },enabled=state.placements.any{it.holdsStock}) {Icon(Icons.Outlined.QrCode2,"Etichette QR di tutte le strutture",tint=Sky)}
-                FilledTonalIconButton(onClick={showDimensions=true}) {Icon(Icons.Outlined.Straighten,"Dimensioni ambiente")}
+                var mapMenu by remember { mutableStateOf(false) }
+                Box {
+                    FilledTonalIconButton(onClick={mapMenu=true}) {Icon(Icons.Outlined.MoreVert,"Altre azioni della mappa")}
+                    DropdownMenu(expanded=mapMenu,onDismissRequest={mapMenu=false}) {
+                        DropdownMenuItem(text={Text("Esporta pianta in PDF")},leadingIcon={Icon(Icons.Outlined.PictureAsPdf,null)},onClick={
+                            mapMenu=false;pdfLauncher.launch("Ubicora_pianta_${warehouse.id}.pdf")
+                        })
+                        DropdownMenuItem(text={Text("Etichette QR di tutte le strutture")},leadingIcon={Icon(Icons.Outlined.QrCode2,null)},
+                            enabled=state.placements.any{it.holdsStock},onClick={
+                            mapMenu=false
+                            val labels=state.placements.filter{it.holdsStock}.map{LabelSpec.placement(it)}
+                            try { QrLabels.printSheet(context,"Ubicazioni ${warehouse.name}",labels) }
+                            catch(e:Exception) { Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",Toast.LENGTH_LONG).show() }
+                        })
+                        DropdownMenuItem(text={Text("Dimensioni dell'ambiente")},leadingIcon={Icon(Icons.Outlined.Straighten,null)},onClick={
+                            mapMenu=false;showDimensions=true
+                        })
+                    }
+                }
                 FilledTonalIconButton(onClick=onSettings) {Icon(Icons.Outlined.Settings,"Impostazioni")}
             }
             Row(horizontalArrangement=Arrangement.spacedBy(5.dp),modifier=Modifier.fillMaxWidth()) {
@@ -613,7 +626,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     SmallFloatingControl(Icons.Outlined.Undo,"Annulla ${state.mapUndoLabel ?: ""}",enabled=state.mapUndoLabel!=null && !state.busy,onClick=model::undoMap)
                     SmallFloatingControl(Icons.Outlined.Redo,"Ripeti ${state.mapRedoLabel ?: ""}",enabled=state.mapRedoLabel!=null && !state.busy,onClick=model::redoMap)
                 }
-                Column(Modifier.align(Alignment.CenterEnd).padding(end=10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                // 4.19.3: bottom right, above the hint, so they do not cover the middle of the plan.
+                Column(Modifier.align(Alignment.BottomEnd).padding(end=10.dp,bottom=64.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                     SmallFloatingControl(Icons.Outlined.Add,"Zoom +",onClick={zoom=(zoom*1.25f).coerceAtMost(4f)})
                     SmallFloatingControl(Icons.Outlined.Remove,"Zoom -",onClick={zoom=(zoom/1.25f).coerceAtLeast(.7f)})
                     SmallFloatingControl(Icons.Outlined.CenterFocusStrong,"Inquadra tutto",onClick={zoom=1f;panX=0f;panY=0f})

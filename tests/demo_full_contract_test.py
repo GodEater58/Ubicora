@@ -25,9 +25,5 @@ for token in ['IMMAGINE DEMO · NON REALE','item_${UUID.randomUUID()}.jpg']:
 for token in ['"Rigenera demo completa (4.1.3)"', '"Carica dati dimostrativi"', '"Rimuovi soltanto la demo"']:
  assert token in ui,token
 assert 'fun refreshDemo()' in model
-assert 'android:name=".StockQrCaptureActivity"' in manifest
-assert 'android:screenOrientation="user"' in manifest
-assert '.setCaptureActivity(StockQrCaptureActivity::class.java)' in main
-assert '.setOrientationLocked(false)' in main
-assert 'CaptureActivity' in (base/'StockQrCaptureActivity.kt').read_text(encoding='utf-8')
+assert 'QuickScanScreen(model)' in main
 print('PASS: 42 demo items, 9 categories, 90-day flows, loans, costs, photos, QR rotation and safe demo refresh')

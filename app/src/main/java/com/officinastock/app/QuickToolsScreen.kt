@@ -130,6 +130,7 @@ import androidx.compose.ui.unit.sp
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Text(detail, fontSize = 11.sp, color = TextSecondary)
         }
+        Spacer(Modifier.width(12.dp))
         Switch(checked = value, onCheckedChange = onChange)
     }
 }

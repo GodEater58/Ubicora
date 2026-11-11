@@ -87,6 +87,11 @@ import kotlinx.coroutines.launch
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
             // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
             // 4.19.2: a pick-only phone cannot create articles: no form that would be refused at the end.
+            // 4.19.3: the compact view is a button always in sight, not a chip at the end of the row.
+            IconButton(onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)}) {
+                Icon(if(UiPrefs.compactList) Icons.Outlined.ViewAgenda else Icons.Outlined.ViewHeadline,
+                    if(UiPrefs.compactList) "Vista con foto" else "Vista compatta",tint=TextSecondary)
+            }
             if(!model.pickOnly) FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -109,7 +114,6 @@ import kotlinx.coroutines.launch
                         }
                     }
                 }
-                FilterChip(selected=UiPrefs.compactList,onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)},label={Text("Vista compatta")})
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Critici",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
@@ -121,7 +125,13 @@ import kotlinx.coroutines.launch
             }
         }
         LazyColumn(contentPadding=PaddingValues(start=18.dp,top=12.dp,end=18.dp,bottom=18.dp),verticalArrangement=Arrangement.spacedBy(if(UiPrefs.compactList) 6.dp else 10.dp)) {
-            item { Text("Scorri a destra per prelevare, a sinistra per caricare. Tieni premuto per le altre azioni.",color=TextSecondary,fontSize=11.sp) }
+            // 4.19.3: the hint stays until it is closed once.
+            if(!UiPrefs.swipeHintSeen) item {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("Scorri a destra per prelevare, a sinistra per caricare. Tieni premuto per le altre azioni.",color=TextSecondary,fontSize=11.sp,modifier=Modifier.weight(1f))
+                    TextButton(onClick=UiPrefs::hideSwipeHint){Text("Ho capito")}
+                }
+            }
             items(filtered,key={it.id}) { entry ->
                 // 4.15: swipe, long press and compact rows live in ArticleRow.
                 ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,

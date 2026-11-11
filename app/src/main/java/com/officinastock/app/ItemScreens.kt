@@ -158,7 +158,8 @@ private fun EditItemDetailsDialog(
 }
 
 @Composable fun ItemDialog(item:StockItem,placements:List<Placement>,model:StockViewModel,onDismiss:()->Unit) {
-    var action by remember(item.id) {mutableStateOf("carico")}
+    // 4.19.3: picking is what people do most, so it is the default.
+    var action by remember(item.id) {mutableStateOf("prelievo")}
     var quantity by remember(item.id){mutableStateOf("1")}
     var note by remember(item.id){mutableStateOf("")}
     var borrower by remember(item.id){mutableStateOf("")}
@@ -177,6 +178,26 @@ private fun EditItemDetailsDialog(
             onDismiss()
         },enabled=canConfirm,modifier=Modifier.fillMaxWidth()){Text("Conferma ${action}")}
     }) {
+            // 4.19.3: quantity, place and the movement first; photo and the card details below.
+            Text("Disponibili: ${amount(item.quantity)} ${item.unit}",fontWeight=FontWeight.Bold,fontSize=21.sp,color=Mint)
+            val location=placements.firstOrNull{it.id==item.placementId}
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+                OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.weight(1f)) {
+                    Text("Ubicazione: ${Locations.describe(location,item)}",maxLines=2,overflow=TextOverflow.Ellipsis)
+                }
+                if(location!=null) FilledTonalIconButton(onClick={model.showOnMap(location.id);onDismiss()}) {
+                    Icon(Icons.Outlined.Map,contentDescription="Mostra in pianta")
+                }
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                listOf("prelievo","carico","prestito","rettifica").forEach {
+                    FilterChip(selected=action==it,onClick={action=it},label={Text(it.replaceFirstChar(Char::uppercase),fontSize=12.sp)})
+                }
+            }
+            Input(quantity,{quantity=it},if(action=="rettifica")"Quantità contata" else "Quantità",number=true)
+            if(action=="prestito") Input(borrower,{borrower=it},"Assegnato a")
+            else Input(note,{note=it},"Motivo / riferimento")
+            HorizontalDivider(Modifier.padding(vertical=6.dp))
             ArticlePhotoField(savedPhoto=item.photoFile,selectedUri=null,
                 onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},
                 onRemoveSaved={model.removeItemPhoto(item.id)},busy=model.ui.busy)
@@ -190,28 +211,10 @@ private fun EditItemDetailsDialog(
                 Spacer(Modifier.width(8.dp))
                 Text("Etichetta QR · Visualizza / Stampa")
             }
-            Text("Disponibili: ${amount(item.quantity)} ${item.unit}",fontWeight=FontWeight.Bold,fontSize=21.sp,color=Mint)
             OutlinedButton(onClick={editPurchase=true},modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.Analytics,null,modifier=Modifier.size(17.dp))
                 Spacer(Modifier.width(7.dp))
                 Text("Costo, fornitore e tempi di riordino")
-            }
-            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("carico","prelievo","prestito","rettifica").forEach {
-                    FilterChip(selected=action==it,onClick={action=it},label={Text(it.replaceFirstChar(Char::uppercase),fontSize=12.sp)})
-                }
-            }
-            Input(quantity,{quantity=it},if(action=="rettifica")"Quantità contata" else "Quantità",number=true)
-            if(action=="prestito") Input(borrower,{borrower=it},"Assegnato a")
-            else Input(note,{note=it},"Motivo / riferimento")
-            val location=placements.firstOrNull{it.id==item.placementId}
-            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
-                OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.weight(1f)) {
-                    Text("Ubicazione: ${Locations.describe(location,item)}",maxLines=2,overflow=TextOverflow.Ellipsis)
-                }
-                if(location!=null) FilledTonalIconButton(onClick={model.showOnMap(location.id);onDismiss()}) {
-                    Icon(Icons.Outlined.Map,contentDescription="Mostra in pianta")
-                }
             }
             if(item.note.isNotBlank()) Text(item.note,color=TextSecondary,fontSize=12.sp)
             if(model.canDeleteItems) TextButton(onClick={askDeleteItem=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {

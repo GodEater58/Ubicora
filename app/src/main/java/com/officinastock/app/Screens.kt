@@ -92,7 +92,9 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(move.itemName,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
-                Text("${move.sku} · ${move.note} · ${TodayTasks.who(move.actor,date(move.createdAt))}",fontSize=11.sp,color=TextSecondary,maxLines=2)
+                // 4.19.3: reason on one line, code and time on the other, so the time never wraps alone.
+                if(move.note.isNotBlank()) Text(move.note,fontSize=12.sp,color=TextSecondary,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text("${move.sku} · ${TodayTasks.who(move.actor,date(move.createdAt))}",fontSize=11.sp,color=TextSecondary,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
             Text("${if(move.delta>0)"+" else ""}${amount(move.delta)}",color=if(move.delta>=0)Mint else Amber,fontWeight=FontWeight.Bold)
             if(onClick!=null) {

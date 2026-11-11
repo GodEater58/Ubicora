@@ -23,7 +23,8 @@ import java.util.Date
 import java.util.Locale
 
 /** 4.8 Settings panel: central phone and satellites exchanging encrypted files, no server. */
-@Composable fun TeamSyncPanel(model: StockViewModel) {
+/** [inTeamScreen]: the Squadra tab already shows the role and the main button in its card above, so they are not repeated. */
+@Composable fun TeamSyncPanel(model: StockViewModel, inTeamScreen: Boolean = false) {
     val u = model.ui
     val t = u.team
     val scope = rememberCoroutineScope()
@@ -64,9 +65,12 @@ import java.util.Locale
     val nearby = rememberNearbyAccess { result = it }
     val day = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ITALY).format(Date())
     val synced = !t.covers(null) && t.covers(u.warehouse?.id)
+    // 4.19.3: the team works on all the shared sites, not on one warehouse.
+    val sharedSites = u.warehouses.filter { t.covers(it.id) }.joinToString(", ") { it.name }.ifBlank { u.warehouse?.name.orEmpty() }
+    val compact = inTeamScreen && t.role != TeamRole.NONE && synced
 
     Panel(Modifier.fillMaxWidth()) {
-        Text("SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+        Text(if (compact) "ALTRI MODI DI SCAMBIO" else "SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
         if (t.role != TeamRole.NONE && t.needsPassword) {
             // 4.11: the password is sealed by this phone's keystore; after a restore on another phone it is typed again.
             Surface(color = Amber.copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
@@ -93,11 +97,13 @@ import java.util.Locale
                 }
             }
             TeamRole.CENTRAL -> {
-                Text("Telefono centrale", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name}" else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
-                    fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
+                if (!compact) {
+                    Text("Telefono centrale", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(if (synced) "Sedi della squadra: $sharedSites" else "Questa sede non è condivisa con la squadra: aprine una condivisa per gestire gli scambi.",
+                        fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
+                }
                 if (synced) {
-                    PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
+                    if (!compact) PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
                         enabled = !u.busy, modifier = Modifier.fillMaxWidth())
                     OutlinedButton(onClick = { showInvite = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.QrCode2, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("QR per collegare un nuovo telefono")
@@ -112,10 +118,13 @@ import java.util.Locale
                 }
                 if (synced) {
                     HorizontalDivider()
-                    Text("REPARTI DEGLI OPERATORI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Text("Fuori dal suo reparto un operatore vede gli articoli e può solo prelevare: non crea, non carica, non sposta.",
+                    Text("PERMESSI DEI MANUTENTORI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+                    Text("Fuori dalle sue categorie un manutentore vede gli articoli e può solo prelevare.",
                         fontSize = 11.sp, color = TextSecondary)
-                    listOf("B", "C", "D", "E", "F").forEach { l ->
+                    // 4.19.3: only the satellites that are really linked, not a fixed list of letters.
+                    val linked = (t.peers.map { it.letter } + t.scopes.keys).filter { it.isNotBlank() }.distinct().sorted()
+                    if (linked.isEmpty()) Text("Compaiono qui quando un satellite si collega.", fontSize = 12.sp, color = TextSecondary)
+                    linked.forEach { l ->
                         val cats = t.scopes[l].orEmpty()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
@@ -133,9 +142,9 @@ import java.util.Locale
                 }
             }
             TeamRole.SATELLITE -> {
-                Text("Satellite ${t.letter}", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name} · la mappa la modifica solo il centrale"
-                    else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
+                if (!compact) Text("Satellite ${t.letter}", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(if (synced) "Sedi della squadra: $sharedSites · la mappa la modifica solo il centrale"
+                    else "Questa sede non è condivisa con la squadra: aprine una condivisa per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
                 Text(when { t.scope.isEmpty() -> "Permessi: manutentore, tutte le categorie"; t.scope == listOf(TeamSync.PICK_ONLY) -> "Permessi: solo prelievo e prestito"
                     else -> "Reparto: " + t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare" },
@@ -145,7 +154,7 @@ import java.util.Locale
                         Modifier.padding(10.dp).fillMaxWidth(), color = if (t.pending > 0) Amber else Mint, fontWeight = FontWeight.SemiBold)
                 }
                 if (synced) {
-                    PrimaryAction("Sincronizza con il centrale vicino", onClick = { nearby { model.startSatelliteLink() } },
+                    if (!compact) PrimaryAction("Sincronizza con il centrale vicino", onClick = { nearby { model.startSatelliteLink() } },
                         enabled = !u.busy, modifier = Modifier.fillMaxWidth())
                     Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
                     OutlinedButton(onClick = { exporter.launch("Ubicora_${t.letter}_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
@@ -170,6 +179,7 @@ import java.util.Locale
                         else "Con Ubicora aperta cerca il centrale all'avvio e ogni 10 minuti, senza bloccare lo schermo",
                         fontSize = 11.sp, color = TextSecondary)
                 }
+                Spacer(Modifier.width(12.dp))
                 Switch(checked = UiPrefs.autoSync && permitted, enabled = !u.busy,
                     onCheckedChange = { on -> if (on) nearby { model.setAutoSync(true) } else model.setAutoSync(false) })
             }
