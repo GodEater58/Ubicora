@@ -3,6 +3,7 @@ package com.officinastock.app
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -62,7 +63,7 @@ import java.util.Locale
     }
     val nearby = rememberNearbyAccess { result = it }
     val day = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ITALY).format(Date())
-    val synced = t.warehouseId != null && t.warehouseId == u.warehouse?.id
+    val synced = !t.covers(null) && t.covers(u.warehouse?.id)
 
     Panel(Modifier.fillMaxWidth()) {
         Text("SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
@@ -118,7 +119,7 @@ import java.util.Locale
                         val cats = t.scopes[l].orEmpty()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
-                            Text(if (cats.isEmpty()) "Tutti i reparti" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(if (cats.isEmpty()) "Manutentore · tutte le categorie" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
                             TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy) { Text("Modifica") }
                         }
                     }
@@ -136,7 +137,8 @@ import java.util.Locale
                 Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name} · la mappa la modifica solo il centrale"
                     else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
-                Text("Reparto: " + (if (t.scope.isEmpty()) "tutti" else t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare"),
+                Text(when { t.scope.isEmpty() -> "Permessi: manutentore, tutte le categorie"; t.scope == listOf(TeamSync.PICK_ONLY) -> "Permessi: solo prelievo e prestito"
+                    else -> "Reparto: " + t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare" },
                     fontSize = 12.sp, color = if (t.scope.isEmpty()) TextSecondary else Mint)
                 Surface(color = (if (t.pending > 0) Amber else Mint).copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
                     Text(if (t.pending > 0) "${t.pending} modifiche da inviare al centrale" else "Tutto inviato al centrale",
@@ -268,18 +270,31 @@ import java.util.Locale
         }, confirmButton = { TextButton(onClick = { showInvite = false }) { Text("Chiudi") } })
     }
 
-    editScope?.let { l -> AlertDialog(onDismissRequest = { editScope = null }, title = { Text("Reparto dell'operatore $l") }, text = {
+    editScope?.let { l -> AlertDialog(onDismissRequest = { editScope = null }, title = { Text("Permessi del telefono $l") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("Categorie in cui può creare, caricare e spostare articoli. Nessuna spuntata = tutte. " +
-                "Arriva al telefono $l al prossimo scambio.", fontSize = 12.sp, color = TextSecondary)
-            ArticleCodes.categoryPrefixes.keys.forEach { c ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 4.19: three levels, from the most limited to the freest.
+            val pickOnly = TeamSync.PICK_ONLY in scopeChoice
+            Text("Cosa può fare il telefono $l. Arriva al prossimo scambio.", fontSize = 12.sp, color = TextSecondary)
+            listOf(Triple("Solo prelievo", "Preleva e presta. Non crea, non carica, non sposta.", 0),
+                Triple("Operatore di reparto", "Tutto nelle categorie spuntate; fuori solo prelievo.", 1),
+                Triple("Manutentore", "Crea, carica e sposta in tutte le categorie.", 2)).forEach { (title, hint, level) ->
+                val selected = when (level) { 0 -> pickOnly; 1 -> !pickOnly && scopeChoice.isNotEmpty(); else -> scopeChoice.isEmpty() }
+                Row(Modifier.fillMaxWidth().clickable {
+                    scopeChoice = when (level) { 0 -> setOf(TeamSync.PICK_ONLY); 1 -> (scopeChoice - TeamSync.PICK_ONLY).ifEmpty { setOf(ArticleCodes.categoryPrefixes.keys.first()) }; else -> emptySet() }
+                }.heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = selected, onClick = null)
+                    Spacer(Modifier.width(10.dp))
+                    Column { Text(title, fontWeight = FontWeight.SemiBold); Text(hint, fontSize = 12.sp, color = TextSecondary) }
+                }
+            }
+            if (!pickOnly && scopeChoice.isNotEmpty()) ArticleCodes.categoryPrefixes.keys.forEach { c ->
+                Row(Modifier.fillMaxWidth().padding(start = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = c in scopeChoice, onCheckedChange = { on -> scopeChoice = if (on) scopeChoice + c else scopeChoice - c })
                     Text(c)
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { model.setTeamScope(l, scopeChoice.toList()); editScope = null }) { Text("Salva") } },
+    }, confirmButton = { TextButton(onClick = { if (TeamSync.PICK_ONLY in scopeChoice) model.setTeamPickOnly(l) else model.setTeamScope(l, scopeChoice.toList()); editScope = null }) { Text("Salva") } },
         dismissButton = { TextButton(onClick = { editScope = null }) { Text("Annulla") } }) }
 
     result?.let { text -> AlertDialog(onDismissRequest = { result = null }, title = { Text("Sincronizzazione") }, text = { Text(text) },

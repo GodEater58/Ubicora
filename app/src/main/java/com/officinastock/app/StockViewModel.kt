@@ -15,80 +15,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
 /** Dati persistiti in SQLite, stato effimero in Compose, operazioni fuori dal thread grafico. */
-data class StockUiState(
-    val profiles: List<Profile> = emptyList(),
-    val profile: Profile? = null,
-    val warehouses: List<Warehouse> = emptyList(),
-    val warehouse: Warehouse? = null,
-    val items: List<StockItem> = emptyList(),
-    val placements: List<Placement> = emptyList(),
-    val walls: List<Wall> = emptyList(),
-    val movements: List<Movement> = emptyList(),
-    val loans: List<Loan> = emptyList(),
-    val manager: ManagerSnapshot = ManagerSnapshot(),
-    val demoCount: Int = 0,
-    val createdItemId: Long? = null,
-    val scannedItemId: Long? = null,
-    val busy: Boolean = false,
-    val message: String? = null,
-    val initialized: Boolean = false,
-    val sessionLocked: Boolean = false,
-    val csvPreviewCount: Int? = null,
-    /** 4.7.2: last carico/prelievo, offered for a few seconds as "Annulla". */
-    val movementUndo: MovementUndo? = null,
-    /** 4.8: role of this phone in the phone-to-phone sync. */
-    val team: TeamSyncStatus = TeamSyncStatus(),
-    val orders: List<PurchaseRequest> = emptyList(),
-    val stockCounts: List<StockCount> = emptyList(),
-    val stockTransfers: List<StockTransfer> = emptyList(),
-    val maintenanceWork: List<MaintenanceWork> = emptyList(),
-    val operationsEvents: List<OperationsEvent> = emptyList(),
-    val businessMode: Boolean = false,
-    val monthlyBudget: Double? = null,
-    val costCenters: List<CostCenter> = emptyList(),
-    val businessSuppliers: List<BusinessSupplier> = emptyList(),
-    val businessAssets: List<BusinessAsset> = emptyList(),
-    val staffDirectory: List<StaffDirectoryEntry> = emptyList(),
-    val unsentCatalogEvents: Int = 0,
-    val reservations: List<StockReservation> = emptyList(),
-    val stockLots: List<StockLot> = emptyList(),
-    val stockSerials: List<StockSerial> = emptyList(),
-    val operationalReports: Map<Int,OperationalReport> = emptyMap(),
-    val reservedByItem: Map<Long,Double> = emptyMap(),
-    val operationsLimit:Int=250,
-    /** Structure to center and highlight when the map opens ("Mostra in pianta", shelf QR). */
-    val mapFocusPlacementId: Long? = null,
-    /** Movements per structure in the last 30 days, for the "most used" map view. */
-    val placementActivity: Map<Long,Int> = emptyMap(),
-    /** Items waiting for the user to tap a structure on the map ("Scegli sulla mappa"). */
-    val locationPickItemIds: List<Long>? = null,
-    val mapUndoLabel: String? = null,
-    val mapRedoLabel: String? = null,
-    /** 4.10 burst picking: scanner reopens after every withdrawal until the user stops. */
-    val burstMode: Boolean = false,
-    val burstItemId: Long? = null,
-    val burstCount: Int = 0,
-    /** 4.15: quantity waiting for confirmation; scanning the same label again adds one. */
-    val burstQty: Double = 1.0,
-    /** 4.15 guided picking: what to take, walked in the order of the plan. */
-    val pickList: List<PickLine> = emptyList(),
-    /** 4.15: article whose label the scanner must read to confirm the guided withdrawal. */
-    val pickScanItemId: Long? = null,
-    /** 4.15: article whose label could not be read: the panel then offers the confirmation by hand. */
-    val pickScanMissedId: Long? = null,
-    /** 4.15: name of the article whose label is waiting to be written on an NFC tag (null = not writing). */
-    val nfcWrite: String? = null,
-    /** 4.15 shelf check: the camera sweeps a structure and ticks what it finds (nothing is moved or counted). */
-    val shelfCheck: ShelfCheck? = null,
-    /** 4.15: the guided bar asks to open the map (token, 0 = none). */
-    val guidedMapRequest: Long = 0,
-    /** 4.15: outcome of the last reading, for the sound and the vibration of the scanner screen. */
-    val scanSignal: ScanSignal? = null,
-    /** 4.10: a screen asks MainActivity to open the scanner (token, 0 = none). */
-    val scanRequest: Long = 0,
-    /** 4.10: team invite read from the central's QR, waiting for the join dialog. */
-    val teamQr: TeamQr.Invite? = null
-)
 class StockViewModel(app: Application): AndroidViewModel(app) {
     private val db = StockDb(app.applicationContext)
     private val operations = OperationsDb(db)
@@ -126,7 +52,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui.pickScanItemId?.let { expected ->
             // 4.15 guided picking: only the label of the expected article confirms the withdrawal.
             ui=ui.copy(pickScanItemId=null,pickScanMissedId=expected)
-            val read=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+            val read=readArticleLabel(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
                 ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
             if(read?.id==expected) confirmPick(expected)
             else ui=ui.copy(message="Etichetta diversa: serve ${ui.items.firstOrNull { it.id==expected }?.name ?: "l'articolo della lista"}.")
@@ -134,7 +60,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
         ui.shelfCheck?.let { check -> handleShelfScan(raw,warehouse,check); return }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
-        ArticleCodes.parseLocationScan(raw)?.let { location ->
+        readLocationLabel(raw)?.let { location ->
+            siteOfLabel(location.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
             ui=when {
                 location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
                 ui.placements.none { it.id==location.placementId } -> ui.copy(scannedItemId=null,message="Struttura non trovata: potrebbe essere stata eliminata.")
@@ -142,11 +69,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             }
             return
         }
-        val target=ArticleCodes.parseScan(raw)
+        val target=readArticleLabel(raw)
         if(target == null) {
             ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Ubicora o Officina Stock.")
             return
         }
+        siteOfLabel(target.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
         if(target.warehouseId != null && target.warehouseId != warehouse.id) {
             ui=ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
             return
@@ -214,13 +142,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun startShelfCheck(placementId:Long?=null) { if(!ui.busy) ui=ui.copy(shelfCheck=ShelfCheck(placementId?.takeIf{id->ui.placements.any{it.id==id}}),burstMode=false,burstItemId=null,message=null) }
     fun endShelfCheck() { ui=ui.copy(shelfCheck=null,scanSignal=null) }
     private fun handleShelfScan(raw:String,warehouse:Warehouse,check:ShelfCheck) {
-        ArticleCodes.parseLocationScan(raw)?.let { location ->
+        readLocationLabel(raw)?.let { location ->
             val known=location.warehouseId==warehouse.id && ui.placements.any { it.id==location.placementId }
             ui=if(known) ui.copy(shelfCheck=check.copy(placementId=location.placementId),message=null,scanSignal=ScanSignal(true,System.nanoTime()))
                 else ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
             return
         }
-        val item=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+        val item=readArticleLabel(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
             ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
         when {
             item==null -> ui=ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
@@ -261,7 +189,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         },light=true) { db.movement(itemId,-quantity,"Prelievo guidato") }
     }
     private fun handleBurstScan(raw:String,warehouse:Warehouse) {
-        val target=ArticleCodes.parseScan(raw)
+        val target=readArticleLabel(raw)
         val item=target?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
             ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
         val pending=ui.burstItemId
@@ -384,7 +312,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
-            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,
+            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,siteHits=ui.siteHits,
             shelfCheck=ui.shelfCheck?.takeIf{snapshot.warehouse?.id==ui.warehouse?.id},
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,
@@ -423,19 +351,21 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** On a satellite the map belongs to the central phone: it arrives with each update. */
     private fun requireMapEditable() {
         val t=ui.team
-        require(!(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id)) {
+        require(!(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id))) {
             "Su questo telefono (satellite ${t.letter}) la mappa si modifica solo dal telefono centrale"
         }
     }
     /** Satellite with a department: true when [category] is outside it (the central decides). */
     private fun outsideDepartment(category:String?):Boolean {
         val t=ui.team
-        return t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id && t.scope.isNotEmpty() && category!=null && category !in t.scope
+        return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope.isNotEmpty() && category!=null && category !in t.scope
     }
-    private fun department()=ui.team.scope.joinToString(", ")
+    private fun department()=if(pickOnly) "solo prelievo" else ui.team.scope.joinToString(", ")
+    /** 4.19.2: a satellite that can only withdraw and lend here. */
+    val pickOnly:Boolean get() { val t=ui.team; return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope==listOf(TeamSync.PICK_ONLY) }
     /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
     fun departmentCategories():List<String> { val t=ui.team
-        return if(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) t.scope else emptyList() }
+        return if(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) t.scope else emptyList() }
     private fun requireDepartment(itemIds:List<Long>,what:String) {
         val outside=ui.items.filter { it.id in itemIds && outsideDepartment(it.category) }
         require(outside.isEmpty()) { "${outside.first().name} non è del tuo reparto (${department()}): $what" }
@@ -514,8 +444,60 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         operationalRowLimit=250
         clearMapHistory()
-        ui=ui.copy(warehouse=w)
+        UiPrefs.rememberSite(w.profileId,w.id)
+        ui=ui.copy(warehouse=w,siteHits=emptyList())
         execute {} // ricarica tutte le liste per il magazzino scelto
+    }
+    // ---- 4.17 company with several sites ----
+    // 4.18: on a satellite the number of the site printed on the central's labels is translated to this phone's.
+    private fun localSite(id:Long?):Long? = if(id==null) null else ui.team.labelIds[id] ?: id
+    private fun readArticleLabel(raw:String) = ArticleCodes.parseScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId)) }
+    private fun readLocationLabel(raw:String) = ArticleCodes.parseLocationScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId) ?: it.warehouseId) }
+    /** 4.19: moves pieces of an article to another site of the company. */
+    fun transferToSite(itemId:Long,site:Warehouse,quantity:Double) {
+        val t=ui.team
+        // A satellite never creates the article in the other site: two phones doing it offline would collide on the central.
+        val satellite=t.role==TeamRole.SATELLITE && (t.covers(ui.warehouse?.id) || t.covers(site.id))
+        execute {
+            // 4.19.2: on a satellite both sites must be in the team, or the central would see only half of the transfer.
+            require(!satellite || (t.covers(ui.warehouse?.id) && t.covers(site.id))) { "Da questo telefono si sposta solo tra le sedi della squadra" }
+            db.transferToSite(itemId,site.id,quantity,createMissing=!satellite)
+        }
+    }
+    fun setTeamPickOnly(letter:String) = execute { team.setPickOnly(letter) }
+    /** Central: another site of the company is shared with the team. */
+    fun shareSite(warehouseId:Long) = execute { team.addSite(warehouseId) }
+    private var siteSearch=0L
+    /** Looks for the same words in the other sites of the company (the current one is already on screen). */
+    fun searchOtherSites(query:String) {
+        val token=++siteSearch
+        val here=ui.warehouse?.id
+        val others=ui.warehouses.filter { it.id!=here }
+        val text=query.trim()
+        if(text.length<2 || others.isEmpty()) { if(ui.siteHits.isNotEmpty()) ui=ui.copy(siteHits=emptyList()); return }
+        viewModelScope.launch {
+            val hits=runCatching { withContext(Dispatchers.IO) { others.flatMap { w -> db.items(w.id,text).take(15).map { SiteHit(w,it) } } } }.getOrDefault(emptyList())
+            if(token==siteSearch) ui=ui.copy(siteHits=hits)
+        }
+    }
+    /** Opens an article of another site: the app moves there and shows its page. */
+    fun openInSite(hit:SiteHit) {
+        if(ui.busy || ui.profile?.id!=hit.site.profileId) return
+        operationalRowLimit=250
+        clearMapHistory()
+        UiPrefs.rememberSite(hit.site.profileId,hit.site.id)
+        ui=ui.copy(warehouse=hit.site,siteHits=emptyList())
+        execute(onSuccess={ if(ui.items.any { it.id==hit.item.id }) ui=ui.copy(scannedItemId=hit.item.id) }) {}
+    }
+    /** A label of another site of the same company: move there, then read it again. Null = not one of our sites. */
+    private fun siteOfLabel(warehouseId:Long?):Warehouse? = warehouseId?.let { id -> ui.warehouses.firstOrNull { it.id==id && it.id!=ui.warehouse?.id } }
+    private fun followLabelToSite(site:Warehouse,raw:String) {
+        if(ui.busy) { ui=ui.copy(message="Riprova tra un momento"); return }
+        operationalRowLimit=250
+        clearMapHistory()
+        UiPrefs.rememberSite(site.profileId,site.id)
+        ui=ui.copy(warehouse=site,siteHits=emptyList())
+        execute(onSuccess={ if(ui.warehouse?.id==site.id) { handleScannedCode(raw); if(ui.message==null) ui=ui.copy(message="Sei passato alla sede ${site.name}") } }) {}
     }
     fun createWarehouse(name: String,location: String) {
         if(!ui.busy) clearMapHistory()
@@ -530,7 +512,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.busy || ui.sessionLocked || ui.profile?.id!=w.profileId) return
         execute {
             val t=team.status()
-            require(!(t.role==TeamRole.SATELLITE && t.warehouseId==w.id)) {
+            require(!(t.role==TeamRole.SATELLITE && t.covers(w.id))) {
                 "Su questo telefono (satellite ${t.letter}) il nome del magazzino si cambia dal telefono centrale"
             }
             db.renameWarehouse(w.profileId,w.id,name,location)
@@ -543,7 +525,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute(onSuccess=onDone) { db.changePin(p.id,currentPin,newPin) }
     }
     /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
-    val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) }
+    val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
     fun deleteItem(itemId:Long) = execute {
         require(canDeleteItems) { "Su questo telefono (satellite ${ui.team.letter}) gli articoli si eliminano dal telefono centrale" }
         val photo=db.deleteItem(requireWarehouse(),itemId)
@@ -558,7 +540,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute {
             require(typedName.trim().equals(w.name.trim(),ignoreCase=true)) { "Il nome scritto non corrisponde: magazzino non eliminato" }
             val t=team.status()
-            require(t.role==TeamRole.NONE || t.warehouseId!=w.id) {
+            require(t.role==TeamRole.NONE || !t.covers(w.id)) {
                 "Questo magazzino è sincronizzato con il team: prima usa «Scollega questo telefono» nella sezione Sincronizzazione"
             }
             val photos=db.deleteWarehouse(w.profileId,w.id)
@@ -924,7 +906,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
         // On a satellite an explicit central-style code could clash with the central's own codes.
         val t=ui.team
-        if(t.role==TeamRole.SATELLITE && t.warehouseId==warehouseId) rows.firstOrNull { it.sku.isNotEmpty() && ArticleCodes.parseCode(it.sku)?.letter!=t.letter }?.let {
+        if(t.role==TeamRole.SATELLITE && t.covers(warehouseId)) rows.firstOrNull { it.sku.isNotEmpty() && ArticleCodes.parseCode(it.sku)?.letter!=t.letter }?.let {
             throw IllegalArgumentException("${it.sku}: su questo telefono lascia vuota la colonna Codice, l'app assegna codici con la lettera ${t.letter}")
         }
         rows.firstOrNull { outsideDepartment(it.category) }?.let { throw IllegalArgumentException("${it.name}: categoria ${it.category} fuori dal tuo reparto (${department()})") }
@@ -940,7 +922,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Central: opens the short-range network for the synced warehouse. */
     fun startCentralLink() {
         val t=ui.team; val w=ui.warehouse
-        if(t.role!=TeamRole.CENTRAL || w==null || t.warehouseId!=w.id || ui.sessionLocked) return
+        if(t.role!=TeamRole.CENTRAL || w==null || !t.covers(w.id) || ui.sessionLocked) return
         link.startCentral(team.warehouseUid() ?: return,w.name)
     }
     /** Satellite: looks for its central and exchanges on its own. */
@@ -964,7 +946,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun autoLink() {
         if(!UiPrefs.autoSync || ui.sessionLocked || link.ui.phase!=LinkPhase.IDLE) return
         val t=ui.team; val w=ui.warehouse ?: return
-        if(t.warehouseId!=w.id || TeamLink.missingPermissions(getApplication()).isNotEmpty()) return
+        if(!t.covers(w.id) || TeamLink.missingPermissions(getApplication()).isNotEmpty()) return
         val uid=team.warehouseUid() ?: return
         when(t.role) {
             TeamRole.CENTRAL -> link.startCentral(uid,w.name,silent=true)
@@ -1055,23 +1037,20 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(selectedProfile!=null) {
             val p=withContext(Dispatchers.IO){db.profiles().firstOrNull{it.id==selectedProfile}}
             ui=ui.copy(profile=p,warehouse=null,sessionLocked=generation!=backgroundGeneration)
+            // 4.17: straight back to the site used last; the list of the sites is one tap away, on the name at the top.
+            if(p!=null && selectedWarehouse==null) {
+                val last=UiPrefs.lastSite(p.id)
+                val site=if(last==null) null else withContext(Dispatchers.IO){db.warehouses(p.id).firstOrNull{it.id==last}}
+                if(site!=null) { operationalRowLimit=250; ui=ui.copy(warehouse=site) }
+            }
         }
         if(selectedWarehouse!=null) {
             val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}
             operationalRowLimit=250
             ui=ui.copy(warehouse=w)
+            if(w!=null) UiPrefs.rememberSite(w.profileId,w.id)
         }
         pendingProfileId=null;pendingWarehouseId=null
         reload(error)
-    }
-}
-
-
-
-data class MovementUndo(val itemId: Long, val delta: Double, val label: String, val token: Long) {
-    companion object {
-        fun label(delta: Double, item: StockItem?): String =
-            "${if(delta>0) "Carico" else "Prelievo"} ${amount(kotlin.math.abs(delta))} ${item?.unit.orEmpty()}".trim() +
-                (item?.let { " · ${it.name}" } ?: "")
     }
 }

@@ -10,7 +10,7 @@ org=(root/'app/src/main/java/com/officinastock/app/EnterpriseDb.kt').read_text(e
 backup=(root/'app/src/main/java/com/officinastock/app/BackupArchive.kt').read_text(encoding='utf8')
 planning=(root/'app/src/main/java/com/officinastock/app/StockPlanningDb.kt').read_text(encoding='utf8')
 trace=(root/'app/src/main/java/com/officinastock/app/StockTraceDb.kt').read_text(encoding='utf8')
-view=(root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf8')
+view=((root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf8')+(root/'app/src/main/java/com/officinastock/app/StockUiState.kt').read_text(encoding='utf8'))
 screen=(root/'app/src/main/java/com/officinastock/app/EnterpriseScreen.kt').read_text(encoding='utf8')
 transport=(root/'app/src/main/java/com/officinastock/app/EnterpriseServerClient.kt').read_text(encoding='utf8')
 gradle=(root/'app/build.gradle.kts').read_text(encoding='utf8')

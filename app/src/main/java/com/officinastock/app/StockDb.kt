@@ -80,6 +80,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
             // 4.15: who made each movement. Same rule: created once, on any database version.
             MovementActors.create(db)
+            // 4.18: the team triggers follow every shared site; rebuilt here so older installations get the new ones.
+            TeamSyncSchema.create(db)
         }
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -535,6 +537,48 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
     fun movement(itemId: Long, delta: Double, note: String) {
         require(delta.isFinite() && delta != 0.0) { "Inserisci una quantità diversa da zero" }
         writableDatabase.apply { beginTransaction();try { adjust(this,itemId,delta,note.ifBlank { if(delta>0) "Carico" else "Prelievo" });setTransactionSuccessful() } finally { endTransaction() } }
+    }
+    /**
+     * 4.19: moves [quantity] of an article to another site of the same company, as two movements in
+     * one transaction (out of here, into there). There the article is the one with the same code or,
+     * failing that, the only one with the same name, category and unit; [createMissing] adds it when
+     * it does not exist yet. Returns the article of the other site.
+     */
+    fun transferToSite(itemId: Long, toWarehouseId: Long, quantity: Double, createMissing: Boolean): Long {
+        require(quantity.isFinite() && quantity > 0.0) { "Inserisci una quantità maggiore di zero" }
+        val sql=writableDatabase
+        sql.beginTransaction()
+        try {
+            fun site(id: Long) = sql.rawQuery("SELECT profile_id,name FROM warehouses WHERE id=?",arrayOf(id.toString())).use { c ->
+                if(c.moveToFirst()) c.getLong(0) to c.getString(1) else null }
+            val values=ContentValues()
+            val (fromId,available)=sql.rawQuery("SELECT warehouse_id,quantity,sku,name,category,unit,note,unit_cost,supplier,lead_days FROM items WHERE id=?",arrayOf(itemId.toString())).use { c ->
+                require(c.moveToFirst()) { "Articolo non trovato" }
+                values.put("sku",c.getString(2));values.put("name",c.getString(3));values.put("category",c.getString(4));values.put("unit",c.getString(5))
+                values.put("note",c.getString(6));if(!c.isNull(7)) values.put("unit_cost",c.getDouble(7));values.put("supplier",c.getString(8))
+                if(!c.isNull(9)) values.put("lead_days",c.getInt(9))
+                c.getLong(0) to c.getDouble(1)
+            }
+            val from=requireNotNull(site(fromId)) { "Sede non trovata" }
+            val to=requireNotNull(site(toWarehouseId)) { "Sede di destinazione non trovata" }
+            require(fromId!=toWarehouseId) { "L'articolo è già in questa sede" }
+            require(from.first==to.first) { "Si trasferisce solo tra sedi della stessa azienda" }
+            require(quantity<=available) { "Più di quanto c'è a scaffale" }
+            val target=sql.rawQuery("SELECT id FROM items WHERE warehouse_id=? AND sku=?",arrayOf(toWarehouseId.toString(),values.getAsString("sku"))).use { c ->
+                if(c.moveToFirst()) c.getLong(0) else null }
+                ?: sql.rawQuery("SELECT id FROM items WHERE warehouse_id=? AND name=? COLLATE NOCASE AND category=? AND unit=? COLLATE NOCASE",
+                    arrayOf(toWarehouseId.toString(),values.getAsString("name"),values.getAsString("category"),values.getAsString("unit"))).use { c ->
+                    if(c.count==1 && c.moveToFirst()) c.getLong(0) else null }
+                ?: run {
+                    require(createMissing) { "In ${to.second} questo articolo non c'è ancora: crealo prima dal telefono centrale" }
+                    values.put("warehouse_id",toWarehouseId);values.put("quantity",0.0);values.put("minimum",0.0)
+                    sql.insertOrThrow("items",null,values)
+                }
+            adjust(sql,itemId,-quantity,"Trasferito a ${to.second}")
+            adjust(sql,target,quantity,"Trasferito da ${from.second}")
+            sql.setTransactionSuccessful()
+            return target
+        } finally { sql.endTransaction() }
     }
     /** Rettifica inventario transazionale, con un movimento di audit obbligatorio. */
     fun reconcileQuantity(itemId: Long, counted: Double, reason: String) {

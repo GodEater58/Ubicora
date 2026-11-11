@@ -7,7 +7,7 @@ cat=(base/'DemoCatalog.kt').read_text(encoding='utf-8')
 db=(base/'StockDb.kt').read_text(encoding='utf-8')
 # 4.15: the screens are split in several files.
 ui=''.join((base/f).read_text(encoding='utf-8') for f in ['Screens.kt','ProfileScreens.kt','InventoryScreen.kt','ItemScreens.kt','MovementsScreen.kt','SettingsScreen.kt'])
-model=(base/'StockViewModel.kt').read_text(encoding='utf-8')
+model=((base/'StockViewModel.kt').read_text(encoding='utf-8')+(base/'StockUiState.kt').read_text(encoding='utf-8'))
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 main=(base/'MainActivity.kt').read_text(encoding='utf-8')
 art=(base/'DemoArtwork.kt').read_text(encoding='utf-8')

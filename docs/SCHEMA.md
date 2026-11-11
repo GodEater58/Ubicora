@@ -20,12 +20,12 @@ Il database del telefono è SQLite cifrato (SQLCipher). Le tabelle sono create i
 
 | Tabella | Contenuto | Definita in |
 |---|---|---|
-| `team_sync_settings` | ruolo e parametri della squadra su questo telefono | `TeamSync.kt` |
-| `team_sync_outbox` | modifiche del satellite non ancora confermate | `TeamSync.kt` |
-| `team_sync_peers` | satelliti noti al centrale | `TeamSync.kt` |
-| `team_sync_conflicts` | modifiche rifiutate dal centrale | `TeamSync.kt` |
-| `movement_actors` | lettera del telefono che ha fatto ogni movimento (4.15) | `TeamSync.kt` |
-| `team_loans` | prestiti aperti sugli altri telefoni, copia dell'ultimo scambio (4.15) | `TeamSync.kt` |
+| `team_sync_settings` | ruolo e parametri della squadra su questo telefono | `TeamSyncSchema.kt` |
+| `team_sync_outbox` | modifiche del satellite non ancora confermate | `TeamSyncSchema.kt` |
+| `team_sync_peers` | satelliti noti al centrale | `TeamSyncSchema.kt` |
+| `team_sync_conflicts` | modifiche rifiutate dal centrale | `TeamSyncSchema.kt` |
+| `movement_actors` | lettera del telefono che ha fatto ogni movimento (4.15) | `TeamSyncSchema.kt` |
+| `team_loans` | prestiti aperti sugli altri telefoni, copia dell'ultimo scambio (4.15) | `TeamSyncSchema.kt` |
 
 ## Gestione aziendale
 

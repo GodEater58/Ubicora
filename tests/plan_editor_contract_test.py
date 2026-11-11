@@ -2,7 +2,7 @@ from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 p=r/'app/src/main/java/com/officinastock/app'
 db=(p/'StockDb.kt').read_text(encoding='utf-8')
-ui=(p/'MapScreen.kt').read_text(encoding='utf-8')
+ui=((p/'MapScreen.kt').read_text(encoding='utf-8')+(p/'MapDialogs.kt').read_text(encoding='utf-8'))
 model=(p/'Models.kt').read_text(encoding='utf-8')
 geom=(p/'PlanGeometry.kt').read_text(encoding='utf-8')
 checks={

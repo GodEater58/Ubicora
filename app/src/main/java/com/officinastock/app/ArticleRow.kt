@@ -114,7 +114,7 @@ import androidx.compose.ui.unit.sp
 /** 4.15: quick actions of an article in a panel from the bottom, reachable with one hand. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ArticleActionsSheet(item: StockItem, place: Placement?, model: StockViewModel, onDismiss: () -> Unit,
-    onOpen: () -> Unit, onLabel: () -> Unit, onQuantity: (load: Boolean) -> Unit) {
+    onOpen: () -> Unit, onLabel: () -> Unit, onTransfer: () -> Unit, onQuantity: (load: Boolean) -> Unit) {
     val favorite = UiPrefs.isFavorite(item.warehouseId, item.id)
     val context = LocalContext.current
     val hasNfc = remember { runCatching { android.nfc.NfcAdapter.getDefaultAdapter(context) != null }.getOrDefault(false) }
@@ -132,6 +132,7 @@ import androidx.compose.ui.unit.sp
             SheetAction(Icons.Outlined.Place, if (place == null) "Assegna un'ubicazione sulla mappa" else "Sposta scegliendo sulla mappa") {
                 onDismiss(); model.startLocationPick(listOf(item.id))
             }
+            if (model.ui.warehouses.size > 1) SheetAction(Icons.Outlined.SwapHoriz, "Sposta in un'altra sede…", enabled = item.quantity > 0.0) { onDismiss(); onTransfer() }
             SheetAction(Icons.Outlined.PlaylistAdd, "Aggiungi alla lista di prelievo") { model.addToPickList(item.id); onDismiss() }
             SheetAction(Icons.Outlined.QrCode2, "Etichetta QR") { onDismiss(); onLabel() }
             if (hasNfc) SheetAction(Icons.Outlined.Nfc, "Scrivi su tag NFC") { onDismiss(); model.requestNfcWrite(item.id) }
@@ -169,6 +170,37 @@ import androidx.compose.ui.unit.sp
             Button(enabled = valid && !model.ui.busy, onClick = {
                 model.movement(item.id, if (load) quantity!! else -quantity!!, if (load) "Carico rapido" else "Prelievo rapido"); onClose()
             }) { Text(if (load) "Carica" else "Preleva") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Annulla") } })
+}
+
+/** 4.19: how many pieces go to which other site of the company. */
+@Composable fun TransferDialog(item: StockItem, model: StockViewModel, onClose: () -> Unit) {
+    val others = model.ui.warehouses.filter { it.id != item.warehouseId }
+    var site by remember { mutableStateOf(others.singleOrNull()) }
+    var text by remember { mutableStateOf("") }
+    val quantity = QuickQuantity.parse(text)
+    val target = site
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text("Sposta · ${item.name}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Qui: ${amount(item.quantity)} ${item.unit}. Esce da questa sede ed entra nell'altra, nello stesso momento.", color = TextSecondary, fontSize = 13.sp)
+                others.forEach { other ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(role = Role.RadioButton) { site = other }.heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = site?.id == other.id, onClick = null)
+                        Spacer(Modifier.width(10.dp))
+                        Text(other.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Input(text, { text = it }, "Quantità (${item.unit})", number = true)
+                if (quantity != null && quantity > item.quantity) Text("Più di quanto c'è a scaffale.", color = Danger, fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            Button(enabled = target != null && QuickQuantity.valid(quantity, false, item.quantity) && !model.ui.busy,
+                onClick = { model.transferToSite(item.id, target!!, quantity!!); onClose() }) { Text("Sposta") }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Annulla") } })
 }

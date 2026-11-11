@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,20 +55,27 @@ object TodayTasks {
     var askLoanDays by remember { mutableStateOf(false) }
     // Business mode: the indicators stay one tap away, closed by default, so the screen is the same for everyone.
     var showIndicators by rememberSaveable { mutableStateOf(false) }
-    val team = u.team.takeIf { it.role != TeamRole.NONE && it.warehouseId == u.warehouse?.id }
+    val team = u.team.takeIf { it.covers(u.warehouse?.id) }
     val conflicts = team?.conflicts?.size ?: 0
     val managerPending = if (!u.businessMode) 0 else u.orders.count { it.status in listOf("DRAFT", "APPROVED", "ORDERED") } +
         u.stockCounts.count { it.status == "PENDING" } + u.stockTransfers.count { it.status in listOf("REQUESTED", "IN_TRANSIT") } +
         u.maintenanceWork.count { it.status == "OPEN" }
     val recent = u.movements.take(4)
     if (askLoanDays) LoanDaysDialog(loanDays) { askLoanDays = false }
+    var pickSite by remember { mutableStateOf(false) }
+    if (pickSite) SiteSheet(model) { pickSite = false }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(u.warehouse?.name ?: "Magazzino", fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${u.warehouse?.location?.ifBlank { "Area di lavoro" }}  ·  ${u.profile?.name}", color = TextSecondary, fontSize = 13.sp,
+                // 4.17: the name of the site is the way to the other sites of the company.
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Cambia sede") { pickSite = true }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(u.warehouse?.name ?: "Sede", fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false))
+                        Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    }
+                    Text("${u.profile?.name}  ·  ${u.warehouse?.location?.ifBlank { "Sede" }}", color = TextSecondary, fontSize = 13.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 SettingsGear(goSettings)
@@ -79,8 +85,9 @@ object TodayTasks {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TodayNumber(count.toString(), "Referenze", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
-                TodayNumber(critical.toString(), "Da riordinare", Amber, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
-                TodayNumber((u.loans.size + u.team.loans.size).toString(), "In prestito", Sky, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
+                TodayNumber(critical.toString(), "Da riordinare", if (critical > 0) Amber else TextSecondary, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
+                val lent = u.loans.size + u.team.loans.size
+                TodayNumber(lent.toString(), "In prestito", if (lent > 0) Sky else TextSecondary, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
             }
         }
         item { TodayLabel("DA FARE ADESSO") }
@@ -110,9 +117,14 @@ object TodayTasks {
         if (critical > 0) item { ReorderShareButton(model, Modifier.fillMaxWidth()) }
         // 4.15: the management indicators live in the Gestione section; here the screen is the same for everyone.
         if (u.businessMode) item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = goManager) { Text("Gestione aziendale") }
-                TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Mostra indicatori") }
+            // 4.16.2: one card, like the tasks above, instead of two loose links.
+            Surface(onClick = goManager, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = PanelBg) {
+                Row(Modifier.heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Dashboard, contentDescription = null, tint = Mint)
+                    Spacer(Modifier.width(14.dp))
+                    Text("Gestione aziendale", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Indicatori") }
+                }
             }
         }
         if (u.businessMode && showIndicators) item {
@@ -125,13 +137,21 @@ object TodayTasks {
             }
         }
         if (recent.isEmpty()) item { Text("Non ci sono ancora movimenti.", color = TextSecondary, fontSize = 14.sp) }
-        items(recent, key = { it.id }) { move ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onItemFocus(move.itemId) }.heightIn(min = 48.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(TodayTasks.signed(move.delta), color = if (move.delta >= 0) Mint else Amber, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                    modifier = Modifier.widthIn(min = 52.dp))
-                Text(move.itemName, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(TodayTasks.who(move.actor, ago(move.createdAt)), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+        // 4.16.2: the last movements in one panel with compact rows (they were spread over the whole screen).
+        if (recent.isNotEmpty()) item {
+            Surface(shape = RoundedCornerShape(16.dp), color = PanelBg, modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    recent.forEachIndexed { index, move ->
+                        if (index > 0) HorizontalDivider(color = Hairline.copy(alpha = .06f))
+                        Row(Modifier.fillMaxWidth().clickable { onItemFocus(move.itemId) }.heightIn(min = 52.dp).padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(TodayTasks.signed(move.delta), color = if (move.delta >= 0) Mint else Amber, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                                modifier = Modifier.widthIn(min = 48.dp))
+                            Text(move.itemName, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(TodayTasks.who(move.actor, ago(move.createdAt)), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                        }
+                    }
+                }
             }
         }
     }
@@ -186,7 +206,8 @@ object TodayTasks {
 /** State of the team in one line; the whole line opens the Squadra section. */
 @Composable private fun TeamStatusRow(team: TeamSyncStatus, onClick: () -> Unit) {
     val central = team.role == TeamRole.CENTRAL
-    val warn = team.conflicts.isNotEmpty() || (!central && team.pending > 0)
+    val stale = team.lastSync == 0L || System.currentTimeMillis() - team.lastSync > 2 * 86_400_000L
+    val warn = team.conflicts.isNotEmpty() || (!central && team.pending > 0) || stale
     val text = when {
         team.conflicts.isNotEmpty() -> "${team.conflicts.size} ${if (team.conflicts.size == 1) "conflitto" else "conflitti"} da rivedere"
         central -> "Telefono centrale · ${team.peers.size} ${if (team.peers.size == 1) "satellite" else "satelliti"}"
@@ -199,6 +220,38 @@ object TodayTasks {
             Box(Modifier.size(10.dp).clip(CircleShape).background(if (warn) Amber else Mint))
             Text(text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text(ago(team.lastSync), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+        }
+    }
+}
+
+/** 4.17: the sites of the company; the current one is marked, the others are one tap away. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun SiteSheet(model: StockViewModel, onDismiss: () -> Unit) {
+    val u = model.ui
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(u.profile?.name ?: "Azienda", fontWeight = FontWeight.Bold, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Sedi", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            u.warehouses.forEach { site ->
+                val current = site.id == u.warehouse?.id
+                Surface(onClick = { onDismiss(); if (!current) model.selectWarehouse(site) }, enabled = !u.busy, shape = RoundedCornerShape(16.dp),
+                    color = if (current) Mint.copy(alpha = .14f) else Surface2, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.heightIn(min = 60.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Outlined.Warehouse, contentDescription = null, tint = if (current) Mint else TextSecondary)
+                        Column(Modifier.weight(1f)) {
+                            Text(site.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (site.location.isNotBlank()) Text(site.location, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (current) Text("Sei qui", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onDismiss(); model.leaveWarehouse() }, enabled = !u.busy) { Text("Aggiungi o gestisci le sedi") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { onDismiss(); model.signOut() }, enabled = !u.busy) { Text("Cambia azienda") }
+            }
         }
     }
 }
@@ -239,7 +292,7 @@ object TodayTasks {
                 SettingsGear(goSettings)
             }
         }
-        if (u.team.role != TeamRole.NONE && u.team.warehouseId == u.warehouse?.id) item { SyncCard(model) }
+        if (u.team.role != TeamRole.NONE && u.team.covers(u.warehouse?.id)) item { SyncCard(model) }
         if (u.team.loans.isNotEmpty()) item {
             Panel(Modifier.fillMaxWidth()) {
                 Text("In prestito dagli altri telefoni", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -256,8 +309,23 @@ object TodayTasks {
                 }
             }
         }
+        // 4.18: the central chooses which sites of the company the team works on.
+        if (u.team.role == TeamRole.CENTRAL && u.warehouses.size > 1) item {
+            Panel(Modifier.fillMaxWidth()) {
+                Text("Sedi della squadra", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("I satelliti ricevono le sedi condivise con il prossimo aggiornamento e possono lavorare su tutte.", color = TextSecondary, fontSize = 12.sp)
+                u.warehouses.forEach { site ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Outlined.Warehouse, contentDescription = null, tint = if (u.team.covers(site.id)) Mint else TextSecondary)
+                        Text(site.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (u.team.covers(site.id)) Text("Condivisa", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        else OutlinedButton(onClick = { model.shareSite(site.id) }, enabled = !u.busy) { Text("Condividi") }
+                    }
+                }
+            }
+        }
         item { TeamSyncPanel(model) }
-        if (u.team.role == TeamRole.SATELLITE && u.team.warehouseId == u.warehouse?.id) item {
+        if (u.team.role == TeamRole.SATELLITE && u.team.covers(u.warehouse?.id)) item {
             OutlinedButton(onClick = { askPromote = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) { Text("Il centrale non c'è più: questo telefono lo sostituisce") }
         }
     }

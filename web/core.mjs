@@ -230,7 +230,14 @@ export async function teamEncrypt(json,password,random=n=>crypto.getRandomValues
  */
 export function importTeam(state,snapshot,label='squadra',at=Date.now()){
  if(!snapshot||snapshot.format!=='UBICORA_SYNC_STATE'||snapshot.version!==1)throw Error('Serve il file di aggiornamento del telefono centrale');
- const s=structuredClone(state),room=snapshot.warehouse??{},wid=uid();
+ const s=structuredClone(state),first=addTeamSite(s,snapshot,label,at);let items=first.items;
+ // 1.1.1: the other sites of the company shared with the team (Ubicora 4.18 and later), each one a site here too.
+ const more=Array.isArray(snapshot.sites)?snapshot.sites.slice(0,10):[];
+ for(const site of more)items+=addTeamSite(s,site,label,at).items;
+ return {state:validate(s),warehouseId:first.wid,items,sites:1+more.length};
+}
+function addTeamSite(s,snapshot,label,at){
+ const room=snapshot.warehouse??{},wid=uid();
  const width=number(room.width),depth=number(room.height);
  s.warehouses.push({id:wid,name:name((String(room.name??'Magazzino').trim().slice(0,140)+' · '+label).slice(0,160)),location:String(room.location??'').trim().slice(0,300),width,depth});
  const byUid=new Map(),taken=new Set();
@@ -255,5 +262,5 @@ export function importTeam(state,snapshot,label='squadra',at=Date.now()){
    placementId:place?.id??null,shelfLevel:place?whole(a.level,20):null,shelfSlot:place?whole(a.slot,50):null};
   s.items.push(i);if(i.quantity)s.movements.push({id:uid(),itemId:i.id,delta:i.quantity,note:'Aggiornamento della squadra',at});
  }
- return {state:validate(s),warehouseId:wid,items:(snapshot.items??[]).length};
+ return {wid,items:(snapshot.items??[]).length};
 }

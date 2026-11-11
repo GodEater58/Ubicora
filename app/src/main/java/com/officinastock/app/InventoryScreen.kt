@@ -43,6 +43,11 @@ import kotlinx.coroutines.launch
     var add by remember{mutableStateOf(false)}
     var menuItemId by remember{mutableStateOf<Long?>(null)}
     var quantityFor by remember{mutableStateOf<Pair<Long,Boolean>?>(null)}
+    var transferFor by remember{mutableStateOf<Long?>(null)}
+    transferFor?.let { id ->
+        val current=model.ui.items.firstOrNull{it.id==id}
+        if(current==null) transferFor=null else TransferDialog(current,model,onClose={transferFor=null})
+    }
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
     LaunchedEffect(u.scannedItemId,u.items) {
@@ -64,6 +69,7 @@ import kotlinx.coroutines.launch
         }
     }
     val favorites=UiPrefs.favorites
+    LaunchedEffect(query,u.warehouse?.id) { kotlinx.coroutines.delay(300); model.searchOtherSites(query) }
     val filtered=remember(u.items,query,activeFocus,idleIds,sort,lastMoved,favorites) { sortStock(u.items.filter { item ->
         val matches=when(activeFocus){
             StockFocus.ALL -> true
@@ -80,7 +86,8 @@ import kotlinx.coroutines.launch
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
             // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
-            FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
+            // 4.19.2: a pick-only phone cannot create articles: no form that would be refused at the end.
+            if(!model.pickOnly) FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
@@ -120,7 +127,22 @@ import kotlinx.coroutines.launch
                 ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,
                     onOpen={selected=entry},onMenu={menuItemId=entry.id},onQuantity={load->quantityFor=entry.id to load})
             }
-            if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text("Nessun articolo corrispondente.",color=TextSecondary)}}
+            if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text(if(u.siteHits.isEmpty()) "Nessun articolo corrispondente." else "In questa sede non c'è.",color=TextSecondary)}}
+            // 4.17: the same search in the other sites of the company.
+            if(u.siteHits.isNotEmpty()) {
+                item { Text("NELLE ALTRE SEDI",color=TextSecondary,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,modifier=Modifier.padding(top=8.dp)) }
+                items(u.siteHits,key={"site${it.site.id}-${it.item.id}"}) { hit ->
+                    Surface(onClick={model.openInSite(hit)},enabled=!u.busy,shape=RoundedCornerShape(16.dp),color=PanelBg,modifier=Modifier.fillMaxWidth()) {
+                        Row(Modifier.heightIn(min=60.dp).padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(hit.item.name,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                Text(hit.site.name,color=Sky,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            }
+                            Text("${amount(hit.item.quantity)} ${hit.item.unit}",fontWeight=FontWeight.Bold,color=if(hit.item.quantity>0.0) TextPrimary else TextSecondary)
+                        }
+                    }
+                }
+            }
         }
     }
     if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays->
@@ -132,7 +154,7 @@ import kotlinx.coroutines.launch
     menuItemId?.let { id ->
         val current=u.items.firstOrNull{it.id==id}
         if(current==null) menuItemId=null else ArticleActionsSheet(current,current.placementId?.let { placementById[it] },model,
-            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onQuantity={load->quantityFor=current.id to load})
+            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onTransfer={transferFor=current.id},onQuantity={load->quantityFor=current.id to load})
     }
     quantityFor?.let { (id,load) ->
         val current=u.items.firstOrNull{it.id==id}

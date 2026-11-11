@@ -2,6 +2,8 @@ package com.officinastock.app
 
 data class Profile(val id: Long, val name: String)
 data class Warehouse(val id: Long, val profileId: Long, val name: String, val location: String, val mapWidth: Float = 12f, val mapHeight: Float = 8f)
+/** 4.17: an article found in another site of the company. */
+data class SiteHit(val site: Warehouse, val item: StockItem)
 data class StockItem(
     val id: Long, val warehouseId: Long, val sku: String, val name: String, val category: String,
     val quantity: Double, val minimum: Double, val unit: String, val placementId: Long?, val note: String,

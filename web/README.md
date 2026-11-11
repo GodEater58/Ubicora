@@ -1,4 +1,4 @@
-# Ubicora Web 1.1.0 — PC e browser mobile
+# Ubicora Web 1.1.1 — PC e browser mobile
 
 ## Uso immediato, senza installazione
 
@@ -19,7 +19,7 @@ Non trasferisce foto, planimetria, prestiti, lotti, seriali o storico Android. I
 
 ### Il magazzino della squadra sul PC (1.1.0)
 
-Sul telefono centrale esporta l'aggiornamento della squadra (sezione Squadra) e copia il file sul PC. In **Dati e connessione → Apri aggiornamento della squadra** scegli il file e inserisci la password della squadra: viene aggiunta una nuova sede con pianta, strutture, pareti, articoli, giacenze, ripiani e posizioni di quel momento. Le altre sedi non cambiano.
+Sul telefono centrale esporta l'aggiornamento della squadra (sezione Squadra) e copia il file sul PC. In **Dati e connessione → Apri aggiornamento della squadra** scegli il file e inserisci la password della squadra: viene aggiunta una nuova sede (o più, se il centrale condivide più sedi dell'azienda) con pianta, strutture, pareti, articoli, giacenze, ripiani e posizioni di quel momento. Le altre sedi non cambiano.
 
 È una copia da consultare. Dal PC non torna nulla ai telefoni: carichi e prelievi fatti qui restano nel browser. Non comprende foto, prestiti e storico. Il file viene decifrato nel browser, senza inviarlo altrove; il formato è lo stesso del telefono (AES-256-GCM, chiave PBKDF2), verificato da un test in entrambe le direzioni di lettura.
 
