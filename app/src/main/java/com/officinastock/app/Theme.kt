@@ -38,6 +38,10 @@ val HeroBrush: Brush get() = if (UiPrefs.light)
         primary = Mint, onPrimary = OnMint, secondary = Sky, onSecondary = Ink,
         background = Ink, onBackground = TextPrimary, surface = PanelBg, onSurface = TextPrimary,
         surfaceVariant = Surface2, onSurfaceVariant = TextSecondary,
+        // 4.16.2: without these Material falls back to its default purple (seen on the gear and on the selected tab).
+        primaryContainer = Color(0xFF123B34), onPrimaryContainer = TextPrimary,
+        secondaryContainer = Color(0xFF1B3341), onSecondaryContainer = TextPrimary,
+        tertiary = Amber, onTertiary = Ink, tertiaryContainer = Color(0xFF3A2E17), onTertiaryContainer = TextPrimary,
         outline = Color(0xFF3B5061), error = Danger
     )
     // Glove mode: everything a bit larger, so buttons are easier to hit with gloves or dirty hands.

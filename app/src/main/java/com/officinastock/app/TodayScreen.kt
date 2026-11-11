@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -79,8 +78,9 @@ object TodayTasks {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TodayNumber(count.toString(), "Referenze", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
-                TodayNumber(critical.toString(), "Da riordinare", Amber, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
-                TodayNumber((u.loans.size + u.team.loans.size).toString(), "In prestito", Sky, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
+                TodayNumber(critical.toString(), "Da riordinare", if (critical > 0) Amber else TextSecondary, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
+                val lent = u.loans.size + u.team.loans.size
+                TodayNumber(lent.toString(), "In prestito", if (lent > 0) Sky else TextSecondary, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
             }
         }
         item { TodayLabel("DA FARE ADESSO") }
@@ -110,9 +110,14 @@ object TodayTasks {
         if (critical > 0) item { ReorderShareButton(model, Modifier.fillMaxWidth()) }
         // 4.15: the management indicators live in the Gestione section; here the screen is the same for everyone.
         if (u.businessMode) item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = goManager) { Text("Gestione aziendale") }
-                TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Mostra indicatori") }
+            // 4.16.2: one card, like the tasks above, instead of two loose links.
+            Surface(onClick = goManager, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = PanelBg) {
+                Row(Modifier.heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Dashboard, contentDescription = null, tint = Mint)
+                    Spacer(Modifier.width(14.dp))
+                    Text("Gestione aziendale", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Indicatori") }
+                }
             }
         }
         if (u.businessMode && showIndicators) item {
@@ -125,13 +130,21 @@ object TodayTasks {
             }
         }
         if (recent.isEmpty()) item { Text("Non ci sono ancora movimenti.", color = TextSecondary, fontSize = 14.sp) }
-        items(recent, key = { it.id }) { move ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onItemFocus(move.itemId) }.heightIn(min = 48.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(TodayTasks.signed(move.delta), color = if (move.delta >= 0) Mint else Amber, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                    modifier = Modifier.widthIn(min = 52.dp))
-                Text(move.itemName, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(TodayTasks.who(move.actor, ago(move.createdAt)), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+        // 4.16.2: the last movements in one panel with compact rows (they were spread over the whole screen).
+        if (recent.isNotEmpty()) item {
+            Surface(shape = RoundedCornerShape(16.dp), color = PanelBg, modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    recent.forEachIndexed { index, move ->
+                        if (index > 0) HorizontalDivider(color = Hairline.copy(alpha = .06f))
+                        Row(Modifier.fillMaxWidth().clickable { onItemFocus(move.itemId) }.heightIn(min = 52.dp).padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(TodayTasks.signed(move.delta), color = if (move.delta >= 0) Mint else Amber, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                                modifier = Modifier.widthIn(min = 48.dp))
+                            Text(move.itemName, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(TodayTasks.who(move.actor, ago(move.createdAt)), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                        }
+                    }
+                }
             }
         }
     }
@@ -186,7 +199,8 @@ object TodayTasks {
 /** State of the team in one line; the whole line opens the Squadra section. */
 @Composable private fun TeamStatusRow(team: TeamSyncStatus, onClick: () -> Unit) {
     val central = team.role == TeamRole.CENTRAL
-    val warn = team.conflicts.isNotEmpty() || (!central && team.pending > 0)
+    val stale = team.lastSync == 0L || System.currentTimeMillis() - team.lastSync > 2 * 86_400_000L
+    val warn = team.conflicts.isNotEmpty() || (!central && team.pending > 0) || stale
     val text = when {
         team.conflicts.isNotEmpty() -> "${team.conflicts.size} ${if (team.conflicts.size == 1) "conflitto" else "conflitti"} da rivedere"
         central -> "Telefono centrale · ${team.peers.size} ${if (team.peers.size == 1) "satellite" else "satelliti"}"
