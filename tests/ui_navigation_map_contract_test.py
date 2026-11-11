@@ -7,7 +7,7 @@ screens=''.join((p/f).read_text(encoding='utf-8') for f in ['Screens.kt','Profil
 today=(p/'TodayScreen.kt').read_text(encoding='utf-8')
 main=(p/'MainActivity.kt').read_text(encoding='utf-8')
 report=(p/'ManagerDashboard.kt').read_text(encoding='utf-8')
-map_screen=(p/'MapScreen.kt').read_text(encoding='utf-8')
+map_screen=((p/'MapScreen.kt').read_text(encoding='utf-8')+(p/'MapDialogs.kt').read_text(encoding='utf-8'))
 metrics=(p/'ManagerMetrics.kt').read_text(encoding='utf-8')
 gradle=(r/'app/build.gradle.kts').read_text(encoding='utf-8')
 checks={

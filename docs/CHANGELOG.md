@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.19.1](CHANGELOG_4_19_1.md) | solo ordine nel codice: tre file grandi divisi, nessun cambiamento per chi usa l'app. |
 | [4.19.0](CHANGELOG_4_19_0.md) | trasferimento di pezzi tra le sedi dell'azienda; tre livelli di permesso per i satelliti. |
 | [4.18.0](CHANGELOG_4_18_0.md) | la squadra lavora su tutte le sedi dell'azienda: un collegamento, più sedi sui satelliti. |
 | [4.17.0](CHANGELOG_4_17_0.md) | azienda con più sedi: selettore della sede in Oggi, ricerca nelle altre sedi, le etichette portano alla sede giusta. |

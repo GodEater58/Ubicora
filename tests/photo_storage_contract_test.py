@@ -11,7 +11,7 @@ assert 'null, 12)' in source, 'Versione DB non aggiornata'
 assert 'ALTER TABLE items ADD COLUMN photo_file TEXT DEFAULT NULL' in source
 assert 'photo_file TEXT DEFAULT NULL' in source
 assert 'fun updatePhoto(itemId:' in source
-assert 'PhotoFiles.removeCapturedTemp' in (root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf-8')
+assert 'PhotoFiles.removeCapturedTemp' in ((root/'app/src/main/java/com/officinastock/app/StockViewModel.kt').read_text(encoding='utf-8')+(root/'app/src/main/java/com/officinastock/app/StockUiState.kt').read_text(encoding='utf-8'))
 assert 'androidx.core.content.FileProvider' in manifest
 assert '<cache-path name="camera_capture" path="article_camera/" />' in (root/'app/src/main/res/xml/photo_paths.xml').read_text(encoding='utf-8')
 assert 'onApply?.invoke(pending)' in ui
