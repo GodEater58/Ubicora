@@ -119,7 +119,7 @@ import java.util.Locale
                         val cats = t.scopes[l].orEmpty()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
-                            Text(if (cats.isEmpty()) "Magazziniere · tutte le categorie" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(if (cats.isEmpty()) "Manutentore · tutte le categorie" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
                             TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy) { Text("Modifica") }
                         }
                     }
@@ -276,7 +276,7 @@ import java.util.Locale
             Text("Cosa può fare il telefono $l. Arriva al prossimo scambio.", fontSize = 12.sp, color = TextSecondary)
             listOf(Triple("Solo prelievo", "Preleva e presta. Non crea, non carica, non sposta.", 0),
                 Triple("Operatore di reparto", "Tutto nelle categorie spuntate; fuori solo prelievo.", 1),
-                Triple("Magazziniere", "Crea, carica e sposta in tutte le categorie.", 2)).forEach { (title, hint, level) ->
+                Triple("Manutentore", "Crea, carica e sposta in tutte le categorie.", 2)).forEach { (title, hint, level) ->
                 val selected = when (level) { 0 -> pickOnly; 1 -> !pickOnly && scopeChoice.isNotEmpty(); else -> scopeChoice.isEmpty() }
                 Row(Modifier.fillMaxWidth().clickable {
                     scopeChoice = when (level) { 0 -> setOf(TeamSync.PICK_ONLY); 1 -> (scopeChoice - TeamSync.PICK_ONLY).ifEmpty { setOf(ArticleCodes.categoryPrefixes.keys.first()) }; else -> emptySet() }
