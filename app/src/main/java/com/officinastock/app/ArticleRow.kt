@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.sp
             SwipeToDismissBoxValue.Settled -> Unit
         }
         false   // the row always comes back: the swipe is a command, not a removal
-    })
+    }, positionalThreshold = { width -> width * .35f })   // a clear gesture, not a brush of the thumb while scrolling
     val shape = RoundedCornerShape(if (compact) 16.dp else 22.dp)
     SwipeToDismissBox(state = swipe, modifier = Modifier.fillMaxWidth().clip(shape),
         enableDismissFromStartToEnd = !busy && entry.quantity >= 1.0, enableDismissFromEndToStart = !busy,

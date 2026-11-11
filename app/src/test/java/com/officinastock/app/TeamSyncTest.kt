@@ -373,4 +373,28 @@ class TeamSyncTest {
         TeamSync(satellite).importState(ByteArrayInputStream(state()))
         assertEquals(name, satellite.items(wh).single { it.name == "Guanti" }.photoFile)
     }
+
+    /** 4.16: a photo taken on a satellite is never deleted by an update; it is offered to the central, which takes it only where it has none. */
+    @Test fun photoTakenOnASatelliteIsKeptAndOfferedToTheCentral() {
+        val app = RuntimeEnvironment.getApplication()
+        val wh = join(satellite, "B")
+        val mine = "item_${java.util.UUID.randomUUID()}.jpg"
+        PhotoFiles.receive(app, mine, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 5, 5, 0xFF.toByte(), 0xD9.toByte()))
+        satellite.updatePhoto(satellite.items(wh).single().id, mine)
+        // The central has no photo of this article: the satellite keeps its own.
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(mine, satellite.items(wh).single().photoFile)
+        assertTrue(PhotoFiles.exists(app, mine))
+        // Offered with the next file of changes: the central takes it.
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(mine, central.items(warehouse).single().photoFile)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(mine, satellite.items(wh).single().photoFile)
+        // An offer never replaces a photo the central already has.
+        val centralOwn = "item_${java.util.UUID.randomUUID()}.jpg"
+        PhotoFiles.receive(app, centralOwn, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 7, 7, 0xFF.toByte(), 0xD9.toByte()))
+        central.updatePhoto(central.items(warehouse).single().id, centralOwn)
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(centralOwn, central.items(warehouse).single().photoFile)
+    }
 }

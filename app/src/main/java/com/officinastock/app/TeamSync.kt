@@ -220,22 +220,31 @@ class TeamSync(private val stock: StockDb) {
      */
     private fun applyPhotos(sql: SQLiteDatabase, warehouseId: Long, items: JSONArray, delivered: JSONObject?, pendingItems: Set<Long>) {
         val wants = LinkedHashSet<String>()
+        // Photos this phone took from the central: only those follow a removal made on the central.
+        val fromCentral = lines(setting("photos_central")).toSet()
+        val nowFromCentral = LinkedHashSet<String>()
+        // Photos taken on this phone for articles the central has no photo of: offered to it, never deleted.
+        val offers = LinkedHashSet<String>()
         for (i in 0 until items.length()) {
             val it = items.getJSONObject(i)
-            if (!it.has("photo")) return   // central older than 4.15: photos stay as they are
+            if (!it.has("photo")) return   // central older than 4.16: photos stay as they are
             val local = sql.rawQuery("SELECT id,photo_file FROM items WHERE uid=? AND warehouse_id=?", arrayOf(it.getString("uid"), warehouseId.toString()))
                 .use { c -> if (c.moveToFirst()) c.getLong(0) to (if (c.isNull(1)) null else c.getString(1)) else null } ?: continue
             if (local.first in pendingItems) continue
             val name = if (it.isNull("photo")) null else it.getString("photo")
-            if (name == local.second) continue
+            if (name == local.second) { name?.let { same -> nowFromCentral += same }; continue }
+            if (name == null && local.second !in fromCentral) { offers += it.getString("uid"); continue }
             if (name != null && !stock.hasPhoto(name)) {
                 val data = delivered?.optString(name).orEmpty()
                 if (data.isEmpty() || runCatching { stock.storePhoto(name, Base64.decode(data, Base64.DEFAULT)) }.isFailure) { wants += name; continue }
             }
             sql.update("items", ContentValues().apply { if (name == null) putNull("photo_file") else put("photo_file", name) }, "id=?", arrayOf(local.first.toString()))
             local.second?.let { removedPhotos += it }
+            name?.let { adopted -> nowFromCentral += adopted }
         }
         TeamSyncSchema.put(sql, "photo_wants", wants.take(MAX_PHOTO_WANTS).joinToString("\n"))
+        TeamSyncSchema.put(sql, "photos_central", nowFromCentral.joinToString("\n"))
+        TeamSyncSchema.put(sql, "photo_offers", offers.take(MAX_PHOTO_WANTS).joinToString("\n"))
     }
 
     private fun teamLoans(): List<TeamLoan> {
@@ -298,7 +307,9 @@ class TeamSync(private val stock: StockDb) {
                 if (letter != myLetter && categories != null && categories.length() > 0)
                     TeamSyncSchema.put(sql, "scope:$letter", (0 until categories.length()).joinToString("\n") { categories.getString(it) })
             }
-            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants')", null)
+            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants','photo_offers','photos_central')", null)
+            // The loans made on the lost central can no longer be returned there: they leave the list (the stock already counts them as out).
+            sql.delete("team_loans", "letter='A'", null)
             TeamSyncSchema.put(sql, "role", "central")
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
@@ -654,6 +665,13 @@ class TeamSync(private val stock: StockDb) {
                 "device_uid=?", arrayOf(device))
             TeamSyncSchema.put(sql, "actor", "")
             // 4.15: the satellite's open loans replace what was known of it (a file of an older version has none: nothing changes).
+            changes.optJSONArray("photo_offers")?.let { offered ->
+                for (i in 0 until minOf(offered.length(), MAX_PHOTO_WANTS)) {
+                    val o = offered.optJSONObject(i) ?: continue
+                    val free = sql.rawQuery("SELECT 1 FROM items WHERE uid=? AND warehouse_id=? AND photo_file IS NULL", arrayOf(o.optString("item"), warehouseId.toString())).use { it.moveToFirst() }
+                    if (free) receivePhoto(sql, warehouseId, o.optString("item"), o.optString("photo"), changes.optJSONObject("photos"))
+                }
+            }
             changes.optJSONArray("photo_wants")?.let { wants ->
                 TeamSyncSchema.put(sql, "photo_wants:$letter", (0 until minOf(wants.length(), MAX_PHOTO_WANTS)).joinToString("\n") { wants.optString(it) })
             }
@@ -710,10 +728,15 @@ class TeamSync(private val stock: StockDb) {
                 events.put(e)
             }
         }
+        // 4.16: photos taken here for articles the central has no photo of.
+        val offers = JSONArray()
+        for (uid in lines(setting("photo_offers"))) read.rawQuery("SELECT photo_file FROM items WHERE uid=? AND photo_file IS NOT NULL", arrayOf(uid)).use { p ->
+            if (p.moveToFirst()) { offers.put(JSONObject().put("item", uid).put("photo", p.getString(0))); newPhotos += p.getString(0) }
+        }
         write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid"))
             .put("device_uid", deviceUid()).put("letter", setting("letter")).put("created_at", System.currentTimeMillis())
             .put("events", events).put("photos", photosJson(newPhotos))
-            .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
+            .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("photo_offers", offers).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
         return events.length()
     }
 
