@@ -646,12 +646,12 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         } finally { endTransaction() } }
     }
     fun placements(warehouseId: Long): List<Placement> = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
+        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots,uid FROM placements WHERE warehouse_id=? ORDER BY id",arrayOf(warehouseId.toString())
     ).use { c -> buildList { while(c.moveToNext()) add(c.toPlacement()) } }
     private fun Cursor.toPlacement() = Placement(getLong(0),getLong(1),getString(2),getString(3),getFloat(4),getFloat(5),
-        getInt(6)!=0,getFloat(7),getFloat(8),getFloat(9),getInt(10),getInt(11))
+        getInt(6)!=0,getFloat(7),getFloat(8),getFloat(9),getInt(10),getInt(11),if(isNull(12)) null else getString(12))
     fun placement(id: Long): Placement? = readableDatabase.rawQuery(
-        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE id=?",
+        "SELECT id,warehouse_id,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots,uid FROM placements WHERE id=?",
         arrayOf(id.toString())).use { if(it.moveToFirst()) it.toPlacement() else null }
     fun addPlacement(warehouseId: Long, kind: String, label: String, x: Float, y: Float): Long {
         require(label.trim().isNotEmpty() && label.trim().length<=80) { "Inserisci un nome (massimo 80 caratteri)" }
@@ -804,6 +804,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
                 put("x",p.x);put("y",p.y);put("locked",if(p.locked)1 else 0)
                 put("width_m",p.width);put("depth_m",p.depth);put("rotation_deg",p.rotation)
                 put("levels",p.levels);put("slots",p.slots)
+                // 4.20: the same team-wide id, so its labels and NFC tags keep working after "Annulla".
+                if(p.uid!=null) put("uid",p.uid)
             })
             for(s in spots) db.update("items",ContentValues().apply {
                 put("placement_id",p.id)

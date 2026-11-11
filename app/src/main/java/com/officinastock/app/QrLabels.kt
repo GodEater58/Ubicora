@@ -40,7 +40,7 @@ data class LabelSpec(val payload: String, val title: String, val subtitle: Strin
     companion object {
         fun item(item: StockItem, location: String = item.category) =
             LabelSpec(ArticleCodes.payload(item.warehouseId,item.sku),item.sku,item.name,location)
-        fun placement(p: Placement) = LabelSpec(ArticleCodes.locationPayload(p.warehouseId,p.id),p.label,
+        fun placement(p: Placement) = LabelSpec(ArticleCodes.locationPayload(p.warehouseId,p.id,p.uid),p.label,
             if(p.hasPositions) "${p.kind} · ${p.levels} ripiani × ${p.slots} posti" else p.kind,"UBICAZIONE")
     }
 }

@@ -21,7 +21,8 @@ checks={
     'Manager threshold matches inventory': 'val under=items.filter { it.lowStock }' in metrics,
     'Map viewport hard clip': '.clipToBounds()' in map_screen and 'clipRect {' in map_screen,
     'Map labels use density-aware sp': '14.sp.toPx()' in map_screen and 'selectedLabelPx' in map_screen,
-    'Map labels draw legible chips': 'drawText(label,centerX,' in map_screen and 'Color(0xF20B2332)' in map_screen,
+    # 4.20: names without boxes, beside the structures, with a shadow and never over another structure.
+    'Map labels legible and placed beside structures': 'MapLabels.place(' in map_screen and 'setShadowLayer(' in map_screen,
     'Map panning bounded': '.clampedPan(' in map_screen,
     'History paginated with filtered SQLite queries': 'model.historyPage(warehouseId,focus,days,page)' in screens and 'Mostra altre operazioni' in screens and 'fun movementsPage(' in (p/'StockDb.kt').read_text(encoding='utf-8'),
     'Item edit action and safe database path': 'EditItemDetailsDialog(' in screens and 'model.updateItemDetails(' in screens and 'fun updateItemDetails(' in (p/'StockDb.kt').read_text(encoding='utf-8'),

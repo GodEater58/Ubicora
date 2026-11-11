@@ -161,7 +161,7 @@ import java.util.Locale
         dismissButton={TextButton(onClick=onClose){Text("Annulla")}})
 }
 
-@Composable internal fun PlacementDetailDialog(p:Placement,items:List<StockItem>,model:StockViewModel,onQr:()->Unit,onDismiss:()->Unit){
+@Composable internal fun PlacementDetailDialog(p:Placement,items:List<StockItem>,model:StockViewModel,onQr:()->Unit,onDismiss:()->Unit,startEditing:Boolean=false){
     var articleQuery by remember(p.id){mutableStateOf("")}
     var askDelete by remember {mutableStateOf(false)}
     var name by remember(p.id,p.label){mutableStateOf(p.label)}
@@ -181,7 +181,7 @@ import java.util.Locale
         .sortedWith(compareBy({it.shelfLevel ?: 0},{it.shelfSlot ?: 0},{it.name.lowercase(Locale.ITALY)}))
     val free=items.filter{it.placementId==null && matches(it)}
     // 4.19.3: two tabs. "Contenuto" (what people need while exploring) opens first; size, shelves and deletion are in "Modifica".
-    var editing by remember(p.id){mutableStateOf(false)}
+    var editing by remember(p.id){mutableStateOf(startEditing)}
     AlertDialog(onDismissRequest=onDismiss,title={Text(p.label.ifBlank{p.kind},maxLines=1,overflow=TextOverflow.Ellipsis)},text={
         Column(Modifier.heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -276,5 +276,5 @@ import java.util.Locale
             }
         }
     },confirmButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
-    if(askDelete)AlertDialog(onDismissRequest={askDelete=false},title={Text("Eliminare ${p.label}?")},text={Text("Gli articoli rimangono nell'inventario senza ubicazione. Puoi annullare con il pulsante ↶ sulla mappa.")},confirmButton={TextButton(onClick={model.deletePlacement(p.id);askDelete=false;onDismiss()}){Text("Elimina",color=Danger)}},dismissButton={TextButton(onClick={askDelete=false}){Text("Annulla")}})
+    if(askDelete)AlertDialog(onDismissRequest={askDelete=false},title={Text("Eliminare ${p.label}?")},text={Text("Gli articoli rimangono nell'inventario senza ubicazione. Puoi annullare con il pulsante ↶ in Modifica pianta.")},confirmButton={TextButton(onClick={model.deletePlacement(p.id);askDelete=false;onDismiss()}){Text("Elimina",color=Danger)}},dismissButton={TextButton(onClick={askDelete=false}){Text("Annulla")}})
 }

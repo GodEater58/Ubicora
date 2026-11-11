@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/OfficinaStock-Android/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.19.3-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.20.0-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
@@ -47,7 +47,7 @@ Dettagli e cose da collaudare: [note della 4.15](docs/CHANGELOG_4_15_0.md) · [n
 |---|---|---|
 | 📦 | **Articoli** | Codici automatici per categoria, unità di misura da menu, foto, scorta minima, preferiti ★, carico/prelievo con uno scorrimento e «Annulla», vista compatta, storico dei movimenti nella stessa sezione |
 | 📷 | **QR** | Etichette per articoli e strutture, scanner al centro della barra in basso, **prelievo a raffica** in una sola schermata |
-| 🗺️ | **Mappa** | Pianta in metri: pareti che chiudono le forme da sole, scaffali con ripiani e posizioni, viste a colori, PDF, rilievo AR, doppio tocco per ingrandire, **prelievo guidato** |
+| 🗺️ | **Mappa** | Pianta in metri, pulita e girata per riempire il telefono: **ricerca con gli scaffali che si accendono**, **«dov'è» con percorso dall'ingresso**, **scaffale visto di fronte** ripiano per ripiano; strumenti di disegno dietro «Modifica»; viste a colori, PDF, rilievo AR, prelievo guidato |
 | 👥 | **Lavoro in squadra** | Un telefono **centrale** e più **satelliti**: si sincronizzano da vicini (Bluetooth + Wi-Fi diretto, senza internet) o con file cifrati; **reparti** per operatore; prestiti visibili a tutti; un satellite può sostituire il centrale |
 | 📊 | **Gestione** | Movimenti, prestiti, lista da ordinare da condividere, acquisti, inventari, trasferimenti, manutenzioni, lotti e report (modalità aziendale) |
 | 📥 | **Excel** | [Modello anagrafica](docs/Ubicora_Modello_Anagrafica.xlsx) per caricare tutti gli articoli in una volta; esportazione CSV |
