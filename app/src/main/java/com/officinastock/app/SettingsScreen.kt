@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 
 // 4.15: moved out of Screens.kt without changes — settings: archive, backup, display, warehouses.
 
-@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit) {
+@Composable fun SettingsScreen(model:StockViewModel,onCsv:()->Unit,onCsvImport:()->Unit,onBackup:(String)->Unit,onRestore:(String)->Unit,goTeam:()->Unit={}) {
     val archiveScope=rememberCoroutineScope()
     var archivePins by remember { mutableStateOf<Map<Long,String>>(emptyMap()) }
     var archiveError by remember { mutableStateOf<String?>(null) }
@@ -47,11 +47,11 @@ import kotlinx.coroutines.launch
     var understood by remember{mutableStateOf(false)}
     var name by remember{mutableStateOf("")};var location by remember{mutableStateOf("")}
     LazyColumn(contentPadding=PaddingValues(18.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        item {SectionTitle("Impostazioni","Ambienti, profili, demo e sicurezza dei dati")}
+        item {SectionTitle("Impostazioni","Azienda, sedi, squadra e sicurezza dei dati")}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("PROFILO CORRENTE",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text("AZIENDA",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text(model.ui.profile?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
-            OutlinedButton(onClick=model::signOut,modifier=Modifier.fillMaxWidth()){Text("Cambia profilo / Logout")}
+            OutlinedButton(onClick=model::signOut,modifier=Modifier.fillMaxWidth()){Text("Cambia azienda o esci")}
         }}
         item {Panel(Modifier.fillMaxWidth()) {
             Text("MODALITÀ D'USO",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
@@ -61,6 +61,7 @@ import kotlinx.coroutines.launch
                     Text(if(model.ui.businessMode) "Acquisti, approvazioni, inventari e manutenzioni" else
                         "Inventario e planimetria, senza moduli amministrativi",color=TextSecondary,fontSize=11.sp)
                 }
+                Spacer(Modifier.width(12.dp))
                 Switch(checked=model.ui.businessMode,onCheckedChange=model::changeManagerMode,
                     enabled=!model.ui.busy)
             }
@@ -72,14 +73,20 @@ import kotlinx.coroutines.launch
             }
         }}
         item {Panel(Modifier.fillMaxWidth()) {
-            Text("MAGAZZINI",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text("SEDE",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
             Text(model.ui.warehouse?.name ?: "",fontWeight=FontWeight.Bold,fontSize=19.sp)
-            OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia magazzino")}
-            OutlinedButton(onClick={renameWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Rinomina questo magazzino")}
-            OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Crea un altro magazzino")}
-            TextButton(onClick={deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questo magazzino",color=Danger)}
+            OutlinedButton(onClick={model.leaveWarehouse()},modifier=Modifier.fillMaxWidth()){Text("Cambia sede")}
+            OutlinedButton(onClick={renameWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Rinomina questa sede")}
+            OutlinedButton(onClick={newWarehouse=true},modifier=Modifier.fillMaxWidth()){Text("Aggiungi una sede")}
+            TextButton(onClick={deleteWarehouse=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()){Text("Elimina questa sede",color=Danger)}
         }}
-        item { TeamSyncPanel(model) }
+        // 4.19.3: the team is managed only in the Squadra tab, not twice.
+        item {Panel(Modifier.fillMaxWidth()) {
+            Text("SQUADRA",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text(when(model.ui.team.role){TeamRole.CENTRAL->"Questo è il telefono centrale";TeamRole.SATELLITE->"Satellite ${model.ui.team.letter}";else->"Telefono non collegato"},
+                fontWeight=FontWeight.Bold,fontSize=17.sp)
+            OutlinedButton(onClick=goTeam,modifier=Modifier.fillMaxWidth()){Text("Apri Squadra")}
+        }}
         item { DisplayPanel() }
         item { SecurityPanel(model) }
         item {Panel(Modifier.fillMaxWidth()) {
@@ -92,7 +99,7 @@ import kotlinx.coroutines.launch
         if(model.ui.demoCount>0) {
             item {Panel(Modifier.fillMaxWidth()) {
                 Text("DATI DIMOSTRATIVI",color=Amber,fontSize=11.sp,letterSpacing=1.sp)
-                Text("${model.ui.demoCount} elementi di esempio in questo magazzino. La rimozione preserva gli elementi creati da te.",fontSize=12.sp,color=TextSecondary)
+                Text("${model.ui.demoCount} elementi di esempio in questa sede. La rimozione preserva gli elementi creati da te.",fontSize=12.sp,color=TextSecondary)
                 OutlinedButton(onClick={confirmDemoRefresh=true},modifier=Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.Refresh,contentDescription=null)
                     Spacer(Modifier.width(8.dp))
@@ -103,8 +110,9 @@ import kotlinx.coroutines.launch
         } else {
             item {Panel(Modifier.fillMaxWidth()) {
                 Text("DEMO GUIDATA",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
-                Text("Carica 42 articoli fittizi con costi, fornitori, foto illustrative, scorte critiche, prelievi degli ultimi 90 giorni, prestiti, ubicazioni e planimetria. Puoi farlo anche in un magazzino con dati reali: la demo rimane separata.",fontSize=12.sp,color=TextSecondary)
-                PrimaryAction("Carica dati dimostrativi",model::seedDemo,modifier=Modifier.fillMaxWidth())
+                // 4.19.3: a secondary button, so it does not look like the main action in an archive with real data.
+                Text("42 articoli di esempio per provare l'app. Restano separati dai tuoi dati e si tolgono con un tocco.",fontSize=12.sp,color=TextSecondary)
+                OutlinedButton(onClick=model::seedDemo,modifier=Modifier.fillMaxWidth()){Text("Carica dati dimostrativi")}
             }}
         }
         item {Panel(Modifier.fillMaxWidth()) {
@@ -143,11 +151,11 @@ import kotlinx.coroutines.launch
     model.ui.csvPreviewCount?.let { count ->
         AlertDialog(onDismissRequest=model::cancelCsvImport,
             title={Text("Conferma importazione CSV")},
-            text={Text("Aggiungere " + count + " articoli a questo magazzino? Non saranno modificati quelli esistenti. La quantità iniziale genera un movimento. Le fotografie non sono comprese.")},
+            text={Text("Aggiungere " + count + " articoli a questa sede? Non saranno modificati quelli esistenti. La quantità iniziale genera un movimento. Le fotografie non sono comprese.")},
             confirmButton={TextButton(onClick=model::confirmCsvImport,enabled=!model.ui.busy){Text("Importa")}},
             dismissButton={TextButton(onClick=model::cancelCsvImport){Text("Annulla")}})
     }
-    if(newWarehouse) AlertDialog(onDismissRequest={newWarehouse=false},title={Text("Nuovo magazzino")},text={
+    if(newWarehouse) AlertDialog(onDismissRequest={newWarehouse=false},title={Text("Nuova sede")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome");Input(location,{location=it},"Località")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);newWarehouse=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={newWarehouse=false}){Text("Annulla")}})
@@ -158,7 +166,7 @@ import kotlinx.coroutines.launch
     },confirmButton={TextButton(onClick={model.refreshDemo();confirmDemoRefresh=false}){Text("Rigenera demo")}},
         dismissButton={TextButton(onClick={confirmDemoRefresh=false}){Text("Annulla")}})
     if(confirmDemoRemoval) AlertDialog(onDismissRequest={confirmDemoRemoval=false},title={Text("Eliminare la demo?")},text={
-        Text("Rimuove soltanto articoli, strutture e pareti marcati come dimostrativi in questo magazzino. Gli articoli personali non verranno cancellati.")
+        Text("Rimuove soltanto articoli, strutture e pareti marcati come dimostrativi in questa sede. Gli articoli personali non verranno cancellati.")
     },confirmButton={TextButton(onClick={model.removeDemo();confirmDemoRemoval=false}){Text("Rimuovi demo",color=Danger)}},
         dismissButton={TextButton(onClick={confirmDemoRemoval=false}){Text("Annulla")}})
     if(backupDialog) AlertDialog(onDismissRequest={backupDialog=false},title={Text("Backup cifrato")},text={
@@ -209,10 +217,10 @@ import kotlinx.coroutines.launch
     val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.covers(w.id)
     AlertDialog(onDismissRequest=onClose,title={Text("Eliminare «${w.name}»?")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            if(synced) Text("Questo magazzino è sincronizzato con il team. Per eliminarlo, prima scollega questo telefono dalla sezione Sincronizzazione.",color=Danger)
+            if(synced) Text("Questa sede è condivisa con la squadra. Per eliminarla, prima scollega questo telefono dalla scheda Squadra.",color=Danger)
             else {
-                Text("Cancella definitivamente articoli, foto, movimenti, prestiti, planimetria e dati gestionali di questo magazzino. Non si può annullare: se servono, esporta prima un backup.")
-                Input(typed,{typed=it},"Scrivi il nome del magazzino per confermare")
+                Text("Cancella definitivamente articoli, foto, movimenti, prestiti, planimetria e dati gestionali di questa sede. Non si può annullare: se servono, esporta prima un backup.")
+                Input(typed,{typed=it},"Scrivi il nome della sede per confermare")
             }
         }
     },confirmButton={ if(!synced) TextButton(onClick={model.deleteWarehouse(w,typed);onClose()},
@@ -225,11 +233,11 @@ import kotlinx.coroutines.launch
     var name by remember(w.id){mutableStateOf(w.name)}
     var location by remember(w.id){mutableStateOf(w.location)}
     val satellite=model.ui.team.role==TeamRole.SATELLITE && model.ui.team.covers(w.id)
-    AlertDialog(onDismissRequest=onClose,title={Text("Rinomina magazzino")},text={
+    AlertDialog(onDismissRequest=onClose,title={Text("Rinomina sede")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            if(satellite) Text("Questo magazzino è sincronizzato: il nome si cambia dal telefono centrale e arriva qui con la sincronizzazione.",color=Amber)
+            if(satellite) Text("Questa sede è condivisa: il nome si cambia dal telefono centrale e arriva qui con la sincronizzazione.",color=Amber)
             else {
-                Input(name,{name=it.take(160)},"Nome magazzino")
+                Input(name,{name=it.take(160)},"Nome sede")
                 Input(location,{location=it.take(300)},"Località / descrizione")
                 if(model.ui.team.role==TeamRole.CENTRAL && model.ui.team.covers(w.id))
                     Text("Il nuovo nome arriva anche ai satelliti con la prossima sincronizzazione.",fontSize=11.sp,color=TextSecondary)

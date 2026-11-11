@@ -53,8 +53,8 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("INTELLIGENCE DI MAGAZZINO",color=Mint,fontWeight=FontWeight.Bold,fontSize=11.sp,letterSpacing=1.4.sp)
-                Text("Controllo manageriale",fontSize=22.sp,fontWeight=FontWeight.Bold)
+                Text("INDICATORI",color=Mint,fontWeight=FontWeight.Bold,fontSize=11.sp,letterSpacing=1.4.sp)
+                Text("Andamento del magazzino",fontSize=22.sp,fontWeight=FontWeight.Bold)
             }
             IconButton(onClick={expanded=!expanded}) {
                 Icon(if(expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,"Espandi report")
@@ -121,6 +121,12 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                     Text("Apri inventario")
                 }
             }
+            // 4.19.3: without any cost the two value cards said only "missing data" over two screens: one line instead.
+            if(report.pricedCount==0) Panel(Modifier.fillMaxWidth().clickable { onStockFocus(StockFocus.ALL) }) {
+                Text("Valore e analisi ABC",fontSize=16.sp,fontWeight=FontWeight.Bold)
+                Text("Inserisci il costo unitario degli articoli (scheda articolo → Costo, fornitore e tempi di riordino) per vedere il capitale immobilizzato e l'analisi ABC.",
+                    fontSize=12.sp,color=TextSecondary)
+            } else {
             Panel(Modifier.fillMaxWidth().clickable { onStockFocus(StockFocus.PRICED) }) {
                 Text("Capitale immobilizzato per categoria",fontSize=16.sp,fontWeight=FontWeight.Bold)
                 Text("Giacenza × costo unitario, solo articoli valorizzati",fontSize=11.sp,color=TextSecondary)
@@ -153,12 +159,15 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                 Text("Totale consumi valorizzati: ${euro(report.usageValue)}",color=Mint,fontSize=12.sp)
                 if(report.usageUnpriced>0)Text("${report.usageUnpriced} referenze consumate senza prezzo: ABC parziale.",fontSize=11.sp,color=Amber)
             }
+            }
             Panel(Modifier.fillMaxWidth()) {
                 Text("Utilizzo e scorte ferme",fontSize=16.sp,fontWeight=FontWeight.Bold)
                 Text("${report.noWithdrawal90} referenze senza prelievi registrati negli ultimi 90 giorni. Include quelle nuove: non equivale a obsolescenza.",fontSize=12.sp,color=TextSecondary)
                 TextButton(onClick={onStockFocus(StockFocus.IDLE_90)},modifier=Modifier.fillMaxWidth()){
                     Text("Vedi le ${report.noWithdrawal90} referenze senza prelievi")
                 }
+                // 4.19.3: this list is the most picked articles, so it gets its own title (it looked like the idle ones).
+                if(report.topConsumed.isNotEmpty()) Text("PIÙ PRELEVATI NEL PERIODO",color=Mint,fontWeight=FontWeight.Bold,fontSize=10.sp,letterSpacing=1.sp)
                 report.topConsumed.take(5).forEach { (item,qty) ->
                     Row(Modifier.fillMaxWidth().clickable { onItemFocus(item.id) }) {
                         Text(item.name,modifier=Modifier.weight(1f),fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)

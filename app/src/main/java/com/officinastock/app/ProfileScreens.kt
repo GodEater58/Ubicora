@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +83,17 @@ import kotlinx.coroutines.launch
         model.ui.message?.let {Text(it,color=Danger)}
     }
     picked?.let { p ->
-        AlertDialog(onDismissRequest={picked=null},title={Text("Accedi a ${p.name}")},text={Input(pin,{pin=it.filter(Char::isDigit).take(8)},"PIN",number=true,password=true)},
+        // 4.19.3: the PIN field is ready to type (keyboard open) and "Fatto" on the keyboard signs in.
+        val pinFocus=remember{androidx.compose.ui.focus.FocusRequester()}
+        LaunchedEffect(p.id) { kotlinx.coroutines.delay(150); runCatching{pinFocus.requestFocus()} }
+        AlertDialog(onDismissRequest={picked=null},title={Text("Accedi a ${p.name}")},text={
+            OutlinedTextField(pin,onValueChange={pin=it.filter(Char::isDigit).take(8)},label={Text("PIN")},singleLine=true,
+                keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                    imeAction=androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onDone={ if(pin.isNotEmpty()) { model.unlock(p,pin);picked=null } }),
+                visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                modifier=Modifier.fillMaxWidth().focusRequester(pinFocus))
+        },
             confirmButton={TextButton(onClick={model.unlock(p,pin);picked=null},enabled=pin.isNotEmpty()){Text("Accedi")}},
             dismissButton={TextButton(onClick={picked=null}){Text("Annulla")}})
     }

@@ -8,10 +8,13 @@ screens=''.join((base/'app/src/main/java/com/officinastock/app'/f).read_text(enc
 build=(base/"app/build.gradle.kts").read_text(encoding='utf-8')
 assert "parseScan(raw: String)" in models
 assert '"OFFICINA-STOCK:1:W$warehouseId:$sku"' in models
-assert 'ScanContract()' in main and 'ScanOptions.QR_CODE' in main
+# 4.19.3: the scanner is a Compose screen with the ZXing camera inside, no separate activity.
+quick=(base/"app/src/main/java/com/officinastock/app/QuickScanScreen.kt").read_text(encoding='utf-8')
+assert 'QuickScanScreen(model)' in main and 'BurstCamera(torch)' in quick and 'model.handleScannedCode(raw)' in quick
+assert 'model.scanCancelled()' in quick and 'FlashlightOn' in quick and 'Icons.Outlined.Close' in quick
 assert "scannedItemId" in vm and "target.warehouseId != warehouse.id" in vm
 assert "InventoryScreen(model,onScan" in main, "Lo scanner deve essere collegato alla schermata inventario"
-assert "ScanContract()" in main and "onScan" in main, "Il comando scanner deve restare disponibile"
+assert "onScan" in main, "Il comando scanner deve restare disponibile"
 assert "LaunchedEffect(u.scannedItemId,u.items)" in screens, "Il QR deve aprire la scheda articolo"
 assert "LaunchedEffect(u.scannedItemId,u.items)" in screens
 assert 'zxing-android-embedded:4.3.0' in build

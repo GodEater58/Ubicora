@@ -122,8 +122,8 @@ object TodayTasks {
                 Row(Modifier.heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Dashboard, contentDescription = null, tint = Mint)
                     Spacer(Modifier.width(14.dp))
-                    Text("Gestione aziendale", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi indicatori" else "Indicatori") }
+                    Text("Gestione aziendale", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showIndicators = !showIndicators }) { Text(if (showIndicators) "Nascondi" else "Indicatori") }
                 }
             }
         }
@@ -324,7 +324,7 @@ object TodayTasks {
                 }
             }
         }
-        item { TeamSyncPanel(model) }
+        item { TeamSyncPanel(model, inTeamScreen = true) }
         if (u.team.role == TeamRole.SATELLITE && u.team.covers(u.warehouse?.id)) item {
             OutlinedButton(onClick = { askPromote = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) { Text("Il centrale non c'è più: questo telefono lo sostituisce") }
         }
