@@ -320,6 +320,8 @@ class TeamSyncTest {
         other.movement(other.items(whC).single().id, -2.0, "Prelievo")
         TeamSync(satellite).promoteToCentral()
         assertEquals(TeamRole.CENTRAL, TeamSync(satellite).status().role)
+        // 4.19.2: the labels printed by the lost central are still read on the new one.
+        assertEquals(whB, TeamSync(satellite).status().labelIds[warehouse])
         rejects { TeamSync(central).promoteToCentral() }
         fun newState() = ByteArrayOutputStream().also { TeamSync(satellite).exportState(it) }.toByteArray()
         // C keeps working with the new central: only the two undelivered pieces are applied, once.

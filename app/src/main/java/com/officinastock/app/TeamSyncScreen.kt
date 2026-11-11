@@ -137,7 +137,8 @@ import java.util.Locale
                 Text(if (synced) "Magazzino sincronizzato: ${u.warehouse?.name} · la mappa la modifica solo il centrale"
                     else "Il magazzino sincronizzato è un altro: aprilo per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
-                Text("Reparto: " + (if (t.scope.isEmpty()) "tutti" else t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare"),
+                Text(when { t.scope.isEmpty() -> "Permessi: manutentore, tutte le categorie"; t.scope == listOf(TeamSync.PICK_ONLY) -> "Permessi: solo prelievo e prestito"
+                    else -> "Reparto: " + t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare" },
                     fontSize = 12.sp, color = if (t.scope.isEmpty()) TextSecondary else Mint)
                 Surface(color = (if (t.pending > 0) Amber else Mint).copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
                     Text(if (t.pending > 0) "${t.pending} modifiche da inviare al centrale" else "Tutto inviato al centrale",

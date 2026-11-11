@@ -360,7 +360,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val t=ui.team
         return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope.isNotEmpty() && category!=null && category !in t.scope
     }
-    private fun department()=ui.team.scope.joinToString(", ")
+    private fun department()=if(pickOnly) "solo prelievo" else ui.team.scope.joinToString(", ")
+    /** 4.19.2: a satellite that can only withdraw and lend here. */
+    val pickOnly:Boolean get() { val t=ui.team; return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope==listOf(TeamSync.PICK_ONLY) }
     /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
     fun departmentCategories():List<String> { val t=ui.team
         return if(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) t.scope else emptyList() }
@@ -456,7 +458,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val t=ui.team
         // A satellite never creates the article in the other site: two phones doing it offline would collide on the central.
         val satellite=t.role==TeamRole.SATELLITE && (t.covers(ui.warehouse?.id) || t.covers(site.id))
-        execute { db.transferToSite(itemId,site.id,quantity,createMissing=!satellite) }
+        execute {
+            // 4.19.2: on a satellite both sites must be in the team, or the central would see only half of the transfer.
+            require(!satellite || (t.covers(ui.warehouse?.id) && t.covers(site.id))) { "Da questo telefono si sposta solo tra le sedi della squadra" }
+            db.transferToSite(itemId,site.id,quantity,createMissing=!satellite)
+        }
     }
     fun setTeamPickOnly(letter:String) = execute { team.setPickOnly(letter) }
     /** Central: another site of the company is shared with the team. */

@@ -219,7 +219,7 @@ class TeamSync(private val stock: StockDb) {
                 if (letter != myLetter && categories != null && categories.length() > 0)
                     TeamSyncSchema.put(sql, "scope:$letter", (0 until categories.length()).joinToString("\n") { categories.getString(it) })
             }
-            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants','photo_offers','photos_central','label_ids')", null)
+            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants','photo_offers','photos_central')", null)
             // The loans made on the lost central can no longer be returned there: they leave the list (the stock already counts them as out).
             sql.delete("team_loans", "letter='A'", null)
             TeamSyncSchema.put(sql, "role", "central")
@@ -838,6 +838,8 @@ class TeamSync(private val stock: StockDb) {
             }
         }
         saveSites(sql, nowSites)
+        // 4.19.2: numbers of labels printed by an earlier central stay known (after a replacement of the central), unless reused.
+        for ((printed, local) in labelIds()) if (printed !in labels && companyOf(local) != null) labels[printed] = local
         TeamSyncSchema.put(sql, "label_ids", labels.entries.joinToString("\n") { "${it.key}|${it.value}" })
         TeamSyncSchema.put(sql, "applying", "0")
         TeamSyncSchema.put(sql, "last_sync", System.currentTimeMillis().toString())

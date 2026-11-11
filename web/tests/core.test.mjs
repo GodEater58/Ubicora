@@ -282,3 +282,13 @@ test('Team update becomes a new site with plan, structures, stock and locations'
  assert.equal(s.items.length,before.items.length+2); // the other sites are untouched
  assert.throws(()=>importTeam(before,{format:'UBICORA_SYNC_CHANGES',version:1}),/telefono centrale/);
 });
+
+test('Team update with two sites adds both, each with its own stock',()=>{
+ const snap=teamSnapshot();snap.sites=[{warehouse_uid:'s2',warehouse:{name:'Secondaria',location:'Padova',width:10,height:6},placements:[],walls:[],
+  items:[{uid:'x1',sku:'RIC-000009',name:'Dado M10',category:'Ricambi',quantity:6,minimum:1,unit:'pz',placement:null,level:null,slot:null,note:'',cost:null,supplier:'',lead:null}]}];
+ const before=demo(),r=importTeam(before,snap,'squadra',1000);
+ assert.equal(r.sites,2);assert.equal(r.items,3);assert.equal(r.state.warehouses.length,before.warehouses.length+2);
+ const second=r.state.warehouses.find(w=>w.name.startsWith('Secondaria'));
+ assert.deepEqual(r.state.items.filter(i=>i.warehouseId===second.id).map(i=>[i.name,i.quantity]),[['Dado M10',6]]);
+ assert.equal(r.state.warehouses.find(w=>w.id===r.warehouseId).name,'Officina · squadra');
+});
