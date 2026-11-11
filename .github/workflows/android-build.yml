@@ -77,6 +77,7 @@ jobs:
           path: |
             app/build/reports/
             app/build/test-results/
+          retention-days: 3   # 4.20: the free plan has 500 MB for all of them
       - name: Record resolved runtime dependencies
         run: |
           mkdir -p app/build/reports/compliance
@@ -86,8 +87,10 @@ jobs:
           name: officina-stock-compliance-runtime-inventory
           path: app/build/reports/compliance/debugRuntimeClasspath.txt
           if-no-files-found: error
+          retention-days: 3   # 4.20: the free plan has 500 MB for all of them
       - uses: actions/upload-artifact@v7
         with:
           name: ubicora-DEBUG-do-not-use-for-updates
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 3   # 4.20: the free plan has 500 MB for all of them

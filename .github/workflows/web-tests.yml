@@ -37,3 +37,4 @@ jobs:
         with:
           name: ubicora-web-browser-screenshots
           path: /tmp/ubicora-*.png
+          retention-days: 3   # 4.20: the free plan has 500 MB for all of them
