@@ -47,6 +47,9 @@ object UiPrefs {
     fun updateAutoSync(value: Boolean) { autoSync = value; prefs?.edit()?.putBoolean("auto_sync", value)?.apply() }
     fun updateScanSound(value: Boolean) { scanSound = value; prefs?.edit()?.putBoolean("scan_sound", value)?.apply() }
     fun updateCompactList(value: Boolean) { compactList = value; prefs?.edit()?.putBoolean("compact_list", value)?.apply() }
+    // 4.17: the site (warehouse) each company (profile) used last, opened again after the PIN.
+    fun lastSite(companyId: Long): Long? = prefs?.getLong("last_site_$companyId", 0L)?.takeIf { it > 0 }
+    fun rememberSite(companyId: Long, siteId: Long) { prefs?.edit()?.putLong("last_site_$companyId", siteId)?.apply() }
     fun updateLoanDays(value: Int) { loanDays = value; prefs?.edit()?.putInt("loan_days", value)?.apply() }
     fun updateScreenshots(value: Boolean) { screenshots = value; prefs?.edit()?.putBoolean("screenshots", value)?.apply() }
 

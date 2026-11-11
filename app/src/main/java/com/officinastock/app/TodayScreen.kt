@@ -62,13 +62,20 @@ object TodayTasks {
         u.maintenanceWork.count { it.status == "OPEN" }
     val recent = u.movements.take(4)
     if (askLoanDays) LoanDaysDialog(loanDays) { askLoanDays = false }
+    var pickSite by remember { mutableStateOf(false) }
+    if (pickSite) SiteSheet(model) { pickSite = false }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(u.warehouse?.name ?: "Magazzino", fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${u.warehouse?.location?.ifBlank { "Area di lavoro" }}  ·  ${u.profile?.name}", color = TextSecondary, fontSize = 13.sp,
+                // 4.17: the name of the site is the way to the other sites of the company.
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Cambia sede") { pickSite = true }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(u.warehouse?.name ?: "Sede", fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false))
+                        Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    }
+                    Text("${u.profile?.name}  ·  ${u.warehouse?.location?.ifBlank { "Sede" }}", color = TextSecondary, fontSize = 13.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 SettingsGear(goSettings)
@@ -213,6 +220,38 @@ object TodayTasks {
             Box(Modifier.size(10.dp).clip(CircleShape).background(if (warn) Amber else Mint))
             Text(text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text(ago(team.lastSync), color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+        }
+    }
+}
+
+/** 4.17: the sites of the company; the current one is marked, the others are one tap away. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun SiteSheet(model: StockViewModel, onDismiss: () -> Unit) {
+    val u = model.ui
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(u.profile?.name ?: "Azienda", fontWeight = FontWeight.Bold, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Sedi", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            u.warehouses.forEach { site ->
+                val current = site.id == u.warehouse?.id
+                Surface(onClick = { onDismiss(); if (!current) model.selectWarehouse(site) }, enabled = !u.busy, shape = RoundedCornerShape(16.dp),
+                    color = if (current) Mint.copy(alpha = .14f) else Surface2, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.heightIn(min = 60.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Outlined.Warehouse, contentDescription = null, tint = if (current) Mint else TextSecondary)
+                        Column(Modifier.weight(1f)) {
+                            Text(site.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (site.location.isNotBlank()) Text(site.location, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (current) Text("Sei qui", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onDismiss(); model.leaveWarehouse() }, enabled = !u.busy) { Text("Aggiungi o gestisci le sedi") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { onDismiss(); model.signOut() }, enabled = !u.busy) { Text("Cambia azienda") }
+            }
         }
     }
 }

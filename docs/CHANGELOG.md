@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.17.0](CHANGELOG_4_17_0.md) | azienda con più sedi: selettore della sede in Oggi, ricerca nelle altre sedi, le etichette portano alla sede giusta. |
 | [4.16.2](CHANGELOG_4_16_2.md) | ritocchi a Oggi dopo il primo screenshot reale: niente viola nei comandi, ultimi movimenti compatti, gestione aziendale in un riquadro. |
 | [4.16.1](CHANGELOG_4_16_1.md) | correzioni: le foto scattate su un satellite non vengono più cancellate dalla sincronizzazione; scorrimento sulle righe meno sensibile. |
 | [4.16.0 / Web 1.1.0](CHANGELOG_4_16_0.md) | foto degli articoli nella sincronizzazione, magazzino della squadra sul PC, verifica scaffale con più codici per fotogramma. |

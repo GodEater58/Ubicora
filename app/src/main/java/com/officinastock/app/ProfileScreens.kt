@@ -38,10 +38,10 @@ import kotlinx.coroutines.launch
         Text("Crea un ambiente locale privato o professionale. Nessun account online richiesto.",color=TextSecondary)
         Spacer(Modifier.height(28.dp))
         Panel {
-            Input(name,{name=it},"Nome profilo (es. Personale)")
+            Input(name,{name=it},"Nome dell'azienda (es. Officina Rossi)")
             Input(pin,{pin=it.filter(Char::isDigit).take(8)},"PIN locale · 4–8 cifre",number=true,password=true)
             Text("Il PIN limita l'accesso nell'app, ma non cifra il database del dispositivo.",fontSize=12.sp,color=TextSecondary)
-            PrimaryAction("Crea profilo",{model.createProfile(name,pin)},name.isNotBlank()&&pin.length>=4&&!model.ui.busy,Modifier.fillMaxWidth())
+            PrimaryAction("Crea azienda",{model.createProfile(name,pin)},name.isNotBlank()&&pin.length>=4&&!model.ui.busy,Modifier.fillMaxWidth())
             model.ui.message?.let{Text(it,color=Danger)}
         }
     }
@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
     if(creating){
         androidx.activity.compose.BackHandler { creating=false }
         Column(Modifier.fillMaxSize()) {
-            TextButton(onClick={creating=false}) { Text("Torna ai profili") }
+            TextButton(onClick={creating=false}) { Text("Torna alle aziende") }
             Box(Modifier.weight(1f)) { NewProfileScreen(model,false) }
         }
         return
@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
         Spacer(Modifier.height(36.dp))
         UbicoraWordmark(compact=true)
         Spacer(Modifier.height(14.dp))
-        SectionTitle("Scegli il tuo profilo","I magazzini di ogni profilo rimangono separati")
+        SectionTitle("Scegli l'azienda","Ogni azienda ha le sue sedi, separate dalle altre")
         Spacer(Modifier.height(24.dp))
         LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp),modifier=Modifier.weight(1f)) {
             items(model.ui.profiles,key={it.id}) { profile ->
@@ -78,7 +78,7 @@ import kotlinx.coroutines.launch
                 }
             }
         }
-        OutlinedButton(onClick={creating=true},modifier=Modifier.fillMaxWidth()) {Icon(Icons.Outlined.Add,null);Spacer(Modifier.width(8.dp));Text("Nuovo profilo")}
+        OutlinedButton(onClick={creating=true},modifier=Modifier.fillMaxWidth()) {Icon(Icons.Outlined.Add,null);Spacer(Modifier.width(8.dp));Text("Nuova azienda")}
         model.ui.message?.let {Text(it,color=Danger)}
     }
     picked?.let { p ->
@@ -98,7 +98,7 @@ import kotlinx.coroutines.launch
         Spacer(Modifier.height(26.dp))
         Text("IL TUO AMBIENTE",color=Mint,fontWeight=FontWeight.SemiBold,letterSpacing=2.sp)
         Spacer(Modifier.height(12.dp))
-        SectionTitle("Dove lavoriamo?","Profilo ${model.ui.profile?.name}")
+        SectionTitle("Dove lavoriamo?","Sedi di ${model.ui.profile?.name}")
         Spacer(Modifier.height(18.dp))
         LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             items(model.ui.warehouses,key={it.id}) { w ->
@@ -111,12 +111,12 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            if(model.ui.warehouses.isNotEmpty()) item { Text("Tieni premuto un magazzino per rinominarlo o eliminarlo",fontSize=11.sp,color=TextSecondary) }
+            if(model.ui.warehouses.isNotEmpty()) item { Text("Tieni premuto una sede per rinominarla o eliminarla",fontSize=11.sp,color=TextSecondary) }
             // 4.10: a colleague's phone can join the team straight away, without creating a warehouse first.
             if(model.ui.team.role==TeamRole.NONE) item { TeamSyncPanel(model) }
         }
-        PrimaryAction("+  Crea nuovo magazzino",{show=true},modifier=Modifier.fillMaxWidth())
-        TextButton(onClick=model::signOut){Text("Cambia profilo")}
+        PrimaryAction("+  Aggiungi una sede",{show=true},modifier=Modifier.fillMaxWidth())
+        TextButton(onClick=model::signOut){Text("Cambia azienda")}
         model.ui.message?.let{Text(it,color=Danger)}
     }
     deleting?.let { w -> DeleteWarehouseDialog(model,w) { deleting=null } }
@@ -127,7 +127,7 @@ import kotlinx.coroutines.launch
             OutlinedButton(onClick={actionsFor=null;deleting=w},modifier=Modifier.fillMaxWidth()){Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(8.dp));Text("Elimina",color=Danger)}
         }
     },confirmButton={TextButton(onClick={actionsFor=null}){Text("Chiudi")}}) }
-    if(show) AlertDialog(onDismissRequest={show=false},title={Text("Nuovo magazzino")},text={
+    if(show) AlertDialog(onDismissRequest={show=false},title={Text("Nuova sede")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {Input(name,{name=it},"Nome magazzino");Input(location,{location=it},"Località / descrizione")}
     },confirmButton={TextButton(onClick={model.createWarehouse(name,location);show=false},enabled=name.isNotBlank()){Text("Crea")}},
         dismissButton={TextButton(onClick={show=false}){Text("Annulla")}})

@@ -80,6 +80,8 @@ data class StockUiState(
     val nfcWrite: String? = null,
     /** 4.15 shelf check: the camera sweeps a structure and ticks what it finds (nothing is moved or counted). */
     val shelfCheck: ShelfCheck? = null,
+    /** 4.17: articles matching the search in the other sites of the company. */
+    val siteHits: List<SiteHit> = emptyList(),
     /** 4.15: the guided bar asks to open the map (token, 0 = none). */
     val guidedMapRequest: Long = 0,
     /** 4.15: outcome of the last reading, for the sound and the vibration of the scanner screen. */
@@ -135,6 +137,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui.shelfCheck?.let { check -> handleShelfScan(raw,warehouse,check); return }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
         ArticleCodes.parseLocationScan(raw)?.let { location ->
+            siteOfLabel(location.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
             ui=when {
                 location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
                 ui.placements.none { it.id==location.placementId } -> ui.copy(scannedItemId=null,message="Struttura non trovata: potrebbe essere stata eliminata.")
@@ -147,6 +150,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Ubicora o Officina Stock.")
             return
         }
+        siteOfLabel(target.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
         if(target.warehouseId != null && target.warehouseId != warehouse.id) {
             ui=ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
             return
@@ -384,7 +388,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
-            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,
+            pickScanItemId=ui.pickScanItemId,pickScanMissedId=ui.pickScanMissedId,nfcWrite=ui.nfcWrite,siteHits=ui.siteHits,
             shelfCheck=ui.shelfCheck?.takeIf{snapshot.warehouse?.id==ui.warehouse?.id},
             burstItemId=ui.burstItemId?.takeIf{id->snapshot.items.any{it.id==id}},
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,
@@ -514,8 +518,42 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.busy||ui.profile?.id!=w.profileId)return
         operationalRowLimit=250
         clearMapHistory()
-        ui=ui.copy(warehouse=w)
+        UiPrefs.rememberSite(w.profileId,w.id)
+        ui=ui.copy(warehouse=w,siteHits=emptyList())
         execute {} // ricarica tutte le liste per il magazzino scelto
+    }
+    // ---- 4.17 company with several sites ----
+    private var siteSearch=0L
+    /** Looks for the same words in the other sites of the company (the current one is already on screen). */
+    fun searchOtherSites(query:String) {
+        val token=++siteSearch
+        val here=ui.warehouse?.id
+        val others=ui.warehouses.filter { it.id!=here }
+        val text=query.trim()
+        if(text.length<2 || others.isEmpty()) { if(ui.siteHits.isNotEmpty()) ui=ui.copy(siteHits=emptyList()); return }
+        viewModelScope.launch {
+            val hits=runCatching { withContext(Dispatchers.IO) { others.flatMap { w -> db.items(w.id,text).take(15).map { SiteHit(w,it) } } } }.getOrDefault(emptyList())
+            if(token==siteSearch) ui=ui.copy(siteHits=hits)
+        }
+    }
+    /** Opens an article of another site: the app moves there and shows its page. */
+    fun openInSite(hit:SiteHit) {
+        if(ui.busy || ui.profile?.id!=hit.site.profileId) return
+        operationalRowLimit=250
+        clearMapHistory()
+        UiPrefs.rememberSite(hit.site.profileId,hit.site.id)
+        ui=ui.copy(warehouse=hit.site,siteHits=emptyList())
+        execute(onSuccess={ if(ui.items.any { it.id==hit.item.id }) ui=ui.copy(scannedItemId=hit.item.id) }) {}
+    }
+    /** A label of another site of the same company: move there, then read it again. Null = not one of our sites. */
+    private fun siteOfLabel(warehouseId:Long?):Warehouse? = warehouseId?.let { id -> ui.warehouses.firstOrNull { it.id==id && it.id!=ui.warehouse?.id } }
+    private fun followLabelToSite(site:Warehouse,raw:String) {
+        if(ui.busy) { ui=ui.copy(message="Riprova tra un momento"); return }
+        operationalRowLimit=250
+        clearMapHistory()
+        UiPrefs.rememberSite(site.profileId,site.id)
+        ui=ui.copy(warehouse=site,siteHits=emptyList())
+        execute(onSuccess={ if(ui.warehouse?.id==site.id) { handleScannedCode(raw); if(ui.message==null) ui=ui.copy(message="Sei passato alla sede ${site.name}") } }) {}
     }
     fun createWarehouse(name: String,location: String) {
         if(!ui.busy) clearMapHistory()
@@ -1055,11 +1093,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(selectedProfile!=null) {
             val p=withContext(Dispatchers.IO){db.profiles().firstOrNull{it.id==selectedProfile}}
             ui=ui.copy(profile=p,warehouse=null,sessionLocked=generation!=backgroundGeneration)
+            // 4.17: straight back to the site used last; the list of the sites is one tap away, on the name at the top.
+            if(p!=null && selectedWarehouse==null) {
+                val last=UiPrefs.lastSite(p.id)
+                val site=if(last==null) null else withContext(Dispatchers.IO){db.warehouses(p.id).firstOrNull{it.id==last}}
+                if(site!=null) { operationalRowLimit=250; ui=ui.copy(warehouse=site) }
+            }
         }
         if(selectedWarehouse!=null) {
             val w=withContext(Dispatchers.IO){ui.profile?.let{db.warehouses(it.id)}?.firstOrNull{it.id==selectedWarehouse}}
             operationalRowLimit=250
             ui=ui.copy(warehouse=w)
+            if(w!=null) UiPrefs.rememberSite(w.profileId,w.id)
         }
         pendingProfileId=null;pendingWarehouseId=null
         reload(error)
