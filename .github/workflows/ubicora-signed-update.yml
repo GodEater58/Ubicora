@@ -107,3 +107,59 @@ jobs:
         shell: bash
         run: |
           rm -rf "$RUNNER_TEMP/ubicora-signing"
+
+  # The signed APK also lands in a DRAFT release: one tap to download it from a phone, no zip.
+  # Draft releases are visible only to people with write access to the repository; publishing
+  # one is a manual choice on GitHub. Only this job can write, and it never sees the keystore.
+  draft-release:
+    name: Put the signed APK in a draft release
+    needs: build-signed-update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the verified signed APK
+        uses: actions/download-artifact@v8
+        with:
+          name: ubicora-signed-update-code-${{ inputs.expected_version_code }}
+          path: signed
+      - name: Create or replace the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_CODE: ${{ inputs.expected_version_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find signed -name app-release.apk | head -n 1)"
+          audit="$(find signed -name RELEASE-AUDIT.txt | head -n 1)"
+          test -s "$apk" && test -s "$audit"
+          name="$(sed -n 's/^ *versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::versionName non leggibile"; exit 1; }
+          tag="v$name"
+          file="Ubicora-$name.apk"
+          cp "$apk" "$file"
+          # A published release is never touched; an older draft of the same version is replaced.
+          if gh release view "$tag" --json isDraft --jq .isDraft > state.txt 2>/dev/null; then
+            if [[ "$(cat state.txt)" != "true" ]]; then
+              echo "::error::La release $tag è già pubblicata: aumenta versionCode e versionName."
+              exit 1
+            fi
+            gh release delete "$tag" --yes
+          fi
+          notes="docs/CHANGELOG_${name//./_}.md"
+          {
+            echo "APK firmato con la chiave permanente: si installa sopra la versione precedente senza disinstallare."
+            echo
+            echo "- versionName: $name"
+            echo "- versionCode: $VERSION_CODE"
+            echo "- SHA-256 dell'APK: $(sha256sum "$file" | cut -d ' ' -f 1)"
+            echo
+            if [[ -f "$notes" ]]; then echo "Note: [$notes](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/$notes)"; fi
+            echo
+            echo "Bozza creata da GitHub Actions: visibile solo a chi può scrivere nel repository."
+          } > notes.md
+          gh release create "$tag" "$file" "$audit#RELEASE-AUDIT.txt" --draft --target "${{ github.sha }}" \
+            --title "Ubicora $name" --notes-file notes.md
+          echo "Bozza pronta: $(gh release view "$tag" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
