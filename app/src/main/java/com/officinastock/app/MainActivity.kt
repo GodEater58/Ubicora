@@ -78,13 +78,15 @@ class MainActivity: ComponentActivity() {
     /** 4.20: a Ubicora tag touched with the app closed opens it here; the text waits for the PIN. */
     private fun readTagIntent(intent:Intent?) {
         if(intent?.action!=android.nfc.NfcAdapter.ACTION_NDEF_DISCOVERED) return
-        val raw=if(android.os.Build.VERSION.SDK_INT>=33)
-            intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES,android.nfc.NdefMessage::class.java)?.toList()
-        else @Suppress("DEPRECATION") intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES)?.filterIsInstance<android.nfc.NdefMessage>()
-        model.queueTagCode(runCatching { NfcLabels.firstText(raw.orEmpty()) }.getOrNull())
+        model.queueTagCode(runCatching { NfcLabels.firstText(tagMessages(intent)) }.getOrNull())
         // Read once: a later recreation of the activity must not open the same shelf again.
         setIntent(Intent(intent).setAction(Intent.ACTION_MAIN))
     }
+    @Suppress("DEPRECATION")
+    private fun tagMessages(intent:Intent):List<android.nfc.NdefMessage> =
+        if(android.os.Build.VERSION.SDK_INT>=33)
+            intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES,android.nfc.NdefMessage::class.java)?.toList().orEmpty()
+        else intent.getParcelableArrayExtra(android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES)?.filterIsInstance<android.nfc.NdefMessage>().orEmpty()
     override fun onNewIntent(intent:Intent) {
         super.onNewIntent(intent)
         readTagIntent(intent)
