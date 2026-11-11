@@ -80,6 +80,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
             // 4.15: who made each movement. Same rule: created once, on any database version.
             MovementActors.create(db)
+            // 4.18: the team triggers follow every shared site; rebuilt here so older installations get the new ones.
+            TeamSyncSchema.create(db)
         }
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

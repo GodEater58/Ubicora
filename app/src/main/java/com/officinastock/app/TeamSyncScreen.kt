@@ -62,7 +62,7 @@ import java.util.Locale
     }
     val nearby = rememberNearbyAccess { result = it }
     val day = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ITALY).format(Date())
-    val synced = t.warehouseId != null && t.warehouseId == u.warehouse?.id
+    val synced = !t.covers(null) && t.covers(u.warehouse?.id)
 
     Panel(Modifier.fillMaxWidth()) {
         Text("SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)

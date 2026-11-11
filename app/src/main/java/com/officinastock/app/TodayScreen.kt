@@ -55,7 +55,7 @@ object TodayTasks {
     var askLoanDays by remember { mutableStateOf(false) }
     // Business mode: the indicators stay one tap away, closed by default, so the screen is the same for everyone.
     var showIndicators by rememberSaveable { mutableStateOf(false) }
-    val team = u.team.takeIf { it.role != TeamRole.NONE && it.warehouseId == u.warehouse?.id }
+    val team = u.team.takeIf { it.covers(u.warehouse?.id) }
     val conflicts = team?.conflicts?.size ?: 0
     val managerPending = if (!u.businessMode) 0 else u.orders.count { it.status in listOf("DRAFT", "APPROVED", "ORDERED") } +
         u.stockCounts.count { it.status == "PENDING" } + u.stockTransfers.count { it.status in listOf("REQUESTED", "IN_TRANSIT") } +
@@ -292,7 +292,7 @@ object TodayTasks {
                 SettingsGear(goSettings)
             }
         }
-        if (u.team.role != TeamRole.NONE && u.team.warehouseId == u.warehouse?.id) item { SyncCard(model) }
+        if (u.team.role != TeamRole.NONE && u.team.covers(u.warehouse?.id)) item { SyncCard(model) }
         if (u.team.loans.isNotEmpty()) item {
             Panel(Modifier.fillMaxWidth()) {
                 Text("In prestito dagli altri telefoni", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -309,8 +309,23 @@ object TodayTasks {
                 }
             }
         }
+        // 4.18: the central chooses which sites of the company the team works on.
+        if (u.team.role == TeamRole.CENTRAL && u.warehouses.size > 1) item {
+            Panel(Modifier.fillMaxWidth()) {
+                Text("Sedi della squadra", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("I satelliti ricevono le sedi condivise con il prossimo aggiornamento e possono lavorare su tutte.", color = TextSecondary, fontSize = 12.sp)
+                u.warehouses.forEach { site ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Outlined.Warehouse, contentDescription = null, tint = if (u.team.covers(site.id)) Mint else TextSecondary)
+                        Text(site.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (u.team.covers(site.id)) Text("Condivisa", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        else OutlinedButton(onClick = { model.shareSite(site.id) }, enabled = !u.busy) { Text("Condividi") }
+                    }
+                }
+            }
+        }
         item { TeamSyncPanel(model) }
-        if (u.team.role == TeamRole.SATELLITE && u.team.warehouseId == u.warehouse?.id) item {
+        if (u.team.role == TeamRole.SATELLITE && u.team.covers(u.warehouse?.id)) item {
             OutlinedButton(onClick = { askPromote = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) { Text("Il centrale non c'è più: questo telefono lo sostituisce") }
         }
     }

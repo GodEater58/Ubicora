@@ -128,7 +128,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui.pickScanItemId?.let { expected ->
             // 4.15 guided picking: only the label of the expected article confirms the withdrawal.
             ui=ui.copy(pickScanItemId=null,pickScanMissedId=expected)
-            val read=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+            val read=readArticleLabel(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
                 ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
             if(read?.id==expected) confirmPick(expected)
             else ui=ui.copy(message="Etichetta diversa: serve ${ui.items.firstOrNull { it.id==expected }?.name ?: "l'articolo della lista"}.")
@@ -136,7 +136,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
         ui.shelfCheck?.let { check -> handleShelfScan(raw,warehouse,check); return }
         if(ui.burstMode) { handleBurstScan(raw,warehouse); return }
-        ArticleCodes.parseLocationScan(raw)?.let { location ->
+        readLocationLabel(raw)?.let { location ->
             siteOfLabel(location.warehouseId)?.let { site -> followLabelToSite(site,raw); return }
             ui=when {
                 location.warehouseId!=warehouse.id -> ui.copy(scannedItemId=null,message="Questa etichetta appartiene a un altro magazzino. Cambia magazzino e riprova.")
@@ -145,7 +145,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             }
             return
         }
-        val target=ArticleCodes.parseScan(raw)
+        val target=readArticleLabel(raw)
         if(target == null) {
             ui=ui.copy(scannedItemId=null,message="Codice QR non riconosciuto. Usa un'etichetta Ubicora o Officina Stock.")
             return
@@ -218,13 +218,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun startShelfCheck(placementId:Long?=null) { if(!ui.busy) ui=ui.copy(shelfCheck=ShelfCheck(placementId?.takeIf{id->ui.placements.any{it.id==id}}),burstMode=false,burstItemId=null,message=null) }
     fun endShelfCheck() { ui=ui.copy(shelfCheck=null,scanSignal=null) }
     private fun handleShelfScan(raw:String,warehouse:Warehouse,check:ShelfCheck) {
-        ArticleCodes.parseLocationScan(raw)?.let { location ->
+        readLocationLabel(raw)?.let { location ->
             val known=location.warehouseId==warehouse.id && ui.placements.any { it.id==location.placementId }
             ui=if(known) ui.copy(shelfCheck=check.copy(placementId=location.placementId),message=null,scanSignal=ScanSignal(true,System.nanoTime()))
                 else ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
             return
         }
-        val item=ArticleCodes.parseScan(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
+        val item=readArticleLabel(raw)?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
             ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
         when {
             item==null -> ui=ui.copy(scanSignal=ScanSignal(false,System.nanoTime()))
@@ -265,7 +265,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         },light=true) { db.movement(itemId,-quantity,"Prelievo guidato") }
     }
     private fun handleBurstScan(raw:String,warehouse:Warehouse) {
-        val target=ArticleCodes.parseScan(raw)
+        val target=readArticleLabel(raw)
         val item=target?.takeIf { it.warehouseId==null || it.warehouseId==warehouse.id }
             ?.let { t -> ui.items.firstOrNull { it.sku.equals(t.sku,ignoreCase=true) } }
         val pending=ui.burstItemId
@@ -427,19 +427,19 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** On a satellite the map belongs to the central phone: it arrives with each update. */
     private fun requireMapEditable() {
         val t=ui.team
-        require(!(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id)) {
+        require(!(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id))) {
             "Su questo telefono (satellite ${t.letter}) la mappa si modifica solo dal telefono centrale"
         }
     }
     /** Satellite with a department: true when [category] is outside it (the central decides). */
     private fun outsideDepartment(category:String?):Boolean {
         val t=ui.team
-        return t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id && t.scope.isNotEmpty() && category!=null && category !in t.scope
+        return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope.isNotEmpty() && category!=null && category !in t.scope
     }
     private fun department()=ui.team.scope.joinToString(", ")
     /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
     fun departmentCategories():List<String> { val t=ui.team
-        return if(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) t.scope else emptyList() }
+        return if(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) t.scope else emptyList() }
     private fun requireDepartment(itemIds:List<Long>,what:String) {
         val outside=ui.items.filter { it.id in itemIds && outsideDepartment(it.category) }
         require(outside.isEmpty()) { "${outside.first().name} non è del tuo reparto (${department()}): $what" }
@@ -523,6 +523,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute {} // ricarica tutte le liste per il magazzino scelto
     }
     // ---- 4.17 company with several sites ----
+    // 4.18: on a satellite the number of the site printed on the central's labels is translated to this phone's.
+    private fun localSite(id:Long?):Long? = if(id==null) null else ui.team.labelIds[id] ?: id
+    private fun readArticleLabel(raw:String) = ArticleCodes.parseScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId)) }
+    private fun readLocationLabel(raw:String) = ArticleCodes.parseLocationScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId) ?: it.warehouseId) }
+    /** Central: another site of the company is shared with the team. */
+    fun shareSite(warehouseId:Long) = execute { team.addSite(warehouseId) }
     private var siteSearch=0L
     /** Looks for the same words in the other sites of the company (the current one is already on screen). */
     fun searchOtherSites(query:String) {
@@ -568,7 +574,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.busy || ui.sessionLocked || ui.profile?.id!=w.profileId) return
         execute {
             val t=team.status()
-            require(!(t.role==TeamRole.SATELLITE && t.warehouseId==w.id)) {
+            require(!(t.role==TeamRole.SATELLITE && t.covers(w.id))) {
                 "Su questo telefono (satellite ${t.letter}) il nome del magazzino si cambia dal telefono centrale"
             }
             db.renameWarehouse(w.profileId,w.id,name,location)
@@ -581,7 +587,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute(onSuccess=onDone) { db.changePin(p.id,currentPin,newPin) }
     }
     /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
-    val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.warehouseId==ui.warehouse?.id) }
+    val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
     fun deleteItem(itemId:Long) = execute {
         require(canDeleteItems) { "Su questo telefono (satellite ${ui.team.letter}) gli articoli si eliminano dal telefono centrale" }
         val photo=db.deleteItem(requireWarehouse(),itemId)
@@ -596,7 +602,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         execute {
             require(typedName.trim().equals(w.name.trim(),ignoreCase=true)) { "Il nome scritto non corrisponde: magazzino non eliminato" }
             val t=team.status()
-            require(t.role==TeamRole.NONE || t.warehouseId!=w.id) {
+            require(t.role==TeamRole.NONE || !t.covers(w.id)) {
                 "Questo magazzino è sincronizzato con il team: prima usa «Scollega questo telefono» nella sezione Sincronizzazione"
             }
             val photos=db.deleteWarehouse(w.profileId,w.id)
@@ -962,7 +968,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val (warehouseId,rows)=requireNotNull(pendingCsvImport) { "Seleziona un CSV" }
         // On a satellite an explicit central-style code could clash with the central's own codes.
         val t=ui.team
-        if(t.role==TeamRole.SATELLITE && t.warehouseId==warehouseId) rows.firstOrNull { it.sku.isNotEmpty() && ArticleCodes.parseCode(it.sku)?.letter!=t.letter }?.let {
+        if(t.role==TeamRole.SATELLITE && t.covers(warehouseId)) rows.firstOrNull { it.sku.isNotEmpty() && ArticleCodes.parseCode(it.sku)?.letter!=t.letter }?.let {
             throw IllegalArgumentException("${it.sku}: su questo telefono lascia vuota la colonna Codice, l'app assegna codici con la lettera ${t.letter}")
         }
         rows.firstOrNull { outsideDepartment(it.category) }?.let { throw IllegalArgumentException("${it.name}: categoria ${it.category} fuori dal tuo reparto (${department()})") }
@@ -978,7 +984,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Central: opens the short-range network for the synced warehouse. */
     fun startCentralLink() {
         val t=ui.team; val w=ui.warehouse
-        if(t.role!=TeamRole.CENTRAL || w==null || t.warehouseId!=w.id || ui.sessionLocked) return
+        if(t.role!=TeamRole.CENTRAL || w==null || !t.covers(w.id) || ui.sessionLocked) return
         link.startCentral(team.warehouseUid() ?: return,w.name)
     }
     /** Satellite: looks for its central and exchanges on its own. */
@@ -1002,7 +1008,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun autoLink() {
         if(!UiPrefs.autoSync || ui.sessionLocked || link.ui.phase!=LinkPhase.IDLE) return
         val t=ui.team; val w=ui.warehouse ?: return
-        if(t.warehouseId!=w.id || TeamLink.missingPermissions(getApplication()).isNotEmpty()) return
+        if(!t.covers(w.id) || TeamLink.missingPermissions(getApplication()).isNotEmpty()) return
         val uid=team.warehouseUid() ?: return
         when(t.role) {
             TeamRole.CENTRAL -> link.startCentral(uid,w.name,silent=true)

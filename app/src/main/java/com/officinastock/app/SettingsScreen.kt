@@ -206,7 +206,7 @@ import kotlinx.coroutines.launch
 /** 4.12.1/4.13: delete a warehouse after typing its name; refused while it is the synced one. */
 @Composable fun DeleteWarehouseDialog(model:StockViewModel,w:Warehouse,onClose:()->Unit) {
     var typed by remember(w.id){mutableStateOf("")}
-    val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.warehouseId==w.id
+    val synced=model.ui.team.role!=TeamRole.NONE && model.ui.team.covers(w.id)
     AlertDialog(onDismissRequest=onClose,title={Text("Eliminare «${w.name}»?")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if(synced) Text("Questo magazzino è sincronizzato con il team. Per eliminarlo, prima scollega questo telefono dalla sezione Sincronizzazione.",color=Danger)
@@ -224,14 +224,14 @@ import kotlinx.coroutines.launch
 @Composable fun RenameWarehouseDialog(model:StockViewModel,w:Warehouse,onClose:()->Unit) {
     var name by remember(w.id){mutableStateOf(w.name)}
     var location by remember(w.id){mutableStateOf(w.location)}
-    val satellite=model.ui.team.role==TeamRole.SATELLITE && model.ui.team.warehouseId==w.id
+    val satellite=model.ui.team.role==TeamRole.SATELLITE && model.ui.team.covers(w.id)
     AlertDialog(onDismissRequest=onClose,title={Text("Rinomina magazzino")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if(satellite) Text("Questo magazzino è sincronizzato: il nome si cambia dal telefono centrale e arriva qui con la sincronizzazione.",color=Amber)
             else {
                 Input(name,{name=it.take(160)},"Nome magazzino")
                 Input(location,{location=it.take(300)},"Località / descrizione")
-                if(model.ui.team.role==TeamRole.CENTRAL && model.ui.team.warehouseId==w.id)
+                if(model.ui.team.role==TeamRole.CENTRAL && model.ui.team.covers(w.id))
                     Text("Il nuovo nome arriva anche ai satelliti con la prossima sincronizzazione.",fontSize=11.sp,color=TextSecondary)
             }
         }

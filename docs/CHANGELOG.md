@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.18.0](CHANGELOG_4_18_0.md) | la squadra lavora su tutte le sedi dell'azienda: un collegamento, più sedi sui satelliti. |
 | [4.17.0](CHANGELOG_4_17_0.md) | azienda con più sedi: selettore della sede in Oggi, ricerca nelle altre sedi, le etichette portano alla sede giusta. |
 | [4.16.2](CHANGELOG_4_16_2.md) | ritocchi a Oggi dopo il primo screenshot reale: niente viola nei comandi, ultimi movimenti compatti, gestione aziendale in un riquadro. |
 | [4.16.1](CHANGELOG_4_16_1.md) | correzioni: le foto scattate su un satellite non vengono più cancellate dalla sincronizzazione; scorrimento sulle righe meno sensibile. |

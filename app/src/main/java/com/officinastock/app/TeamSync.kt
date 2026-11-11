@@ -79,16 +79,17 @@ object TeamSyncSchema {
         // while a central update is being applied (that is not a local change to send back).
         val active = """(SELECT value FROM team_sync_settings WHERE key='role')='satellite'
             AND COALESCE((SELECT value FROM team_sync_settings WHERE key='applying'),'0')='0'"""
-        val synced = "CAST((SELECT value FROM team_sync_settings WHERE key='warehouse_id') AS INTEGER)"
         val now = "CAST(strftime('%s','now') AS INTEGER)*1000"
+        // 4.18: rebuilt at every open, so a new definition replaces the one an older version created.
+        for (t in listOf("team_out_item", "team_out_move", "team_out_locate")) db.execSQL("DROP TRIGGER IF EXISTS $t")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_out_item AFTER INSERT ON items
-            WHEN $active AND NEW.warehouse_id=$synced
+            WHEN $active AND ${inTeam("NEW.warehouse_id")}
             BEGIN INSERT INTO team_sync_outbox(kind,ref_id,created_at) VALUES('ITEM',NEW.id,$now); END""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_out_move AFTER INSERT ON movements
-            WHEN $active AND (SELECT warehouse_id FROM items WHERE id=NEW.item_id)=$synced
+            WHEN $active AND ${inTeam("(SELECT warehouse_id FROM items WHERE id=NEW.item_id)")}
             BEGIN INSERT INTO team_sync_outbox(kind,ref_id,created_at) VALUES('MOVE',NEW.id,$now); END""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_out_locate AFTER UPDATE OF placement_id,shelf_level,shelf_slot ON items
-            WHEN $active AND NEW.warehouse_id=$synced AND (OLD.placement_id IS NOT NEW.placement_id
+            WHEN $active AND ${inTeam("NEW.warehouse_id")} AND (OLD.placement_id IS NOT NEW.placement_id
                 OR OLD.shelf_level IS NOT NEW.shelf_level OR OLD.shelf_slot IS NOT NEW.shelf_slot)
             BEGIN INSERT INTO team_sync_outbox(kind,ref_id,created_at) VALUES('LOCATE',NEW.id,$now); END""")
         createScopeTriggers(db)
@@ -101,23 +102,31 @@ object TeamSyncSchema {
     fun createScopeTriggers(db: SQLiteDatabase) {
         fun s(key: String) = "(SELECT value FROM team_sync_settings WHERE key='$key')"
         val active = "${s("role")}='satellite' AND COALESCE(${s("applying")},'0')='0'"
-        val synced = "CAST(${s("warehouse_id")} AS INTEGER)"
+        for (t in listOf("team_scope_item", "team_scope_category", "team_scope_load", "team_scope_locate")) db.execSQL("DROP TRIGGER IF EXISTS $t")
         fun outside(category: String) = "COALESCE(${s("scope")},'')<>'' AND instr(char(10)||${s("scope")}||char(10), char(10)||$category||char(10))=0"
         val message = "Fuori dal tuo reparto: qui puoi solo prelevare. Per il resto chiedi al telefono centrale"
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_item BEFORE INSERT ON items
-            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("NEW.category")}
+            WHEN $active AND ${inTeam("NEW.warehouse_id")} AND ${outside("NEW.category")}
             BEGIN SELECT RAISE(ABORT,'Fuori dal tuo reparto: non puoi creare articoli di questa categoria'); END""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_category BEFORE UPDATE OF category ON items
-            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("NEW.category")}
+            WHEN $active AND ${inTeam("NEW.warehouse_id")} AND ${outside("NEW.category")}
             BEGIN SELECT RAISE(ABORT,'Fuori dal tuo reparto: categoria non consentita'); END""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_load BEFORE INSERT ON movements
             WHEN $active AND NEW.delta>0 AND COALESCE(${s("returning")},'0')='0'
-                AND EXISTS(SELECT 1 FROM items i WHERE i.id=NEW.item_id AND i.warehouse_id=$synced AND ${outside("i.category")})
+                AND EXISTS(SELECT 1 FROM items i WHERE i.id=NEW.item_id AND ${inTeam("i.warehouse_id")} AND ${outside("i.category")})
             BEGIN SELECT RAISE(ABORT,'$message'); END""")
         db.execSQL("""CREATE TRIGGER IF NOT EXISTS team_scope_locate BEFORE UPDATE OF placement_id,shelf_level,shelf_slot ON items
-            WHEN $active AND NEW.warehouse_id=$synced AND ${outside("OLD.category")} AND (OLD.placement_id IS NOT NEW.placement_id
+            WHEN $active AND ${inTeam("NEW.warehouse_id")} AND ${outside("OLD.category")} AND (OLD.placement_id IS NOT NEW.placement_id
                 OR OLD.shelf_level IS NOT NEW.shelf_level OR OLD.shelf_slot IS NOT NEW.shelf_slot)
             BEGIN SELECT RAISE(ABORT,'$message'); END""")
+    }
+    /**
+     * 4.18: true when [expr] is one of the sites shared with the team: the first one ("warehouse_id")
+     * or any other of the company ("warehouse_ids", written as ",1,5,").
+     */
+    fun inTeam(expr: String): String {
+        fun s(key: String) = "(SELECT value FROM team_sync_settings WHERE key='$key')"
+        return "instr(COALESCE(${s("warehouse_ids")}, ','||${s("warehouse_id")}||','), ','||$expr||',')>0"
     }
     fun backfillIds(db: SQLiteDatabase) {
         for (table in listOf("items", "placements"))
@@ -147,9 +156,15 @@ data class TeamSyncStatus(
     val scopes: Map<String, List<String>> = emptyMap(),
     /** 4.11: the team password is not readable on this phone (e.g. backup restored on a new phone). */
     val needsPassword: Boolean = false,
+    /** 4.18: the other sites of the company shared with the team (local ids), beside [warehouseId]. */
+    val sites: List<Long> = emptyList(),
+    /** 4.18, satellite: site numbers printed on the central's labels -> the same site on this phone. */
+    val labelIds: Map<Long, Long> = emptyMap(),
     /** 4.15: tools on loan from the other phones of the team (read-only here: they are returned where they were lent). */
     val loans: List<TeamLoan> = emptyList()
 )
+/** 4.18: true when [id] is a site shared with the team. */
+fun TeamSyncStatus.covers(id: Long?): Boolean = id != null && role != TeamRole.NONE && (id == warehouseId || id in sites)
 data class TeamLoan(val letter: String, val itemId: Long?, val itemName: String, val borrower: String, val quantity: Double, val createdAt: Long)
 data class TeamImportResult(val articles: Int, val movements: Int, val locations: Int, val skipped: Int, val conflicts: Int,
                             val letter: String? = null, val removed: Int = 0)
@@ -165,6 +180,7 @@ class TeamSync(private val stock: StockDb) {
         private const val INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
+        private const val MAX_SITES = 10
         /** 4.15: photos asked for and carried by one file; what does not fit follows at the next exchanges. */
         private const val MAX_PHOTO_WANTS = 60
         private const val MAX_PHOTO_BYTES = 8 * 1024 * 1024
@@ -186,10 +202,52 @@ class TeamSync(private val stock: StockDb) {
             buildList { while (c.moveToNext()) add(TeamConflict(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4))) } }
         return TeamSyncStatus(role, setting("warehouse_id")?.toLongOrNull(), setting("letter"),
             if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts,
-            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null, loans = teamLoans())
+            lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null,
+            sites = extraSites().keys.toList(), labelIds = labelIds(), loans = teamLoans())
     }
 
     // ---------------------------------------------------------------- 4.15 loans of the team
+
+    // ---------------------------------------------------------------- 4.18 sites of the company
+
+    /** The other shared sites: local warehouse id -> id shared by every phone. */
+    private fun extraSites(): LinkedHashMap<Long, String> {
+        val out = LinkedHashMap<Long, String>()
+        for (line in lines(setting("sites"))) { val parts = line.split('|'); val id = parts.getOrNull(0)?.toLongOrNull(); if (id != null && parts.size == 2) out[id] = parts[1] }
+        return out
+    }
+    private fun saveSites(sql: SQLiteDatabase, sites: Map<Long, String>) {
+        if (sites.isEmpty()) sql.delete("team_sync_settings", "key IN ('sites','warehouse_ids')", null)
+        else {
+            TeamSyncSchema.put(sql, "sites", sites.entries.joinToString("\n") { "${it.key}|${it.value}" })
+            TeamSyncSchema.put(sql, "warehouse_ids", "," + (listOf(setting("warehouse_id")!!.toLong()) + sites.keys).joinToString(",") + ",")
+        }
+    }
+    /** Every site of the team on this phone, the first one included. */
+    private fun teamIds(): List<Long> = listOfNotNull(setting("warehouse_id")?.toLongOrNull()) + extraSites().keys
+    private fun labelIds(): Map<Long, Long> = buildMap {
+        for (line in lines(setting("label_ids"))) { val parts = line.split('|'); val a = parts.getOrNull(0)?.toLongOrNull(); val b = parts.getOrNull(1)?.toLongOrNull(); if (a != null && b != null) put(a, b) }
+    }
+    private fun companyOf(warehouseId: Long): Long? =
+        db.rawQuery("SELECT profile_id FROM warehouses WHERE id=?", arrayOf(warehouseId.toString())).use { if (it.moveToFirst()) it.getLong(0) else null }
+    /** An article of any shared site, by its global id: (article, site). */
+    private fun teamItem(sql: SQLiteDatabase, ids: Collection<Long>, uid: String): Pair<Long, Long>? =
+        if (uid.isEmpty()) null else sql.rawQuery("SELECT id,warehouse_id FROM items WHERE uid=?", arrayOf(uid)).use {
+            if (it.moveToFirst() && it.getLong(1) in ids) it.getLong(0) to it.getLong(1) else null }
+
+    /** Central: another site of the same company joins the team. The satellites receive it with the next update. */
+    fun addSite(warehouseId: Long) {
+        require(setting("role") == "central") { "Le sedi della squadra le sceglie il telefono centrale" }
+        val first = setting("warehouse_id")!!.toLong()
+        val sites = extraSites()
+        require(warehouseId != first && warehouseId !in sites) { "Questa sede è già condivisa con la squadra" }
+        val company = companyOf(warehouseId)
+        require(company != null && company == companyOf(first)) { "Si possono condividere solo le sedi della stessa azienda" }
+        require(sites.size < MAX_SITES - 1) { "Troppe sedi condivise" }
+        val sql = db
+        sql.beginTransaction()
+        try { saveSites(sql, sites + (warehouseId to UUID.randomUUID().toString())); sql.setTransactionSuccessful() } finally { sql.endTransaction() }
+    }
 
     // ---------------------------------------------------------------- 4.15 photos of the team
 
@@ -218,16 +276,14 @@ class TeamSync(private val stock: StockDb) {
      * delivered with this file, is used at once; the others are noted and asked for with the next file
      * of changes. Until a photo arrives the article keeps the one it had.
      */
-    private fun applyPhotos(sql: SQLiteDatabase, warehouseId: Long, items: JSONArray, delivered: JSONObject?, pendingItems: Set<Long>) {
-        val wants = LinkedHashSet<String>()
+    private fun applyPhotos(sql: SQLiteDatabase, warehouseId: Long, items: JSONArray, delivered: JSONObject?, pendingItems: Set<Long>,
+                            wants: MutableSet<String>, nowFromCentral: MutableSet<String>, offers: MutableSet<String>): Boolean {
         // Photos this phone took from the central: only those follow a removal made on the central.
+        // [offers]: photos taken on this phone for articles the central has no photo of: offered to it, never deleted.
         val fromCentral = lines(setting("photos_central")).toSet()
-        val nowFromCentral = LinkedHashSet<String>()
-        // Photos taken on this phone for articles the central has no photo of: offered to it, never deleted.
-        val offers = LinkedHashSet<String>()
         for (i in 0 until items.length()) {
             val it = items.getJSONObject(i)
-            if (!it.has("photo")) return   // central older than 4.16: photos stay as they are
+            if (!it.has("photo")) return false   // central older than 4.16: photos stay as they are
             val local = sql.rawQuery("SELECT id,photo_file FROM items WHERE uid=? AND warehouse_id=?", arrayOf(it.getString("uid"), warehouseId.toString()))
                 .use { c -> if (c.moveToFirst()) c.getLong(0) to (if (c.isNull(1)) null else c.getString(1)) else null } ?: continue
             if (local.first in pendingItems) continue
@@ -242,15 +298,13 @@ class TeamSync(private val stock: StockDb) {
             local.second?.let { removedPhotos += it }
             name?.let { adopted -> nowFromCentral += adopted }
         }
-        TeamSyncSchema.put(sql, "photo_wants", wants.take(MAX_PHOTO_WANTS).joinToString("\n"))
-        TeamSyncSchema.put(sql, "photos_central", nowFromCentral.joinToString("\n"))
-        TeamSyncSchema.put(sql, "photo_offers", offers.take(MAX_PHOTO_WANTS).joinToString("\n"))
+        return true
     }
 
     private fun teamLoans(): List<TeamLoan> {
-        val warehouse = setting("warehouse_id") ?: return emptyList()
+        setting("warehouse_id") ?: return emptyList()
         return db.rawQuery("""SELECT t.letter,i.id,COALESCE(i.name,'Articolo non più presente'),t.borrower,t.quantity,t.created_at
-            FROM team_loans t LEFT JOIN items i ON i.uid=t.item_uid AND i.warehouse_id=? ORDER BY t.created_at""", arrayOf(warehouse)).use { c ->
+            FROM team_loans t LEFT JOIN items i ON i.uid=t.item_uid ORDER BY t.created_at""", null).use { c ->
             buildList { while (c.moveToNext()) add(TeamLoan(c.getString(0), if (c.isNull(1)) null else c.getLong(1), c.getString(2),
                 c.getString(3), c.getDouble(4), c.getLong(5))) } }
     }
@@ -307,7 +361,7 @@ class TeamSync(private val stock: StockDb) {
                 if (letter != myLetter && categories != null && categories.length() > 0)
                     TeamSyncSchema.put(sql, "scope:$letter", (0 until categories.length()).joinToString("\n") { categories.getString(it) })
             }
-            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants','photo_offers','photos_central')", null)
+            sql.delete("team_sync_settings", "key IN ('letter','scope','known_peers','applying','returning','actor','photo_wants','photo_offers','photos_central','label_ids')", null)
             // The loans made on the lost central can no longer be returned there: they leave the list (the stock already counts them as out).
             sql.delete("team_loans", "letter='A'", null)
             TeamSyncSchema.put(sql, "role", "central")
@@ -435,9 +489,8 @@ class TeamSync(private val stock: StockDb) {
      */
     fun requireDetailsEditable(itemId: Long) {
         if (setting("role") != "satellite") return
-        val synced = db.rawQuery("SELECT 1 FROM items WHERE id=? AND warehouse_id=?",
-            arrayOf(itemId.toString(), setting("warehouse_id").orEmpty())).use { it.moveToFirst() }
-        if (!synced) return
+        val site = db.rawQuery("SELECT warehouse_id FROM items WHERE id=?", arrayOf(itemId.toString())).use { if (it.moveToFirst()) it.getLong(0) else null }
+        if (site == null || site !in teamIds()) return
         require(db.rawQuery("SELECT 1 FROM team_sync_outbox WHERE kind='ITEM' AND ref_id=?", arrayOf(itemId.toString())).use { it.moveToFirst() }) {
             "Su questo telefono (satellite ${setting("letter")}) i dati dell'articolo si modificano dal telefono centrale. Carichi, prelievi e ubicazione invece sì."
         }
@@ -522,25 +575,16 @@ class TeamSync(private val stock: StockDb) {
 
     // ---------------------------------------------------------------- central
 
-    /** Complete state for every phone. */
-    fun exportState(out: OutputStream) {
-        require(setting("role") == "central") { "Solo il telefono centrale invia l'aggiornamento" }
-        val warehouseId = setting("warehouse_id")!!.toLong()
-        val read = stock.readableDatabase
-        val state = JSONObject().put("format", SNAPSHOT).put("version", 1)
-            .put("warehouse_uid", setting("warehouse_uid")).put("central", deviceUid())
-            .put("created_at", System.currentTimeMillis())
+    /** Plan, structures and articles of one site, as they travel to the satellites. */
+    private fun siteJson(read: SQLiteDatabase, warehouseId: Long): JSONObject {
+        val state = JSONObject()
         read.rawQuery("SELECT name,location,map_width,map_height FROM warehouses WHERE id=?", arrayOf(warehouseId.toString())).use { c ->
             require(c.moveToFirst()) { "Il magazzino sincronizzato non esiste più" }
             state.put("warehouse", JSONObject().put("name", c.getString(0)).put("location", c.getString(1))
-                .put("width", c.getDouble(2)).put("height", c.getDouble(3)))
+                .put("width", c.getDouble(2)).put("height", c.getDouble(3))
+                // 4.18: the number printed on this phone's labels for the site.
+                .put("label_id", warehouseId))
         }
-        val processed = JSONObject(); val letters = JSONObject()
-        read.rawQuery("SELECT device_uid,letter,processed_seq FROM team_sync_peers", null).use { c ->
-            while (c.moveToNext()) { processed.put(c.getString(0), c.getLong(2)); letters.put(c.getString(0), c.getString(1)) }
-        }
-        state.put("processed", processed).put("letters", letters)
-            .put("scopes", JSONObject().apply { scopes().forEach { (l, c) -> put(l, JSONArray(c)) } })
         val placements = JSONArray()
         read.rawQuery("SELECT uid,kind,label,x,y,locked,width_m,depth_m,rotation_deg,levels,slots FROM placements WHERE warehouse_id=? ORDER BY id",
             arrayOf(warehouseId.toString())).use { c -> while (c.moveToNext()) placements.put(JSONObject()
@@ -563,13 +607,37 @@ class TeamSync(private val stock: StockDb) {
                 // 4.15: name of the photo (a new photo has a new name, so the name alone tells when it changed).
                 .put("photo", if (c.isNull(14)) JSONObject.NULL else c.getString(14)))
         }
+        return state.put("placements", placements).put("walls", walls).put("items", items)
+    }
+
+    /** Complete state for every phone. */
+    fun exportState(out: OutputStream) {
+        require(setting("role") == "central") { "Solo il telefono centrale invia l'aggiornamento" }
+        val warehouseId = setting("warehouse_id")!!.toLong()
+        val read = stock.readableDatabase
+        val state = JSONObject().put("format", SNAPSHOT).put("version", 1)
+            .put("warehouse_uid", setting("warehouse_uid")).put("central", deviceUid())
+            .put("created_at", System.currentTimeMillis())
+        val site = siteJson(read, warehouseId)
+        for (key in listOf("warehouse", "placements", "walls", "items")) state.put(key, site.get(key))
+        // 4.18: the other sites of the company (older versions ignore this field and keep working on the first site).
+        val sites = extraSites()
+        val shared = JSONArray()
+        for ((id, uid) in sites) if (companyOf(id) != null) shared.put(siteJson(read, id).put("warehouse_uid", uid))
+        if (shared.length() > 0) state.put("sites", shared)
+        val processed = JSONObject(); val letters = JSONObject()
+        read.rawQuery("SELECT device_uid,letter,processed_seq FROM team_sync_peers", null).use { c ->
+            while (c.moveToNext()) { processed.put(c.getString(0), c.getLong(2)); letters.put(c.getString(0), c.getString(1)) }
+        }
+        state.put("processed", processed).put("letters", letters)
+            .put("scopes", JSONObject().apply { scopes().forEach { (l, c) -> put(l, JSONArray(c)) } })
         // 4.15: the photos the satellites said they miss, within a size limit; the rest follows at the next exchanges.
         val wanted = LinkedHashSet<String>()
         read.rawQuery("SELECT value FROM team_sync_settings WHERE key LIKE 'photo_wants:%'", null).use { c -> while (c.moveToNext()) wanted += lines(c.getString(0)) }
         state.put("photos", photosJson(wanted))
-        state.put("placements", placements).put("walls", walls).put("items", items)
         // 4.15: who has which tool, from every phone (older versions ignore this field).
         val loans = ownLoans(read, warehouseId, "A")
+        for (id in sites.keys) ownLoans(read, id, "A", loans)
         read.rawQuery("SELECT letter,item_uid,borrower,quantity,created_at FROM team_loans ORDER BY created_at", null).use { c ->
             while (c.moveToNext()) loans.put(JSONObject().put("letter", c.getString(0)).put("item", c.getString(1)).put("borrower", c.getString(2))
                 .put("quantity", c.getDouble(3)).put("at", c.getLong(4)))
@@ -603,6 +671,8 @@ class TeamSync(private val stock: StockDb) {
             // 4.15: movements applied from this file belong to that satellite (rolled back with the transaction on failure).
             TeamSyncSchema.put(sql, "actor", letter)
             val scope = setting("scope:$letter")?.let { lines(it).toSet() }
+            val ids = teamIds()
+            val siteOf = extraSites().entries.associate { it.value to it.key } + (setting("warehouse_uid").orEmpty() to warehouseId)
             fun outside(itemId: Long?): Boolean = scope != null && itemId != null &&
                 sql.rawQuery("SELECT category FROM items WHERE id=?", arrayOf(itemId.toString())).use { it.moveToFirst() && it.getString(0) !in scope }
             val events = changes.getJSONArray("events")
@@ -622,15 +692,19 @@ class TeamSync(private val stock: StockDb) {
                                 "articolo non creato: la categoria ${o.getString("category")} non è del reparto $letter"); conflicts++
                         } else {
                             // A bad article (e.g. a code already taken) must not block every later file of this phone.
-                            val inserted = runCatching { insertArticle(sql, warehouseId, e) }
-                            inserted.onSuccess { if (it) { articles++; receivePhoto(sql, warehouseId, o.getString("uid"), e.optString("photo"), changes.optJSONObject("photos")) } else skipped++ }.onFailure {
+                            val inserted = runCatching {
+                                // 4.18: the site the article was created in (none = the first, as before).
+                                val site = e.optString("site").let { uid -> if (uid.isEmpty()) warehouseId else siteOf[uid] ?: throw IllegalArgumentException("sede non condivisa con la squadra") }
+                                if (insertArticle(sql, site, e)) site else null
+                            }
+                            inserted.onSuccess { if (it != null) { articles++; receivePhoto(sql, it, o.getString("uid"), e.optString("photo"), changes.optJSONObject("photos")) } else skipped++ }.onFailure {
                                 conflict(sql, letter, "${o.optString("sku")} · ${o.optString("name")}",
                                     "articolo non creato: ${it.message ?: "dati non validi"}"); conflicts++
                             }
                         }
                     }
                     "MOVE" -> {
-                        val itemId = itemId(sql, warehouseId, e.getString("item"))
+                        val itemId = teamItem(sql, ids, e.getString("item"))?.first
                         val note = "$letter · " + e.getString("note").take(240)
                         val failure = if (itemId == null) "articolo sconosciuto"
                             else if (e.getDouble("delta") > 0 && outside(itemId) && !e.getString("note").startsWith("Annullato") &&
@@ -644,11 +718,12 @@ class TeamSync(private val stock: StockDb) {
                         }
                     }
                     "LOCATE" -> {
-                        val itemId = itemId(sql, warehouseId, e.getString("item"))
+                        val found = teamItem(sql, ids, e.getString("item"))
+                        val itemId = found?.first
                         val failure = if (itemId == null) "articolo sconosciuto"
                             else if (outside(itemId)) "spostamento fuori dal reparto $letter"
                             else runCatching {
-                            locate(sql, warehouseId, itemId, e.optString("placement").ifEmpty { null },
+                            locate(sql, found!!.second, itemId, e.optString("placement").ifEmpty { null },
                                 e.optInt("level").takeIf { e.has("level") && !e.isNull("level") },
                                 e.optInt("slot").takeIf { e.has("slot") && !e.isNull("slot") })
                         }.exceptionOrNull()?.let { it.message ?: "ubicazione non applicabile" }
@@ -665,11 +740,12 @@ class TeamSync(private val stock: StockDb) {
                 "device_uid=?", arrayOf(device))
             TeamSyncSchema.put(sql, "actor", "")
             // 4.15: the satellite's open loans replace what was known of it (a file of an older version has none: nothing changes).
-            changes.optJSONArray("photo_offers")?.let { offered ->
-                for (i in 0 until minOf(offered.length(), MAX_PHOTO_WANTS)) {
-                    val o = offered.optJSONObject(i) ?: continue
-                    val free = sql.rawQuery("SELECT 1 FROM items WHERE uid=? AND warehouse_id=? AND photo_file IS NULL", arrayOf(o.optString("item"), warehouseId.toString())).use { it.moveToFirst() }
-                    if (free) receivePhoto(sql, warehouseId, o.optString("item"), o.optString("photo"), changes.optJSONObject("photos"))
+            changes.optJSONArray("photo_offers")?.let { offers ->
+                for (i in 0 until minOf(offers.length(), MAX_PHOTO_WANTS)) {
+                    val o = offers.optJSONObject(i) ?: continue
+                    val target = teamItem(sql, ids, o.optString("item")) ?: continue
+                    val free = sql.rawQuery("SELECT 1 FROM items WHERE id=? AND photo_file IS NULL", arrayOf(target.first.toString())).use { it.moveToFirst() }
+                    if (free) receivePhoto(sql, target.second, o.optString("item"), o.optString("photo"), changes.optJSONObject("photos"))
                 }
             }
             changes.optJSONArray("photo_wants")?.let { wants ->
@@ -692,6 +768,7 @@ class TeamSync(private val stock: StockDb) {
         val read = stock.readableDatabase
         val events = JSONArray()
         val newPhotos = LinkedHashSet<String>()
+        val siteUid = extraSites() + (setting("warehouse_id")!!.toLong() to setting("warehouse_uid").orEmpty())
         read.rawQuery("SELECT seq,kind,ref_id,created_at FROM team_sync_outbox ORDER BY seq", null).use { c ->
             while (c.moveToNext()) {
                 val seq = c.getLong(0); val ref = c.getLong(2)
@@ -706,6 +783,10 @@ class TeamSync(private val stock: StockDb) {
                             if (r.isNull(8)) null else r.getInt(8), r.getString(9), if (r.isNull(10)) null else r.getDouble(10),
                             r.getString(11), if (r.isNull(12)) null else r.getInt(12)))
                         else e.put("kind", "NONE")
+                        // 4.18: the site it was created in.
+                        read.rawQuery("SELECT warehouse_id FROM items WHERE id=?", arrayOf(ref.toString())).use { w ->
+                            if (w.moveToFirst()) siteUid[w.getLong(0)]?.let { e.put("site", it) }
+                        }
                         // 4.15: the photo of a new article travels with it.
                         read.rawQuery("SELECT photo_file FROM items WHERE id=? AND photo_file IS NOT NULL", arrayOf(ref.toString())).use { p ->
                             if (p.moveToFirst()) { e.put("photo", p.getString(0)); newPhotos += p.getString(0) }
@@ -736,7 +817,7 @@ class TeamSync(private val stock: StockDb) {
         write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid"))
             .put("device_uid", deviceUid()).put("letter", setting("letter")).put("created_at", System.currentTimeMillis())
             .put("events", events).put("photos", photosJson(newPhotos))
-            .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("photo_offers", offers).put("loans", ownLoans(read, setting("warehouse_id")!!.toLong(), setting("letter").orEmpty())))
+            .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("photo_offers", offers).put("loans", teamIds().fold(JSONArray()) { all, id -> ownLoans(read, id, setting("letter").orEmpty(), all) }))
         return events.length()
     }
 
@@ -757,30 +838,9 @@ class TeamSync(private val stock: StockDb) {
         } catch (e: Throwable) { sql.endTransaction(); removedPhotos.clear(); throw e }
     }
 
-    private fun applyState(sql: SQLiteDatabase, warehouseId: Long, state: JSONObject): TeamImportResult {
-        val me = deviceUid()
-        val processed = state.getJSONObject("processed").optLong(me, 0L)
-        val letterOwner = state.getJSONObject("letters").let { l -> l.keys().asSequence().firstOrNull { l.getString(it) == setting("letter") } }
-        require(letterOwner == null || letterOwner == me) { "La lettera ${setting("letter")} risulta di un altro telefono" }
-        // Changes the central has processed are confirmed: they leave the outbox.
-        sql.delete("team_sync_outbox", "seq<=?", arrayOf(processed.toString()))
-        // What is still pending stays on top of the central state.
-        val pendingDelta = mutableMapOf<Long, Double>()
-        val pendingLocate = mutableSetOf<Long>()
-        val pendingItems = mutableSetOf<Long>()
-        sql.rawQuery("""SELECT o.kind,o.ref_id,m.item_id,m.delta FROM team_sync_outbox o
-            LEFT JOIN movements m ON o.kind='MOVE' AND m.id=o.ref_id""", null).use { c ->
-            while (c.moveToNext()) when (c.getString(0)) {
-                "MOVE" -> if (!c.isNull(2)) pendingDelta[c.getLong(2)] = (pendingDelta[c.getLong(2)] ?: 0.0) + c.getDouble(3)
-                "LOCATE" -> pendingLocate.add(c.getLong(1))
-                "ITEM" -> pendingItems.add(c.getLong(1))
-            }
-        }
-        TeamSyncSchema.createScopeTriggers(sql)
-        val myScope = state.optJSONObject("scopes")?.optJSONArray(setting("letter").orEmpty())
-        if (myScope == null || myScope.length() == 0) sql.delete("team_sync_settings", "key='scope'", null)
-        else TeamSyncSchema.put(sql, "scope", (0 until myScope.length()).joinToString("\n") { myScope.getString(it) })
-        TeamSyncSchema.put(sql, "applying", "1")
+    /** One site of a central update: plan, structures and articles, keeping the local changes not yet confirmed. */
+    private fun applySite(sql: SQLiteDatabase, warehouseId: Long, state: JSONObject, pendingDelta: Map<Long, Double>,
+                          pendingLocate: Set<Long>, pendingItems: Set<Long>): Triple<Int, Int, JSONArray> {
         val room = state.getJSONObject("warehouse")
         sql.update("warehouses", ContentValues().apply {
             put("name", room.getString("name").take(160)); put("location", room.optString("location").take(300))
@@ -855,9 +915,72 @@ class TeamSync(private val stock: StockDb) {
             sql.delete("items", "id=?", arrayOf(id.toString())); removed++
             photo?.let { removedPhotos += it }
         }
+        return Triple(updated, removed, items)
+    }
+
+    private fun applyState(sql: SQLiteDatabase, warehouseId: Long, state: JSONObject): TeamImportResult {
+        val me = deviceUid()
+        val processed = state.getJSONObject("processed").optLong(me, 0L)
+        val letterOwner = state.getJSONObject("letters").let { l -> l.keys().asSequence().firstOrNull { l.getString(it) == setting("letter") } }
+        require(letterOwner == null || letterOwner == me) { "La lettera ${setting("letter")} risulta di un altro telefono" }
+        // Changes the central has processed are confirmed: they leave the outbox.
+        sql.delete("team_sync_outbox", "seq<=?", arrayOf(processed.toString()))
+        // What is still pending stays on top of the central state.
+        val pendingDelta = mutableMapOf<Long, Double>()
+        val pendingLocate = mutableSetOf<Long>()
+        val pendingItems = mutableSetOf<Long>()
+        sql.rawQuery("""SELECT o.kind,o.ref_id,m.item_id,m.delta FROM team_sync_outbox o
+            LEFT JOIN movements m ON o.kind='MOVE' AND m.id=o.ref_id""", null).use { c ->
+            while (c.moveToNext()) when (c.getString(0)) {
+                "MOVE" -> if (!c.isNull(2)) pendingDelta[c.getLong(2)] = (pendingDelta[c.getLong(2)] ?: 0.0) + c.getDouble(3)
+                "LOCATE" -> pendingLocate.add(c.getLong(1))
+                "ITEM" -> pendingItems.add(c.getLong(1))
+            }
+        }
+        TeamSyncSchema.createScopeTriggers(sql)
+        val myScope = state.optJSONObject("scopes")?.optJSONArray(setting("letter").orEmpty())
+        if (myScope == null || myScope.length() == 0) sql.delete("team_sync_settings", "key='scope'", null)
+        else TeamSyncSchema.put(sql, "scope", (0 until myScope.length()).joinToString("\n") { myScope.getString(it) })
+        TeamSyncSchema.put(sql, "applying", "1")
+        var (updated, removed, items) = applySite(sql, warehouseId, state, pendingDelta, pendingLocate, pendingItems)
+        // 4.18: the other sites of the company. A new one is created beside the first; one the central
+        // no longer shares stays on this phone as it is, out of the team.
+        val knownSites = extraSites().entries.associate { it.value to it.key }
+        val nowSites = LinkedHashMap<Long, String>()
+        val labels = LinkedHashMap<Long, Long>()
+        state.getJSONObject("warehouse").optLong("label_id", 0L).takeIf { it > 0 }?.let { labels[it] = warehouseId }
+        val moreItems = ArrayList<Pair<Long, JSONArray>>()
+        val company = companyOf(warehouseId)
+        state.optJSONArray("sites")?.let { sites ->
+            require(sites.length() < MAX_SITES) { "File non valido: troppe sedi" }
+            for (i in 0 until sites.length()) {
+                val site = sites.getJSONObject(i)
+                val uid = site.getString("warehouse_uid")
+                require(uid.isNotBlank() && uid != setting("warehouse_uid") && uid !in nowSites.values) { "File non valido: sede ripetuta" }
+                val room = site.getJSONObject("warehouse")
+                val local = knownSites[uid]?.takeIf { companyOf(it) != null } ?: sql.insertOrThrow("warehouses", null, ContentValues().apply {
+                    put("profile_id", requireNotNull(company) { "Sede principale non trovata" }); put("name", room.getString("name").take(160))
+                    put("location", room.optString("location").take(300))
+                    put("map_width", dimension(room.getDouble("width"))); put("map_height", dimension(room.getDouble("height")))
+                })
+                nowSites[local] = uid
+                room.optLong("label_id", 0L).takeIf { it > 0 }?.let { labels[it] = local }
+                val applied = applySite(sql, local, site, pendingDelta, pendingLocate, pendingItems)
+                updated += applied.first; removed += applied.second; moreItems += local to applied.third
+            }
+        }
+        saveSites(sql, nowSites)
+        TeamSyncSchema.put(sql, "label_ids", labels.entries.joinToString("\n") { "${it.key}|${it.value}" })
         TeamSyncSchema.put(sql, "applying", "0")
         TeamSyncSchema.put(sql, "last_sync", System.currentTimeMillis().toString())
-        applyPhotos(sql, warehouseId, items, state.optJSONObject("photos"), pendingItems)
+        val wants = LinkedHashSet<String>(); val nowFromCentral = LinkedHashSet<String>(); val offers = LinkedHashSet<String>()
+        var photosKnown = applyPhotos(sql, warehouseId, items, state.optJSONObject("photos"), pendingItems, wants, nowFromCentral, offers)
+        for ((site, list) in moreItems) photosKnown = applyPhotos(sql, site, list, state.optJSONObject("photos"), pendingItems, wants, nowFromCentral, offers) && photosKnown
+        if (photosKnown) {
+            TeamSyncSchema.put(sql, "photo_wants", wants.take(MAX_PHOTO_WANTS).joinToString("\n"))
+            TeamSyncSchema.put(sql, "photos_central", nowFromCentral.joinToString("\n"))
+            TeamSyncSchema.put(sql, "photo_offers", offers.take(MAX_PHOTO_WANTS).joinToString("\n"))
+        }
         // 4.15: loans of the other phones, and what the central knows of the team (needed if this phone ever replaces it).
         state.optJSONArray("loans")?.let { loans ->
             sql.delete("team_loans", null, null)
