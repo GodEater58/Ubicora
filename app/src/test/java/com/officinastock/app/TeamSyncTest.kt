@@ -462,7 +462,9 @@ class TeamSyncTest {
         TeamSync(central).setScope("C", listOf("DPI"))
         TeamSync(other).importState(ByteArrayInputStream(state()))
         val dadoC = other.items(secondC).single().id
-        rejects { other.movement(dadoC, 1.0, "Carico") }
+        // Refused by the department rule of the database itself.
+        assertTrue(runCatching { other.movement(dadoC, 1.0, "Carico") }.exceptionOrNull() is android.database.sqlite.SQLiteConstraintException)
+        assertEquals(6.0, qty(other, secondC, "Dado M10"), 0.0)
         other.movement(dadoC, -1.0, "Prelievo")
         TeamSync(central).importChanges(ByteArrayInputStream(changes(other)))
         assertEquals(5.0, qty(central, second, "Dado M10"), 0.0); assertEquals(6.0, qty(central, warehouse, "Vite M8"), 0.0)
