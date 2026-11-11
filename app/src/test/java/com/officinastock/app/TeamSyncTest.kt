@@ -469,4 +469,50 @@ class TeamSyncTest {
         TeamSync(central).importChanges(ByteArrayInputStream(changes(other)))
         assertEquals(5.0, qty(central, second, "Dado M10"), 0.0); assertEquals(6.0, qty(central, warehouse, "Vite M8"), 0.0)
     }
+
+    /** 4.19: pieces move between two sites as one operation, and a satellite's transfer reaches the central whole. */
+    @Test fun transferBetweenSitesOnTheCentralAndFromASatellite() {
+        val company = central.profiles().single().id
+        val second = central.createWarehouse(company, "Secondaria", "Padova")
+        val vite = central.items(warehouse).single().id
+        rejects { central.transferToSite(vite, second, 3.0, createMissing = false) }   // not there yet
+        rejects { central.transferToSite(vite, second, 99.0, createMissing = true) }   // more than the shelf
+        rejects { central.transferToSite(vite, warehouse, 1.0, createMissing = true) }
+        rejects { central.transferToSite(vite, central.createWarehouse(central.createProfile("Altra", "9999"), "Estranea", ""), 1.0, createMissing = true) }
+        assertEquals(10.0, qty(central, warehouse, "Vite M8"), 0.0)
+        val copy = central.transferToSite(vite, second, 3.0, createMissing = true)
+        assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0); assertEquals(3.0, qty(central, second, "Vite M8"), 0.0)
+        assertEquals("same code in the two sites", central.items(warehouse).single().sku, central.items(second).single().sku)
+        assertEquals(copy, central.transferToSite(vite, second, 1.0, createMissing = false))
+        assertTrue(central.movements(second).first().note.startsWith("Trasferito da Officina"))
+        // From a satellite: both movements travel with its file and land in the right sites.
+        TeamSync(central).addSite(second)
+        val whB = join(satellite, "B")
+        val secondB = TeamSync(satellite).status().sites.single()
+        satellite.transferToSite(satellite.items(secondB).single().id, whB, 2.0, createMissing = false)
+        assertEquals(8.0, qty(satellite, whB, "Vite M8"), 0.0); assertEquals(2.0, qty(satellite, secondB, "Vite M8"), 0.0)
+        val result = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(2, result.movements); assertEquals(0, result.conflicts)
+        assertEquals(8.0, qty(central, warehouse, "Vite M8"), 0.0); assertEquals(2.0, qty(central, second, "Vite M8"), 0.0)
+    }
+
+    /** 4.19: a pick-only satellite withdraws and lends but cannot load, create or move; the central refuses it too. */
+    @Test fun pickOnlySatelliteCanOnlyWithdraw() {
+        val wh = join(satellite, "B")
+        TeamSync(central).setPickOnly("B")
+        assertEquals(listOf(TeamSync.PICK_ONLY), TeamSync(central).status().scopes["B"])
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val vite = satellite.items(wh).single().id
+        assertTrue(runCatching { satellite.movement(vite, 1.0, "Carico") }.isFailure)
+        assertTrue(runCatching { satellite.addItem(wh, "Guanti", "DPI", 1.0, 0.0, "paia", "") }.isFailure)
+        assertTrue(runCatching { satellite.assignItem(vite, null, null, null) }.isFailure)
+        satellite.movement(vite, -2.0, "Prelievo"); satellite.lend(vite, "Luca", 1.0)
+        val result = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(0, result.conflicts); assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)
+        // Back to the whole warehouse: loading works again.
+        TeamSync(central).setScope("B", emptyList())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        satellite.movement(vite, 1.0, "Carico")
+        assertEquals(8.0, qty(satellite, wh, "Vite M8"), 0.0)
+    }
 }

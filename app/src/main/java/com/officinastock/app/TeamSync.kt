@@ -181,6 +181,8 @@ class TeamSync(private val stock: StockDb) {
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
         private const val MAX_SITES = 10
+        /** 4.19: the "department" of a satellite that can only withdraw. */
+        const val PICK_ONLY = "Solo prelievo"
         /** 4.15: photos asked for and carried by one file; what does not fit follows at the next exchanges. */
         private const val MAX_PHOTO_WANTS = 60
         private const val MAX_PHOTO_BYTES = 8 * 1024 * 1024
@@ -505,6 +507,16 @@ class TeamSync(private val stock: StockDb) {
         val chosen = all.filter { it in categories }
         if (chosen.isEmpty() || chosen.size == all.size) db.delete("team_sync_settings", "key=?", arrayOf("scope:$letter"))
         else TeamSyncSchema.put(db, "scope:$letter", chosen.joinToString("\n"))
+    }
+    /**
+     * 4.19: satellite [letter] can only withdraw (and lend): no new articles, no loads, no moves, in
+     * any category. It travels as a department that matches no category, so every version of the
+     * app enforces it, on the satellite and again on the central.
+     */
+    fun setPickOnly(letter: String) {
+        require(setting("role") == "central") { "I permessi li assegna il telefono centrale" }
+        require(ArticleCodes.isSatelliteLetter(letter)) { "Lettera non valida" }
+        TeamSyncSchema.put(db, "scope:$letter", PICK_ONLY)
     }
     private fun scopes(): Map<String, List<String>> =
         db.rawQuery("SELECT key,value FROM team_sync_settings WHERE key LIKE 'scope:%'", null).use { c ->

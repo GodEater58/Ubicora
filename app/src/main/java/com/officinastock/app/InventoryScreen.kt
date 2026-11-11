@@ -43,6 +43,11 @@ import kotlinx.coroutines.launch
     var add by remember{mutableStateOf(false)}
     var menuItemId by remember{mutableStateOf<Long?>(null)}
     var quantityFor by remember{mutableStateOf<Pair<Long,Boolean>?>(null)}
+    var transferFor by remember{mutableStateOf<Long?>(null)}
+    transferFor?.let { id ->
+        val current=model.ui.items.firstOrNull{it.id==id}
+        if(current==null) transferFor=null else TransferDialog(current,model,onClose={transferFor=null})
+    }
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
     LaunchedEffect(u.scannedItemId,u.items) {
@@ -148,7 +153,7 @@ import kotlinx.coroutines.launch
     menuItemId?.let { id ->
         val current=u.items.firstOrNull{it.id==id}
         if(current==null) menuItemId=null else ArticleActionsSheet(current,current.placementId?.let { placementById[it] },model,
-            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onQuantity={load->quantityFor=current.id to load})
+            onDismiss={menuItemId=null},onOpen={selected=current},onLabel={labelItem=current},onTransfer={transferFor=current.id},onQuantity={load->quantityFor=current.id to load})
     }
     quantityFor?.let { (id,load) ->
         val current=u.items.firstOrNull{it.id==id}

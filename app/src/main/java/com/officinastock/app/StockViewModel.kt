@@ -527,6 +527,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private fun localSite(id:Long?):Long? = if(id==null) null else ui.team.labelIds[id] ?: id
     private fun readArticleLabel(raw:String) = ArticleCodes.parseScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId)) }
     private fun readLocationLabel(raw:String) = ArticleCodes.parseLocationScan(raw)?.let { it.copy(warehouseId=localSite(it.warehouseId) ?: it.warehouseId) }
+    /** 4.19: moves pieces of an article to another site of the company. */
+    fun transferToSite(itemId:Long,site:Warehouse,quantity:Double) {
+        val t=ui.team
+        // A satellite never creates the article in the other site: two phones doing it offline would collide on the central.
+        val satellite=t.role==TeamRole.SATELLITE && (t.covers(ui.warehouse?.id) || t.covers(site.id))
+        execute { db.transferToSite(itemId,site.id,quantity,createMissing=!satellite) }
+    }
+    fun setTeamPickOnly(letter:String) = execute { team.setPickOnly(letter) }
     /** Central: another site of the company is shared with the team. */
     fun shareSite(warehouseId:Long) = execute { team.addSite(warehouseId) }
     private var siteSearch=0L
