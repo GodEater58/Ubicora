@@ -85,12 +85,20 @@ class MapFindTest {
         val places = listOf(target, back, entrance)
         assertEquals(3L, MapRoute.entrance(places, target)?.id)
         val walk = MapRoute.walk(places, target)!!
-        assertEquals(1.8f + 5f, walk.metres, .01f)
-        assertEquals("Circa 7 m dall'ingresso", MapRoute.describe(walk))
+        // 4.20.1: from the middle of the opening (hinge corner + half the leaf along the wall), not from the leaf.
+        assertEquals(19.175f, walk.start.x, .001f); assertEquals(8.7f, walk.start.y, .001f)
+        assertEquals(1.175f + 4.7f, walk.metres, .01f)
+        assertEquals("Circa 6 m dall'ingresso", MapRoute.describe(walk))
         // No door named "ingresso": the nearest one, by its own name.
         val near = MapRoute.walk(listOf(target, back), target)!!
-        assertEquals("Circa 12 m da retro", MapRoute.describe(near))
+        assertEquals("Circa 13 m da retro", MapRoute.describe(near))
         assertNull(MapRoute.walk(listOf(target), target))
+        // A sliding gate is drawn across the opening: the walk starts from its centre, and it counts as an entrance.
+        val gate = Placement(9, 1, "Cancello", "cancello", 10f, 12f, false, 4f, .2f, 0f)
+        val gateWalk = MapRoute.walk(listOf(target, gate), target)!!
+        assertEquals(PointMetres(10f, 12f), gateWalk.start)
+        assertEquals("Circa 16 m dal cancello", MapRoute.describe(gateWalk))
+        assertTrue(PlanGeometry.collisions(gate, listOf(target, gate)).isEmpty())
         // Where it is, in full words.
         val sc2 = shelf(4, "sc2", 1f, 1f, levels = 2, slots = 3)
         assertEquals("Scaffale sc2 · Ripiano 2 · Posizione 1", MapRoute.placeText(sc2, item(1, "A", 4, 2, 1)))
@@ -136,5 +144,16 @@ class MapFindTest {
         // Against the screen edge and surrounded: no place, the name is left out.
         val edge = ScreenBox(0f, 0f, 20f, 400f)
         assertNull(MapLabels.place(edge, 40f, 20f, 6f, listOf(edge, ScreenBox(20f, 0f, 400f, 400f)), 400f, 400f))
+    }
+
+    @Test fun middleOfADoorOpeningFollowsItsRotation() {
+        val door = Placement(1, 1, "Porta", "ingresso", 5f, 5f, false, 1f, .2f, 0f)
+        assertEquals(4.5f, PlanGeometry.passageMid(door).x, .001f); assertEquals(4.6f, PlanGeometry.passageMid(door).y, .001f)
+        val turned = PlanGeometry.passageMid(door.copy(rotation = 90f))
+        assertEquals(5.4f, turned.x, .001f); assertEquals(4.5f, turned.y, .001f)
+        val back = PlanGeometry.passageMid(door.copy(rotation = 180f))
+        assertEquals(5.5f, back.x, .001f); assertEquals(5.4f, back.y, .001f)
+        assertTrue(PlacementKinds.isPassage("Cancello") && !PlacementKinds.holdsStock("Cancello"))
+        assertEquals(4.0f to .2f, PlanGeometry.defaultSize("Cancello"))
     }
 }

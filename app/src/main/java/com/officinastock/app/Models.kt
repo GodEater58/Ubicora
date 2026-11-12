@@ -23,7 +23,10 @@ data class Placement(val id: Long, val warehouseId: Long, val kind: String, val 
 
 object PlacementKinds {
     val storage = listOf("Scaffale","Armadio","Cassetto","Banco","Area")
-    val landmarks = listOf("Porta","Colonna","Corridoio")
+    val landmarks = listOf("Porta","Cancello","Colonna","Corridoio")
+    /** 4.20.1: ways in and out of the room: a hinged door or a sliding gate. */
+    val passages = listOf("Porta","Cancello")
+    fun isPassage(kind: String) = kind in passages
     val all = storage + landmarks
     fun holdsStock(kind: String) = kind !in landmarks
     const val MAX_LEVELS = 20

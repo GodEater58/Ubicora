@@ -80,6 +80,20 @@ data class PlanViewport(
     }
 }
 object PlanGeometry {
+    /**
+     * 4.20.1: the middle of the opening of a passage, where a walk starts. A door is drawn as its leaf,
+     * standing open from the hinge, so its opening runs from the hinge along the wall, as long as the leaf.
+     * A sliding gate is drawn across the opening itself: its middle is its centre.
+     */
+    fun passageMid(p:Placement):PointMetres {
+        if(p.kind!="Porta") return PointMetres(p.x,p.y)
+        // Leaf along local x, hinge at its (-w/2, +d/2) corner, opening along local -y: middle at (-w/2, d/2 - w/2).
+        val lx=-p.width/2f; val ly=p.depth/2f-p.width/2f
+        val r=Math.toRadians(p.rotation.toDouble())
+        val c=kotlin.math.cos(r).toFloat(); val s=kotlin.math.sin(r).toFloat()
+        return PointMetres(p.x+lx*c-ly*s,p.y+lx*s+ly*c)
+    }
+
     fun snap(value:Float,spacing:Float=.25f):Float = round(value/spacing)*spacing
     fun snap(p:PointMetres, grid:Float=.25f) = PointMetres(snap(p.x,grid),snap(p.y,grid))
     fun distance(a:PointMetres,b:PointMetres):Float = hypot(a.x-b.x,a.y-b.y)
@@ -131,6 +145,7 @@ object PlanGeometry {
         "Banco" -> 2.0f to .9f
         "Area" -> 2.6f to 1.8f
         "Porta" -> .9f to .2f
+        "Cancello" -> 4.0f to .2f
         "Colonna" -> .4f to .4f
         "Corridoio" -> 3.0f to 1.2f
         else -> 1.5f to 1f
@@ -193,8 +208,8 @@ object PlanGeometry {
     }
     /** Structures (doors and corridors excluded) whose footprint intersects [p]. */
     fun collisions(p:Placement,others:List<Placement>):List<Placement> =
-        if(p.kind=="Porta"||p.kind=="Corridoio") emptyList()
-        else others.filter{it.id!=p.id && it.kind!="Porta" && it.kind!="Corridoio" && overlaps(p,it)}
+        if(PlacementKinds.isPassage(p.kind)||p.kind=="Corridoio") emptyList()
+        else others.filter{it.id!=p.id && !PlacementKinds.isPassage(it.kind) && it.kind!="Corridoio" && overlaps(p,it)}
 
     /**
      * Magnetic alignment: moves the centre so an edge touches or aligns with a nearby structure or
