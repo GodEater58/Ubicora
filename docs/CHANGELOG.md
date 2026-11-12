@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.20.1](CHANGELOG_4_20_1.md) | cancello scorrevole tra i passaggi; il percorso «dov'è» parte dal centro del varco. |
 | [4.20.0](CHANGELOG_4_20_0.md) | mappa pulita con ricerca e «dov'è», scaffale visto di fronte, tag NFC degli scaffali che aprono l'app anche da chiusa, etichette delle strutture valide su tutti i telefoni. |
 | [4.19.3](CHANGELOG_4_19_3.md) | ritocchi dal primo collaudo sul telefono: scanner nuovo, colori dei dialoghi, Squadra senza doppioni, scheda articolo e finestra struttura riordinate. |
 | [4.19.2 / Web 1.1.1](CHANGELOG_4_19_2.md) | correzioni dalla revisione: telefono di solo prelievo, trasferimenti da satellite, etichette dopo la sostituzione del centrale, tutte le sedi sul PC. |

@@ -56,15 +56,17 @@ object MapSearch {
 }
 
 /** Walk on the plan from the entrance to a structure, as a right-angled hint (not a route planner). */
-data class MapWalk(val from: Placement, val corner: PointMetres, val to: Placement) {
+data class MapWalk(val from: Placement, val corner: PointMetres, val to: Placement,
+                   /** 4.20.1: where the walk starts: the middle of the opening of [from]. */
+                   val start: PointMetres = PointMetres(from.x, from.y)) {
     /** Length of the two legs, in metres. */
-    val metres: Float get() = abs(corner.x - from.x) + abs(corner.y - from.y) + abs(to.x - corner.x) + abs(to.y - corner.y)
+    val metres: Float get() = abs(corner.x - start.x) + abs(corner.y - start.y) + abs(to.x - corner.x) + abs(to.y - corner.y)
 }
 
 object MapRoute {
-    /** The door called "ingresso" (or entrance, entrata), else the door nearest to [target], else null. */
+    /** The door or gate called "ingresso" (or entrance, entrata), else the one nearest to [target], else null. */
     fun entrance(placements: List<Placement>, target: Placement?): Placement? {
-        val doors = placements.filter { it.kind == "Porta" && it.id != target?.id }
+        val doors = placements.filter { PlacementKinds.isPassage(it.kind) && it.id != target?.id }
         if (doors.isEmpty()) return null
         doors.firstOrNull { d -> listOf("ingress", "entrat", "entranc").any { d.label.contains(it, ignoreCase = true) } }?.let { return it }
         if (target == null) return doors.first()
@@ -73,7 +75,9 @@ object MapRoute {
 
     fun walk(placements: List<Placement>, target: Placement): MapWalk? {
         val door = entrance(placements, target) ?: return null
-        return MapWalk(door, PickRoute.elbow(door, target, placements), target)
+        val start = PlanGeometry.passageMid(door)
+        val end = PointMetres(target.x, target.y)
+        return MapWalk(door, PickRoute.elbow(start, end, placements.filter { it.id != target.id }), target, start)
     }
 
     /** "Scaffale sc2 · Ripiano 2 · Posizione 1": where the article is, in full words. */
@@ -88,9 +92,15 @@ object MapRoute {
     /** "Circa 19 m dall'ingresso", in words for the screen. */
     fun describe(walk: MapWalk): String {
         val m = walk.metres
-        val door = walk.from.label.ifBlank { "porta" }
-        val name = if (door.contains("ingress", ignoreCase = true)) "dall'ingresso" else "da $door"
-        return if (m < 1.5f) "Accanto alla porta" else "Circa ${m.roundToInt()} m $name"
+        val door = walk.from.label.ifBlank { walk.from.kind.lowercase() }
+        val name = when {
+            door.contains("ingress", ignoreCase = true) -> "dall'ingresso"
+            door.equals("cancello", ignoreCase = true) -> "dal cancello"
+            door.equals("porta", ignoreCase = true) -> "dalla porta"
+            else -> "da $door"
+        }
+        val by = if (walk.from.kind == "Cancello") "Accanto al cancello" else "Accanto alla porta"
+        return if (m < 1.5f) by else "Circa ${m.roundToInt()} m $name"
     }
 }
 

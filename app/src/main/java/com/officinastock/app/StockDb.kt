@@ -736,6 +736,13 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         require(writableDatabase.update("placements",ContentValues().apply{put("label",label.trim())},
             "id=?",arrayOf(id.toString()))==1) { "Struttura non trovata" }
     }
+    /** 4.20.1: a passage becomes a door or a sliding gate (same place, size and labels). */
+    fun setPassageKind(id: Long, kind: String) {
+        require(PlacementKinds.isPassage(kind)) { "Tipo di passaggio non riconosciuto" }
+        val p=requireNotNull(placement(id)) { "Struttura non trovata" }
+        require(PlacementKinds.isPassage(p.kind)) { "${p.kind}: non è un passaggio" }
+        writableDatabase.update("placements",ContentValues().apply{put("kind",kind)},"id=?",arrayOf(id.toString()))
+    }
     /** Levels/positions can shrink only if no item sits beyond the new limits. */
     fun updatePlacementLayout(id: Long, levels: Int, slots: Int) {
         require(levels in 1..PlacementKinds.MAX_LEVELS && slots in 1..PlacementKinds.MAX_SLOTS) {

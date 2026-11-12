@@ -56,8 +56,12 @@ object PickRoute {
      * Corner of the right-angled stretch between two structures: of the two possible corners, the
      * one whose legs cross fewer other structures (it is a hint on the plan, not a route planner).
      */
-    fun elbow(from: Placement, to: Placement, placements: List<Placement>): PointMetres {
-        val others = placements.filter { it.id != from.id && it.id != to.id && it.kind != "Corridoio" && it.kind != "Porta" }
+    fun elbow(from: Placement, to: Placement, placements: List<Placement>): PointMetres =
+        elbow(PointMetres(from.x, from.y), PointMetres(to.x, to.y), placements.filter { it.id != from.id && it.id != to.id })
+
+    /** 4.20.1: the same between two points (the walk starts from the middle of an opening, not from a structure). */
+    fun elbow(from: PointMetres, to: PointMetres, placements: List<Placement>): PointMetres {
+        val others = placements.filter { it.kind != "Corridoio" && !PlacementKinds.isPassage(it.kind) }
         fun crossed(corner: PointMetres): Int {
             var hits = 0
             for (other in others) {

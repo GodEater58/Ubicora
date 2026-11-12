@@ -799,6 +799,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun lockPlacement(id:Long,locked:Boolean)=executeMap(record=false){requireMapEditable();db.lockPlacement(id,locked);null}
     fun renamePlacement(id:Long,label:String)=executeMap(record=false){requireMapEditable();db.renamePlacement(id,label);null}
+    fun setPassageKind(id:Long,kind:String)=executeMap(record=false){requireMapEditable();db.setPassageKind(id,kind);null}
     fun updatePlacementLayout(id:Long,levels:Int,slots:Int)=executeMap(record=false){requireMapEditable();db.updatePlacementLayout(id,levels,slots);null}
     fun deletePlacement(id:Long)=executeMap {
         requireMapEditable()

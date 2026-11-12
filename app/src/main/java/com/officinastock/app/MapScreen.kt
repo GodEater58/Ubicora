@@ -90,7 +90,7 @@ private fun floorColor(kind: String): Color = when(kind) {
     "Banco" -> BenchGold
     "Cassetto" -> Color(0xFF66719F)
     "Area" -> Color(0xFF456D67)
-    "Porta" -> DoorBrown
+    "Porta","Cancello" -> DoorBrown
     "Colonna" -> ColumnGrey
     "Corridoio" -> Mint.copy(alpha=.12f)
     else -> ShelfTeal
@@ -627,8 +627,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                         }
                         rotate(f.rotation+camera.turnDegrees,pivot=center){
                             val box=Offset(center.x-fw/2,center.y-fh/2)
-                            if(f.kind!="Corridoio" && !faded)drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
-                            drawRoundRect(fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            val drawnAsLine=f.kind=="Cancello"   // 4.20.1: the gate is a line across the opening, not a block
+                            if(f.kind!="Corridoio" && !faded && !drawnAsLine)drawRoundRect(Color.Black.copy(alpha=.32f),topLeft=Offset(box.x+3f,box.y+4f),size=Size(fw,fh),cornerRadius=CornerRadius(5f))
+                            if(!drawnAsLine || faded) drawRoundRect(if(drawnAsLine) fill.copy(alpha=.35f) else fill,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                             if(f.id in guide.done) {
                                 drawRoundRect(Mint.copy(alpha=.30f),topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f))
                                 drawRoundRect(Mint,topLeft=box,size=Size(fw,fh),cornerRadius=CornerRadius(5f),style=Stroke(width=3f))
@@ -639,6 +640,16 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                 drawRoundRect(Amber.copy(alpha=.5f),topLeft=Offset(box.x-9f,box.y-9f),size=Size(fw+18f,fh+18f),cornerRadius=CornerRadius(12f),style=Stroke(width=2f))
                             }
                             if(!faded) when(f.kind) {
+                                // 4.20.1: a sliding gate: the gate across the opening and, dashed, the track it slides along.
+                                "Cancello" -> {
+                                    val midY=box.y+fh/2f
+                                    drawLine(DoorBrown,Offset(box.x,midY),Offset(box.x+fw,midY),strokeWidth=(fh*.6f).coerceIn(3f,8f),cap=StrokeCap.Round)
+                                    drawLine(Color.White.copy(alpha=.5f),Offset(box.x+fw,midY),Offset(box.x+fw*1.7f,midY),strokeWidth=1.5f,
+                                        pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f)))
+                                    val tip=box.x+fw*1.7f; val arrow=(fh*1.4f).coerceIn(5f,12f)
+                                    drawLine(Color.White.copy(alpha=.5f),Offset(tip,midY),Offset(tip-arrow,midY-arrow*.6f),strokeWidth=1.5f)
+                                    drawLine(Color.White.copy(alpha=.5f),Offset(tip,midY),Offset(tip-arrow,midY+arrow*.6f),strokeWidth=1.5f)
+                                }
                                 "Porta" -> drawArc(Color.White.copy(alpha=.5f),270f,90f,false,topLeft=Offset(box.x-fw,box.y+fh-fw),size=Size(fw*2,fw*2),
                                     style=Stroke(width=1.2f,pathEffect=PathEffect.dashPathEffect(floatArrayOf(6f,5f))))
                                 "Colonna" -> { drawLine(Color.White.copy(alpha=.4f),box,Offset(box.x+fw,box.y+fh),1.2f);drawLine(Color.White.copy(alpha=.4f),Offset(box.x+fw,box.y),Offset(box.x,box.y+fh),1.2f) }
@@ -703,7 +714,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             val square=((f.rotation+camera.turnDegrees)%90f+90f)%90f<.5f
                             val inside=ScreenBox((fp.left+fp.right)/2f-textW/2f,(fp.top+fp.bottom)/2f-textH/2f,(fp.left+fp.right)/2f+textW/2f,(fp.top+fp.bottom)/2f+textH/2f)
                             val others=solid.filter{it.first!=f.id}.map{it.second}+badgeBoxes+labelBoxes
-                            val fitsInside=square && f.kind!="Porta" && fp.right-fp.left>textW+12f && fp.bottom-fp.top>textH+6f &&
+                            val fitsInside=square && !PlacementKinds.isPassage(f.kind) && fp.right-fp.left>textW+12f && fp.bottom-fp.top>textH+6f &&
                                 others.none{it.intersects(inside)}
                             val taken=solid.map{it.second}+badgeBoxes+labelBoxes
                             val spot=if(fitsInside) inside
@@ -726,7 +737,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     }
                     // 4.20 "Dov'è": the walk from the entrance to the structure of the article.
                     walk?.let { route ->
-                        val a=camera.toScreen(PointMetres(route.from.x,route.from.y));val b=camera.toScreen(PointMetres(route.to.x,route.to.y))
+                        val a=camera.toScreen(route.start);val b=camera.toScreen(PointMetres(route.to.x,route.to.y))
                         val corner=camera.toScreen(route.corner)
                         val dots=PathEffect.dashPathEffect(floatArrayOf(3f,16f))
                         drawLine(Amber,Offset(a.x,a.y),Offset(corner.x,corner.y),strokeWidth=5f,cap=StrokeCap.Round,pathEffect=dots)

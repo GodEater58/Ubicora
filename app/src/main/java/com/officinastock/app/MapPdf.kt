@@ -87,7 +87,7 @@ object MapPdf {
         for (p in s.placements) {
             val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = when (p.kind) {
-                    "Porta" -> Color.rgb(214, 190, 160); "Colonna" -> Color.rgb(150, 156, 162)
+                    "Porta", "Cancello" -> Color.rgb(214, 190, 160); "Colonna" -> Color.rgb(150, 156, 162)
                     "Corridoio" -> Color.argb(40, 45, 160, 140); "Armadio" -> Color.rgb(190, 205, 225)
                     "Banco" -> Color.rgb(232, 210, 180); else -> Color.rgb(190, 225, 222)
                 }

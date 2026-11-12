@@ -240,6 +240,19 @@ import java.util.Locale
                 OutlinedTextField(name,{name=it.take(80)},label={Text("Nome")},singleLine=true,modifier=Modifier.weight(1f))
                 TextButton(onClick={model.renamePlacement(p.id,name)},enabled=name.isNotBlank()&&name.trim()!=p.label){Text("Rinomina")}
             }
+            // 4.20.1: a hinged door or a sliding gate; the walk on the map starts from the middle of the opening.
+            if(PlacementKinds.isPassage(p.kind)) {
+                Text("TIPO DI PASSAGGIO",fontWeight=FontWeight.Bold,color=Mint,fontSize=10.sp,letterSpacing=1.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    PlacementKinds.passages.forEach { k ->
+                        FilterChip(selected=p.kind==k,onClick={ if(p.kind!=k) model.setPassageKind(p.id,k) },
+                            label={Text(if(k=="Porta") "Porta a battente" else "Cancello scorrevole")})
+                    }
+                }
+                Text(if(p.kind=="Porta") "Il varco va dal cardine lungo il muro, largo quanto l'anta."
+                    else "Il cancello si mette attraverso il varco; la freccia tratteggiata indica dove scorre (ruota di 180° per l'altro lato).",
+                    fontSize=11.sp,color=TextSecondary)
+            }
             Surface(color=Surface2,shape=RoundedCornerShape(12.dp)) {
                 Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
                     Icon(if(p.locked)Icons.Outlined.Lock else Icons.Outlined.LockOpen,null,tint=if(p.locked)Amber else Mint)
