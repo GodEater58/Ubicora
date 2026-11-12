@@ -55,12 +55,12 @@ object MapSearch {
     }
 }
 
-/** Walk on the plan from the entrance to a structure, as a right-angled hint (not a route planner). */
-data class MapWalk(val from: Placement, val corner: PointMetres, val to: Placement,
-                   /** 4.20.1: where the walk starts: the middle of the opening of [from]. */
-                   val start: PointMetres = PointMetres(from.x, from.y)) {
-    /** Length of the two legs, in metres. */
-    val metres: Float get() = abs(corner.x - start.x) + abs(corner.y - start.y) + abs(to.x - corner.x) + abs(to.y - corner.y)
+/** Walk on the plan from the entrance to a structure: a hint drawn on the plan, not turn-by-turn directions. */
+data class MapWalk(val from: Placement, val path: List<PointMetres>, val to: Placement) {
+    /** 4.20.1: where the walk starts: the middle of the opening of [from]. */
+    val start: PointMetres get() = path.first()
+    /** Length of the drawn path, in metres. */
+    val metres: Float get() = path.zipWithNext { a, b -> kotlin.math.hypot(b.x - a.x, b.y - a.y) }.sum()
 }
 
 object MapRoute {
@@ -73,11 +73,18 @@ object MapRoute {
         return doors.minBy { abs(it.x - target.x) + abs(it.y - target.y) }
     }
 
-    fun walk(placements: List<Placement>, target: Placement): MapWalk? {
+    /**
+     * 4.20.2: with the size of the room, the walk goes around the structures and the inner walls (a shortest path
+     * on a 20 cm grid, then straightened). Without it, or when no way is found, the right-angled hint of before.
+     */
+    fun walk(placements: List<Placement>, target: Placement, walls: List<Wall> = emptyList(),
+             roomWidth: Float = 0f, roomHeight: Float = 0f): MapWalk? {
         val door = entrance(placements, target) ?: return null
         val start = PlanGeometry.passageMid(door)
         val end = PointMetres(target.x, target.y)
-        return MapWalk(door, PickRoute.elbow(start, end, placements.filter { it.id != target.id }), target, start)
+        val others = placements.filter { it.id != target.id }
+        val routed = if (roomWidth > 0f && roomHeight > 0f) MapPath.find(start, end, others, walls, roomWidth, roomHeight) else null
+        return MapWalk(door, routed ?: listOf(start, PickRoute.elbow(start, end, others), end), target)
     }
 
     /** "Scaffale sc2 · Ripiano 2 · Posizione 1": where the article is, in full words. */
@@ -173,5 +180,78 @@ object MapLabels {
             ScreenBox(midX - textW / 2f, structure.top - gap - textH, midX + textW / 2f, structure.top - gap),
         )
         return options.firstOrNull { box -> box.inside(width, height) && taken.none { it.intersects(box) } }
+    }
+}
+
+/** 4.20.2: shortest way on the floor between two points, around structures and walls. */
+object MapPath {
+    /** Space kept from structures and walls, in metres. */
+    const val CLEARANCE = .12f
+
+    fun find(start: PointMetres, end: PointMetres, placements: List<Placement>, walls: List<Wall>,
+             roomWidth: Float, roomHeight: Float): List<PointMetres>? {
+        var cell = .2f
+        while ((roomWidth / cell) * (roomHeight / cell) > 60000f) cell *= 1.5f
+        val cols = kotlin.math.ceil(roomWidth / cell).toInt().coerceAtLeast(1)
+        val rows = kotlin.math.ceil(roomHeight / cell).toInt().coerceAtLeast(1)
+        val obstacles = placements.filter { it.kind != "Corridoio" && !PlacementKinds.isPassage(it.kind) }
+        fun centre(c: Int, r: Int) = PointMetres((c + .5f) * cell, (r + .5f) * cell)
+        val blocked = BooleanArray(cols * rows) { i ->
+            val p = centre(i % cols, i / cols)
+            obstacles.any { PlanGeometry.contains(p, it, CLEARANCE) } || walls.any { PlanGeometry.distanceToWall(p, it) < CLEARANCE + cell / 2f }
+        }
+        fun cellOf(p: PointMetres) = (p.x / cell).toInt().coerceIn(0, cols - 1) to (p.y / cell).toInt().coerceIn(0, rows - 1)
+        val (sc, sr) = cellOf(start); val (ec, er) = cellOf(end)
+        val s = sr * cols + sc; val e = er * cols + ec
+        // The start lies on the opening and the end inside the target: they are always walkable.
+        blocked[s] = false; blocked[e] = false
+        // The target itself is not an obstacle (it is excluded from [placements]), so the cells around its centre are free.
+        val cost = FloatArray(cols * rows) { Float.MAX_VALUE }
+        val came = IntArray(cols * rows) { -1 }
+        val closed = BooleanArray(cols * rows)
+        fun h(i: Int): Float { val dx = abs(i % cols - ec).toFloat(); val dy = abs(i / cols - er).toFloat(); return (dx + dy) + (1.4142f - 2f) * minOf(dx, dy) }
+        val open = java.util.PriorityQueue<Pair<Float, Int>>(compareBy { it.first })
+        cost[s] = 0f; open.add(h(s) to s)
+        val steps = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1, 1 to 1, 1 to -1, -1 to 1, -1 to -1)
+        var found = false
+        while (open.isNotEmpty()) {
+            val i = open.poll()!!.second
+            if (closed[i]) continue
+            if (i == e) { found = true; break }
+            closed[i] = true
+            val c = i % cols; val r = i / cols
+            for ((dc, dr) in steps) {
+                val nc = c + dc; val nr = r + dr
+                if (nc !in 0 until cols || nr !in 0 until rows) continue
+                val n = nr * cols + nc
+                if (blocked[n] || closed[n]) continue
+                // No cutting corners: a diagonal step needs both straight neighbours free.
+                if (dc != 0 && dr != 0 && (blocked[r * cols + nc] || blocked[nr * cols + c])) continue
+                val next = cost[i] + if (dc != 0 && dr != 0) 1.4142f else 1f
+                if (next < cost[n]) { cost[n] = next; came[n] = i; open.add((next + h(n)) to n) }
+            }
+        }
+        if (!found) return null
+        val cells = generateSequence(e) { came[it].takeIf { p -> p >= 0 } }.toList().reversed()
+        val points = listOf(start) + cells.drop(1).dropLast(1).map { centre(it % cols, it / cols) } + listOf(end)
+        // Straighten: from each point, go to the farthest one in plain sight.
+        fun clear(a: PointMetres, b: PointMetres): Boolean {
+            val len = kotlin.math.hypot(b.x - a.x, b.y - a.y)
+            val n = (len / (cell / 3f)).toInt().coerceAtLeast(1)
+            for (k in 0..n) {
+                val t = k / n.toFloat()
+                val (c, r) = cellOf(PointMetres(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t))
+                val i = r * cols + c
+                if (blocked[i] && i != s && i != e) return false
+            }
+            return true
+        }
+        val out = mutableListOf(points.first()); var at = 0
+        while (at < points.lastIndex) {
+            var next = points.lastIndex
+            while (next > at + 1 && !clear(points[at], points[next])) next--
+            out.add(points[next]); at = next
+        }
+        return out
     }
 }

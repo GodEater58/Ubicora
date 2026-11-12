@@ -156,4 +156,26 @@ class MapFindTest {
         assertTrue(PlacementKinds.isPassage("Cancello") && !PlacementKinds.holdsStock("Cancello"))
         assertEquals(4.0f to .2f, PlanGeometry.defaultSize("Cancello"))
     }
+
+    @Test fun walkGoesAroundStructuresAndInnerWalls() {
+        val gate = Placement(1, 1, "Cancello", "ingresso", 5f, 9.9f, false, 2f, .2f, 0f)
+        val target = shelf(2, "sc2", 5f, 2f)
+        val block = Placement(3, 1, "Banco", "banco", 5f, 6f, false, 6f, .5f, 0f)
+        val walk = MapRoute.walk(listOf(gate, target, block), target, emptyList(), 10f, 10f)!!
+        assertEquals(PointMetres(5f, 9.9f), walk.start)
+        assertEquals(PointMetres(5f, 2f), walk.path.last())
+        assertTrue("around the bench, longer than straight", walk.metres > 7.9f)
+        for ((a, b) in walk.path.zipWithNext()) for (k in 0..40) {
+            val t = k / 40f
+            val pt = PointMetres(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+            assertFalse("crosses the bench at $pt", PlanGeometry.contains(pt, block, 0f))
+        }
+        // An inner wall across most of the room: the walk goes round its free end.
+        val wall = Wall(1, 1, 0f, 5f, 8f, 5f, "manual")
+        val round = MapRoute.walk(listOf(gate, target), target, listOf(wall), 10f, 10f)!!
+        assertTrue(round.path.any { it.x > 8f })
+        // Shut in by walls: no way, the right-angled hint of before.
+        val box = listOf(Wall(2, 1, 3f, 1f, 7f, 1f, "m"), Wall(3, 1, 7f, 1f, 7f, 3f, "m"), Wall(4, 1, 7f, 3f, 3f, 3f, "m"), Wall(5, 1, 3f, 3f, 3f, 1f, "m"))
+        assertEquals(3, MapRoute.walk(listOf(gate, target), target, box, 10f, 10f)!!.path.size)
+    }
 }

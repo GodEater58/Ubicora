@@ -182,7 +182,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
     val results=remember(query,state.items,state.placements){MapSearch.results(query,state.items,state.placements)}
     val found=state.items.firstOrNull{it.id==foundItemId}
     val foundPlace=found?.placementId?.let{id->state.placements.firstOrNull{it.id==id}}
-    val walk=remember(foundPlace,state.placements){foundPlace?.let{MapRoute.walk(state.placements,it)}}
+    val walk=remember(foundPlace,state.placements,state.walls,roomWidth,roomHeight){foundPlace?.let{MapRoute.walk(state.placements,it,state.walls,roomWidth,roomHeight)}}
     val searching=query.isNotBlank() && found==null
     val lit:Set<Long> = when { found!=null -> setOfNotNull(foundPlace?.id); searching -> results.lit; else -> emptySet() }
     val dimming=lit.isNotEmpty()
@@ -609,7 +609,13 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     // 4.20: every structure's place on the screen first, so that no name is written over one of them.
                     val footprints=state.placements.associate { f ->
                         val c=camera.toScreen(PointMetres(f.x,f.y))
-                        f.id to MapLabels.footprint(c.x,c.y,f.width*camera.scale,f.depth*camera.scale,f.rotation+camera.turnDegrees)
+                        val deg=f.rotation+camera.turnDegrees
+                        // 4.20.2: a gate takes also the track it slides along, so no name is written over it.
+                        if(f.kind=="Cancello") {
+                            val r=Math.toRadians(deg.toDouble()); val shift=.35f*f.width*camera.scale
+                            f.id to MapLabels.footprint(c.x+shift*kotlin.math.cos(r).toFloat(),c.y+shift*kotlin.math.sin(r).toFloat(),
+                                1.7f*f.width*camera.scale,maxOf(f.depth*camera.scale,12f),deg)
+                        } else f.id to MapLabels.footprint(c.x,c.y,f.width*camera.scale,f.depth*camera.scale,deg)
                     }
                     for(f in state.placements.sortedBy { if(it.id==selectedId || it.id in lit) 2 else if(it.kind=="Corridoio") 0 else 1 }){
                         val pos=camera.toScreen(PointMetres(f.x,f.y));val center=Offset(pos.x,pos.y)
@@ -737,12 +743,42 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     }
                     // 4.20 "Dov'è": the walk from the entrance to the structure of the article.
                     walk?.let { route ->
-                        val a=camera.toScreen(route.start);val b=camera.toScreen(PointMetres(route.to.x,route.to.y))
-                        val corner=camera.toScreen(route.corner)
-                        val dots=PathEffect.dashPathEffect(floatArrayOf(3f,16f))
-                        drawLine(Amber,Offset(a.x,a.y),Offset(corner.x,corner.y),strokeWidth=5f,cap=StrokeCap.Round,pathEffect=dots)
-                        drawLine(Amber,Offset(corner.x,corner.y),Offset(b.x,b.y),strokeWidth=5f,cap=StrokeCap.Round,pathEffect=dots)
+                        // 4.20.2: one dotted line along the whole way (around structures and walls).
+                        val pts=route.path.map{camera.toScreen(it)}
+                        val line=androidx.compose.ui.graphics.Path().apply {
+                            moveTo(pts.first().x,pts.first().y); pts.drop(1).forEach { lineTo(it.x,it.y) }
+                        }
+                        drawPath(line,Amber,style=Stroke(width=5f,cap=StrokeCap.Round,join=androidx.compose.ui.graphics.StrokeJoin.Round,
+                            pathEffect=PathEffect.dashPathEffect(floatArrayOf(3f,16f))))
+                        val a=pts.first(); val b=pts.last()
                         drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
+                        // Zoomed in: the entrance or the article out of sight get an arrow on the edge pointing to them.
+                        val edge=with(density){30.dp.toPx()}
+                        fun pointer(at:PointMetres,color:Color,text:String) {
+                            if(at.x in 0f..size.width && at.y in 0f..size.height) return
+                            val cx=size.width/2f; val cy=size.height/2f
+                            val dx=at.x-cx; val dy=at.y-cy
+                            val k=minOf(if(dx!=0f) (size.width/2f-edge)/kotlin.math.abs(dx) else Float.MAX_VALUE,if(dy!=0f) (size.height/2f-edge)/kotlin.math.abs(dy) else Float.MAX_VALUE)
+                            val m=Offset(cx+dx*k,cy+dy*k)
+                            val ang=kotlin.math.atan2(dy,dx)
+                            drawCircle(Color(0xFF07121F).copy(alpha=.9f),edge*.62f,m)
+                            drawCircle(color,edge*.62f,m,style=Stroke(width=2.5f))
+                            val tip=Offset(m.x+kotlin.math.cos(ang)*edge*.38f,m.y+kotlin.math.sin(ang)*edge*.38f)
+                            val back=edge*.30f; val side=edge*.24f
+                            val bx=tip.x-kotlin.math.cos(ang)*back; val by=tip.y-kotlin.math.sin(ang)*back
+                            val arrow=androidx.compose.ui.graphics.Path().apply {
+                                moveTo(tip.x,tip.y)
+                                lineTo(bx-kotlin.math.sin(ang)*side,by+kotlin.math.cos(ang)*side)
+                                lineTo(bx+kotlin.math.sin(ang)*side,by-kotlin.math.cos(ang)*side); close()
+                            }
+                            drawPath(arrow,color)
+                            labelPaint.textSize=labelPx*.85f; labelPaint.color=android.graphics.Color.WHITE
+                            val tx=m.x.coerceIn(labelPaint.measureText(text)/2f+4f,size.width-labelPaint.measureText(text)/2f-4f)
+                            val ty=if(m.y>size.height/2f) m.y-edge*.9f else m.y+edge*1.2f
+                            drawIntoCanvas { cv -> cv.nativeCanvas.drawText(text,tx,ty,labelPaint) }
+                        }
+                        pointer(a,Sky,route.from.label.ifBlank{route.from.kind})
+                        pointer(b,Amber,route.to.label.ifBlank{route.to.kind})
                     }
                     // 4.15: dotted stretch from the last structure visited to the next one.
                     val guideFrom=guide.from;val guideNext=guide.next
@@ -799,7 +835,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             Text("${unplaced.size} ${if(unplaced.size==1) "articolo senza posto" else "articoli senza posto"}",fontSize=14.sp,fontWeight=FontWeight.Medium)
                         }
                     }
-                if(editing || state.locationPickItemIds!=null) Surface(Modifier.align(Alignment.BottomStart).padding(10.dp),shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.96f)) {
+                // 4.20.2: the hint goes away once something is selected, so it never covers the bottom of the plan while working there.
+                if(state.locationPickItemIds!=null || (editing && selectedId==null && selectedWallId==null && (mode!=EditorTool.WALL || wallAnchor==null)))
+                    Surface(Modifier.align(Alignment.BottomStart).padding(10.dp),shape=RoundedCornerShape(12.dp),color=PanelBg.copy(alpha=.96f)) {
                     Text(when{
                         state.locationPickItemIds!=null -> "Trascina per spostarti, tocca una struttura (o leggi la sua etichetta)"
                         mode==EditorTool.WALL -> if(wallAnchor==null)"Tocca il punto iniziale oppure trascina" else if(draftCloses) "Rilascia: la forma si chiude" else "Tocca per continuare · vicino a un angolo la forma si chiude"

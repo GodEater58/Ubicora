@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.20.2](CHANGELOG_4_20_2.md) | percorso «dov'è» attorno a strutture e pareti, frecce sul bordo quando si ingrandisce, ritocchi alla modifica della pianta. |
 | [4.20.1](CHANGELOG_4_20_1.md) | cancello scorrevole tra i passaggi; il percorso «dov'è» parte dal centro del varco. |
 | [4.20.0](CHANGELOG_4_20_0.md) | mappa pulita con ricerca e «dov'è», scaffale visto di fronte, tag NFC degli scaffali che aprono l'app anche da chiusa, etichette delle strutture valide su tutti i telefoni. |
 | [4.19.3](CHANGELOG_4_19_3.md) | ritocchi dal primo collaudo sul telefono: scanner nuovo, colori dei dialoghi, Squadra senza doppioni, scheda articolo e finestra struttura riordinate. |

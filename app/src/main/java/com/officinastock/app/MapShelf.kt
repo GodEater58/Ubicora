@@ -47,7 +47,7 @@ import java.util.Locale
     val context = LocalContext.current
     val hasNfc = remember { runCatching { android.nfc.NfcAdapter.getDefaultAdapter(context) != null }.getOrDefault(false) }
     val view = remember(p, u.items) { ShelfLayout.of(p, u.items) }
-    val walk = remember(p, u.placements) { MapRoute.walk(u.placements, p) }
+    val walk = remember(p, u.placements, u.walls) { MapRoute.walk(u.placements, p, u.walls, u.warehouse?.mapWidth ?: 0f, u.warehouse?.mapHeight ?: 0f) }
     val placing = u.locationPickItemIds
     val placingNames = placing?.mapNotNull { id -> u.items.firstOrNull { it.id == id }?.name }.orEmpty()
     var actionsFor by remember(p.id) { mutableStateOf<Long?>(null) }
