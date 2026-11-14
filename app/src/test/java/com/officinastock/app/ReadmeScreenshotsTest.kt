@@ -98,8 +98,6 @@ class ReadmeScreenshotsTest {
         out!!.mkdirs()
         val app=RuntimeEnvironment.getApplication() as Application
         app.deleteDatabase("officina_stock_native4.db")
-        // The burst screen shows its camera frame instead of the permission request.
-        shadowOf(app).grantPermissions(android.Manifest.permission.CAMERA)
         val model=StockViewModel(app)
         compose.setContent {
             StockTheme { StockApp(model,{},{},{},{},{},{_->},{_->}) }
@@ -128,13 +126,7 @@ class ReadmeScreenshotsTest {
             if(shelfId!=null) shot("scaffale",model,frozen=true) { model.openShelf(shelfId) }
             model.closeShelf(); settle(model)
 
-            // Burst picking: there is no camera here, the scanned label is passed directly.
-            val burstItem=model.ui.items.firstOrNull { it.quantity>=3.0 }
-            if(burstItem!=null) shot("prelievo_raffica",model,frozen=true) {
-                model.startBurst(); model.consumeScanRequest()
-                model.handleScannedCode(ArticleCodes.payload(burstItem.warehouseId,burstItem.sku))
-            }
-            model.endBurst(); settle(model)
+            // Burst picking is not rendered: its camera preview cannot be drawn without a real phone.
 
             model.becomeTeamCentral("squadra-demo-2026"); settle(model)
             log.appendLine("team role=${model.ui.team.role} message=${model.ui.message}")

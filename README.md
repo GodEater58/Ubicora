@@ -16,14 +16,21 @@
 </div>
 
 <p align="center">
-  <img src="docs/img/panoramica.png" width="19%" alt="Panoramica"/>
+  <img src="docs/img/oggi.png" width="19%" alt="Oggi"/>
   <img src="docs/img/articoli.png" width="19%" alt="Articoli"/>
+  <img src="docs/img/scheda_articolo.png" width="19%" alt="Scheda articolo"/>
   <img src="docs/img/mappa.png" width="19%" alt="Mappa"/>
+  <img src="docs/img/mappa_dove.png" width="19%" alt="Dov'è sulla mappa"/>
+</p>
+<p align="center">
+  <img src="docs/img/scaffale.png" width="19%" alt="Scaffale visto di fronte"/>
+  <img src="docs/img/squadra.png" width="19%" alt="Squadra"/>
   <img src="docs/img/rete_centrale.png" width="19%" alt="Rete del centrale"/>
   <img src="docs/img/tema_chiaro.png" width="19%" alt="Tema chiaro"/>
+  <img src="docs/img/articoli_chiaro.png" width="19%" alt="Articoli, tema chiaro"/>
 </p>
 
-> Le immagini qui sopra sono della 4.14: da allora sono cambiate la prima schermata (Oggi), la lista articoli, la barra in basso e soprattutto la mappa. Vanno rifatte con la 4.20 installata.
+> Schermate della 4.20.2 con il magazzino dimostrativo. Si rifanno da sole con **Actions → Schermate → Run workflow** (escono sul ramo `schermate-output`); il prelievo a raffica non c'è perché la fotocamera si vede solo su un telefono vero.
 
 ## Novità dalla 4.17 alla 4.20
 
