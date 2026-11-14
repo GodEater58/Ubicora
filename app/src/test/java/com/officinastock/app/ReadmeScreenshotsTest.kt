@@ -11,6 +11,9 @@ import androidx.compose.ui.test.performClick
 import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.runners.model.Statement
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -28,8 +31,13 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk=[34], qualifiers="w392dp-h850dp-xhdpi")
 class ReadmeScreenshotsTest {
-    @get:Rule val compose=createComposeRule()
     private val out=System.getenv("UBICORA_SCREENSHOTS")?.let(::File)
+    private val compose=createComposeRule()
+    // Skipped before the compose rule starts its activity: in normal CI (and in the release
+    // variant, which has no test activity in its manifest) nothing is launched.
+    @get:Rule val rules: RuleChain = RuleChain
+        .outerRule(TestRule { base,_ -> object:Statement() { override fun evaluate() { Assume.assumeTrue(out!=null); base.evaluate() } } })
+        .around(compose)
     private val log=StringBuilder()
 
     private fun idleOnce() { shadowOf(Looper.getMainLooper()).idle() }
@@ -94,7 +102,6 @@ class ReadmeScreenshotsTest {
     private fun tab(label:String) = compose.onAllNodesWithContentDescription(label,useUnmergedTree=true).onFirst().performClick()
 
     @Test fun renderScreens() {
-        Assume.assumeTrue(out!=null)
         out!!.mkdirs()
         val app=RuntimeEnvironment.getApplication() as Application
         app.deleteDatabase("officina_stock_native4.db")
