@@ -47,7 +47,7 @@ Questi comandi servono **solo se non hai più la chiave originale**. Se la hai, 
 
 Salva almeno due copie del keystore in posti distinti, cifrati, con password conservata separatamente. **Non inviare il keystore o le password in chat e non aggiungerli mai al repository Git.**
 
-In GitHub, repository `GodEater58/OfficinaStock-Android`, apri **Settings → Secrets and variables → Actions**. Configura queste quattro **Repository secrets**:
+In GitHub, repository `GodEater58/Ubicora` (ex `OfficinaStock-Android`), apri **Settings → Secrets and variables → Actions**. Configura queste quattro **Repository secrets**:
 
 | Nome secret | Valore |
 | --- | --- |
