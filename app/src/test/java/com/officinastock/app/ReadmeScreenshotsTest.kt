@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assume
 import org.junit.Rule
@@ -97,6 +98,8 @@ class ReadmeScreenshotsTest {
         out!!.mkdirs()
         val app=RuntimeEnvironment.getApplication() as Application
         app.deleteDatabase("officina_stock_native4.db")
+        // The burst screen shows its camera frame instead of the permission request.
+        shadowOf(app).grantPermissions(android.Manifest.permission.CAMERA)
         val model=StockViewModel(app)
         compose.setContent {
             StockTheme { StockApp(model,{},{},{},{},{},{_->},{_->}) }
@@ -110,7 +113,7 @@ class ReadmeScreenshotsTest {
             model.dismissMessage()
 
             shot("oggi",model)
-            shot("articoli",model) { tab("Articoli") }
+            shot("articoli",model) { tab("Articoli"); compose.waitForIdle(); runCatching { compose.onNodeWithText("Ho capito").performClick() } }
             val located=model.ui.items.filter { it.placementId!=null }
             val pictured=located.firstOrNull { it.photoFile!=null } ?: located.firstOrNull() ?: model.ui.items.first()
             shot("scheda_articolo",model) { model.openItemDetails(pictured.id) }
@@ -148,7 +151,6 @@ class ReadmeScreenshotsTest {
             UiPrefs.updateLight(true)
             shot("tema_chiaro",model) { tab("Oggi") }
             shot("articoli_chiaro",model) { tab("Articoli") }
-            shot("mappa_chiaro",model,frozen=true) { tab("Mappa") }
             UiPrefs.updateLight(false); settle(model,frozen=true)
         } finally {
             File(out,"log.txt").writeText(log.toString())
