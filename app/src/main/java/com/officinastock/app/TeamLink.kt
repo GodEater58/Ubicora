@@ -76,6 +76,8 @@ class TeamLink(
 
     var ui by mutableStateOf(LinkUi())
         private set
+    /** Only for the screenshots of the README and the guide (ReadmeScreenshotsTest): shows a state without a real network. */
+    internal fun previewForScreenshots(state: LinkUi) { ui = state }
 
     private val client by lazy { Nearby.getConnectionsClient(context) }
     private val strategy = Strategy.P2P_STAR
