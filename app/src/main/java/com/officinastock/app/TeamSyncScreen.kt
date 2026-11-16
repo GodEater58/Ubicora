@@ -269,12 +269,17 @@ import java.util.Locale
 
     if (showInvite) {
         // Database + Keystore + QR bitmap: off the main thread, not during composition.
-        val picture by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, t.peers, u.warehouse?.name) {
-            value = withContext(Dispatchers.IO) { model.teamInvite()?.let { QrLabels.bitmap(it, 640).asImageBitmap() } }
+        // null = still being prepared; a Result holding null = no QR could be made.
+        val picture by produceState<Result<androidx.compose.ui.graphics.ImageBitmap?>?>(null, t.peers, u.warehouse?.name) {
+            value = withContext(Dispatchers.IO) {
+                runCatching { model.teamInvite()?.let { QrLabels.bitmap(it, 640).asImageBitmap() } }
+            }
         }
         AlertDialog(onDismissRequest = { showInvite = false }, title = { Text("Collega un nuovo telefono") }, text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                picture?.let { androidx.compose.foundation.Image(it, "QR di collegamento", Modifier.size(240.dp)) }
+                val ready = picture
+                if (ready == null) Text("Preparo il QR…", color = TextSecondary)
+                else ready.getOrNull()?.let { androidx.compose.foundation.Image(it, "QR di collegamento", Modifier.size(240.dp)) }
                     ?: Text("QR non disponibile", color = Danger)
                 Text("Sull'altro telefono: Impostazioni › Sincronizzazione › «Collega con il QR del centrale», poi «Cerca il centrale vicino» " +
                     "mentre qui la rete è aperta.", fontSize = 12.sp, color = TextSecondary)

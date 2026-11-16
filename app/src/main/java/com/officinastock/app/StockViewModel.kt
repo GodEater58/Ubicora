@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
@@ -1011,8 +1010,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.sessionLocked) return
         if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse
         // 4.13: wait for an operation in progress instead of clearing its busy flag under it.
-        // Still busy after 30 s (restore, CSV import): leave its flag alone, that operation reloads when it ends.
-        if(withTimeoutOrNull(30_000) { while(ui.busy) delay(50) }==null) return
+        // Wait for the operation in progress however long it takes (restore, CSV import), then show what arrived.
+        while(ui.busy) { if(ui.sessionLocked) return; delay(50) }
         if(ui.sessionLocked) return
         ui=ui.copy(busy=true)
         clearMapHistory()
