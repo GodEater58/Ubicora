@@ -84,6 +84,7 @@ class AppTourDeviceTest {
         for (label in listOf("Articoli", "Mappa", "Squadra", "Oggi")) tab(label)
 
         onModel { it.becomeTeamCentral("squadra-prova-2026") }; settle("telefono centrale")
+        onModel { it.ui }.let { u -> assertTrue("Non è diventato centrale (${u.team.role}): ${u.message}", u.team.role==TeamRole.CENTRAL && u.team.covers(u.warehouse?.id)) }
         onModel { it.dismissMessage() }
         tab("Squadra")
         scrollTo("QR per collegare un nuovo telefono")

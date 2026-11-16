@@ -102,6 +102,7 @@ class AppFlowsUiTest {
 
     @Test fun inviteQrIsShownOnTheCentral() {
         model.becomeTeamCentral("squadra-prova-2026"); settle()
+        model.ui.let { u -> assertTrue("Non è diventato centrale (${u.team.role}): ${u.message}", u.team.role==TeamRole.CENTRAL && u.team.covers(u.warehouse?.id)) }
         model.dismissMessage(); settle()
         tab("Squadra")
         scrollTo("QR per collegare un nuovo telefono")
