@@ -325,12 +325,26 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             require(db.rawQuery("SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL",arrayOf(itemId.toString())).use { !it.moveToFirst() }) {
                 "Questo articolo è ancora in prestito: registra prima il rientro"
             }
+            // ON DELETE CASCADE would drop open orders/transfers silently: stock already shipped would never come back.
+            require(!hasOpenWork(db,itemId)) {
+                "Impossibile eliminare l'articolo: completa o annulla prima acquisti, conteggi, trasferimenti e manutenzioni aperti."
+            }
             db.delete("demo_assets","entity_type='items' AND entity_id=?",arrayOf(itemId.toString()))
             db.delete("items","id=? AND warehouse_id=?",arrayOf(itemId.toString(),warehouseId.toString()))
             db.setTransactionSuccessful()
             return photo
         } finally { db.endTransaction() }
     }
+    /** Open purchases, counts, transfers, maintenance or loans still tied to [itemId]. */
+    private fun hasOpenWork(db: SQLiteDatabase, itemId: Long): Boolean = db.rawQuery(
+        """SELECT (
+            EXISTS(SELECT 1 FROM ops_orders WHERE item_id=? AND status IN ('DRAFT','APPROVED','ORDERED'))
+            OR EXISTS(SELECT 1 FROM ops_counts WHERE item_id=? AND status='PENDING')
+            OR EXISTS(SELECT 1 FROM ops_transfers WHERE item_id=? AND status IN ('REQUESTED','IN_TRANSIT'))
+            OR EXISTS(SELECT 1 FROM ops_maintenance WHERE item_id=? AND status='OPEN')
+            OR EXISTS(SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL)
+        )""",Array(5){itemId.toString()}
+    ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0)!=0 }
     /** Deletes stored article photos (call only after the rows are gone). */
     fun deletePhotoFiles(names: Collection<String>) = names.forEach { PhotoFiles.delete(appContext,it) }
     // 4.15: photos exchanged by the team sync.
@@ -447,16 +461,7 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             require(original.quantity==0.0) {
                 "Prima esaurisci o trasferisci la giacenza: cambiare l'unità a una quantità già presente la falserebbe."
             }
-            val hasOpenWork=readableDatabase.rawQuery(
-                """SELECT (
-                    EXISTS(SELECT 1 FROM ops_orders WHERE item_id=? AND status IN ('DRAFT','APPROVED','ORDERED'))
-                    OR EXISTS(SELECT 1 FROM ops_counts WHERE item_id=? AND status='PENDING')
-                    OR EXISTS(SELECT 1 FROM ops_transfers WHERE item_id=? AND status IN ('REQUESTED','IN_TRANSIT'))
-                    OR EXISTS(SELECT 1 FROM ops_maintenance WHERE item_id=? AND status='OPEN')
-                    OR EXISTS(SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL)
-                )""",Array(5){itemId.toString()}
-            ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0)!=0 }
-            require(!hasOpenWork) {
+            require(!hasOpenWork(readableDatabase,itemId)) {
                 "Impossibile cambiare l'unità di misura: completa o annulla prima acquisti, conteggi, trasferimenti, manutenzioni e prestiti aperti."
             }
         }

@@ -82,6 +82,23 @@ class TeamSyncTest {
         assertEquals(2, central.items(warehouse).size)
     }
 
+    @Test fun olderCentralStateIsRejectedAndKeepsNewerArticlesAndPendingMovements() {
+        val wh = join(satellite, "B")
+        val older = state()
+        Thread.sleep(5)
+        central.addItem(warehouse, "Dado M8", "Ricambi", 7.0, 1.0, "pz", "")
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val dado = satellite.items(wh).single { it.name == "Dado M8" }.id
+        satellite.movement(dado, -2.0, "Prelievo")
+        rejects { TeamSync(satellite).importState(ByteArrayInputStream(older)) }
+        assertEquals(5.0, qty(satellite, wh, "Dado M8"), 0.0)
+        assertEquals(1, TeamSync(satellite).status().pending)
+        // The same (latest) file twice is still fine.
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(5.0, qty(central, warehouse, "Dado M8"), 0.0)
+    }
+
     @Test fun centralUpdateKeepsTheSatelliteChangesNotYetSent() {
         val wh = join(satellite, "B")
         val vite = satellite.items(wh).single().id
