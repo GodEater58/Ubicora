@@ -115,6 +115,17 @@ class OperationsDbTest {
         ops.progressTransfer(transfer,"Manager","CANCEL")
         assertEquals(20.0,db.item(item)!!.quantity,0.0)
     }
+    @Test fun itemWithShippedTransferCannotBeDeletedUntilResolved(){
+        val transfer=ops.requestTransfer(source,destination,item,4.0,"Manager")
+        ops.progressTransfer(transfer,"Manager","SHIP")
+        assertEquals(16.0,db.item(item)!!.quantity,0.0)
+        rejects{db.deleteItem(source,item)}
+        assertEquals("IN_TRANSIT",ops.transfers(source).single().status)
+        ops.progressTransfer(transfer,"Manager","CANCEL")
+        assertEquals(20.0,db.item(item)!!.quantity,0.0)
+        db.deleteItem(source,item)
+        assertNull(db.item(item))
+    }
     @Test fun pendingOperationsPreventUnitChangesUntilResolved(){
         val row=db.item(item)!!
         fun setUnit(unit:String)=db.updateItemDetails(source,item,row.name,row.category,

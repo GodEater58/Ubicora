@@ -694,6 +694,11 @@ class TeamSync(private val stock: StockDb) {
         require(setting("role") == "satellite") { "Collega prima il telefono come satellite" }
         val state = read(input, requireTeamPw(), SNAPSHOT)
         require(state.getString("warehouse_uid") == setting("warehouse_uid")) { "Il file appartiene a un altro magazzino" }
+        // An older state would delete articles created since and orphan movements still in the outbox.
+        val stateAt = state.optLong("created_at", 0L)
+        require(stateAt == 0L || stateAt >= (setting("state_at")?.toLongOrNull() ?: 0L)) {
+            "Questo aggiornamento del centrale è più vecchio di quello già importato: chiedi al centrale un file nuovo"
+        }
         val sql = db
         sql.beginTransaction()
         removedPhotos.clear()
@@ -791,6 +796,7 @@ class TeamSync(private val stock: StockDb) {
         val processed = state.getJSONObject("processed").optLong(me, 0L)
         val letterOwner = state.getJSONObject("letters").let { l -> l.keys().asSequence().firstOrNull { l.getString(it) == setting("letter") } }
         require(letterOwner == null || letterOwner == me) { "La lettera ${setting("letter")} risulta di un altro telefono" }
+        state.optLong("created_at", 0L).takeIf { it > 0L }?.let { TeamSyncSchema.put(sql, "state_at", it.toString()) }
         // Changes the central has processed are confirmed: they leave the outbox.
         sql.delete("team_sync_outbox", "seq<=?", arrayOf(processed.toString()))
         // What is still pending stays on top of the central state.
