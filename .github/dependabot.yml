@@ -1,0 +1,7 @@
+# Actions are pinned by commit SHA: Dependabot opens a PR when a new version is out.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
