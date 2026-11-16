@@ -8,7 +8,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import org.junit.Assert.*
 import org.junit.Assume
 import org.junit.Before
@@ -51,6 +54,12 @@ class AppFlowsUiTest {
         }
         fail("Operazione ancora in corso: busy=${model.ui.busy} message=${model.ui.message}")
     }
+    /** The setter is private to the app: tests reach the Compose state behind `ui` directly. */
+    @Suppress("UNCHECKED_CAST")
+    private fun setUi(state:StockUiState) {
+        val field=StockViewModel::class.java.getDeclaredField("ui\$delegate").apply { isAccessible=true }
+        (field.get(model) as androidx.compose.runtime.MutableState<StockUiState>).value=state
+    }
     private fun waitFor(timeoutMs:Long=10_000,condition:()->Boolean) {
         val end=System.currentTimeMillis()+timeoutMs
         while(!condition()) {
@@ -87,7 +96,10 @@ class AppFlowsUiTest {
         model.becomeTeamCentral("squadra-prova-2026"); settle()
         model.dismissMessage(); settle()
         tab("Squadra")
-        compose.onNodeWithText("QR per collegare un nuovo telefono").performScrollTo().performClick()
+        // The button is below the fold of a lazy list: not composed until the list scrolls to it.
+        compose.onAllNodes(hasScrollToNodeAction() and hasAnyDescendant(hasText("Sincronizzazione tra i telefoni", substring = true)))
+            .onFirst().performScrollToNode(hasText("QR per collegare un nuovo telefono"))
+        compose.onNodeWithText("QR per collegare un nuovo telefono").performClick()
         // The QR is prepared in the background: first the waiting text, never the red error.
         waitFor { compose.onAllNodesWithContentDescription("QR di collegamento").fetchSemanticsNodes().isNotEmpty() }
         assertFalse(shown("QR non disponibile"))
@@ -99,11 +111,11 @@ class AppFlowsUiTest {
         val shelf=model.ui.placements.first { !it.locked }
         model.previewMove(shelf.id,shelf.x+0.5f,shelf.y)
         assertNotEquals(shelf.x,model.ui.placements.first { it.id==shelf.id }.x)
-        model.ui=model.ui.copy(busy=true)               // a sync started in the middle of the gesture
+        setUi(model.ui.copy(busy=true))               // a sync started in the middle of the gesture
         model.commitMove(shelf.id,shelf.x,shelf.y,shelf.x+0.5f,shelf.y)
         val shown=model.ui.placements.first { it.id==shelf.id }
         assertEquals(shelf.x,shown.x,0.001f); assertEquals(shelf.y,shown.y,0.001f)
-        model.ui=model.ui.copy(busy=false)
+        setUi(model.ui.copy(busy=false))
         // With nothing in progress the same drag is saved.
         model.previewMove(shelf.id,shelf.x+0.5f,shelf.y)
         model.commitMove(shelf.id,shelf.x,shelf.y,model.ui.placements.first { it.id==shelf.id }.x,shelf.y); settle()

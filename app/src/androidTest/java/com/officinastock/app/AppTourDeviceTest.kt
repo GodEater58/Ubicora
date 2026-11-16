@@ -6,7 +6,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -75,7 +78,10 @@ class AppTourDeviceTest {
         onModel { it.becomeTeamCentral("squadra-prova-2026") }; settle("telefono centrale")
         onModel { it.dismissMessage() }
         tab("Squadra")
-        compose.onNodeWithText("QR per collegare un nuovo telefono").performScrollTo().performClick()
+        // The button is below the fold of a lazy list: not composed until the list scrolls to it.
+        compose.onAllNodes(hasScrollToNodeAction() and hasAnyDescendant(hasText("Sincronizzazione tra i telefoni", substring = true)))
+            .onFirst().performScrollToNode(hasText("QR per collegare un nuovo telefono"))
+        compose.onNodeWithText("QR per collegare un nuovo telefono").performClick()
         waitFor("QR di invito") { compose.onAllNodesWithContentDescription("QR di collegamento").fetchSemanticsNodes().isNotEmpty() }
         assertFalse(shown("QR non disponibile"))
 

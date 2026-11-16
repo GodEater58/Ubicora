@@ -40,6 +40,10 @@ jobs:
         shell: bash
         run: |
           grep -E '^e: |FAILED|What went wrong|AssertionError|Exception|Tempo scaduto' -A6 device-tests.log | head -150 | sed -E 's/^/::error::/' || true
+          # Full stack traces of failed tests (the console only shows the first line).
+          for f in $(find app/build/outputs/androidTest-results -name 'TEST-*.xml' 2>/dev/null); do
+            grep -A25 '<failure' "$f" | grep -E '<failure|officinastock' | head -40 || true
+          done
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
