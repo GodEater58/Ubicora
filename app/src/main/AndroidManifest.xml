@@ -4,8 +4,6 @@
     <!-- 4.15: NFC tags as a second kind of label (optional: the app works without NFC). -->
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
-    <!-- Reserved for explicit opt-in enterprise HTTPS sync; no automatic network activity. -->
-    <uses-permission android:name="android.permission.INTERNET" />
     <!-- 4.9 team sync between nearby phones (Google Nearby: Bluetooth + Wi-Fi Direct, no internet). -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />

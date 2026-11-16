@@ -28,7 +28,9 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         private val beforeTeamSync = reservedTables + traceTables
         // 4.8: the phone's role in the sync travels with the backup (restoring it moves the phone).
         private val teamTables = listOf("team_sync_settings","team_sync_peers","team_sync_outbox","team_sync_conflicts")
-        private val tables = beforeTeamSync + teamTables
+        private val withTeamSync = beforeTeamSync + teamTables
+        // 4.20.3: which phone made each movement (restored after the team settings, so no trigger rewrites it).
+        private val tables = withTeamSync + listOf("movement_actors")
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -208,7 +210,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             }
             val archiveTableCount=manifest.optInt("tables",-1)
             require(archiveTableCount in setOf(legacyTables.size,managerTables.size,
-                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,tables.size)) {
+                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,withTeamSync.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
             val mandatory=when(archiveTableCount){
@@ -217,6 +219,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 enterpriseTables.size -> enterpriseTables
                 reservedTables.size -> reservedTables
                 beforeTeamSync.size -> beforeTeamSync
+                withTeamSync.size -> withTeamSync
                 else -> tables
             }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
