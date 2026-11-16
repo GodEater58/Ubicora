@@ -8,7 +8,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
@@ -60,6 +61,13 @@ class AppFlowsUiTest {
         val field=StockViewModel::class.java.getDeclaredField("ui\$delegate").apply { isAccessible=true }
         (field.get(model) as androidx.compose.runtime.MutableState<StockUiState>).value=state
     }
+    /** Scrolls whichever lazy list holds [text] (off-screen items are not composed); on failure shows the screen. */
+    private fun scrollTo(text: String) {
+        val lists = compose.onAllNodes(hasScrollToNodeAction())
+        val count = lists.fetchSemanticsNodes().size
+        val found = (0 until count).any { i -> runCatching { lists[i].performScrollToNode(hasText(text)) }.isSuccess }
+        assertTrue("Non trovo '$text' in $count liste. Schermo:\n" + compose.onAllNodes(isRoot(), useUnmergedTree = true).printToString(), found)
+    }
     private fun waitFor(timeoutMs:Long=10_000,condition:()->Boolean) {
         val end=System.currentTimeMillis()+timeoutMs
         while(!condition()) {
@@ -96,9 +104,7 @@ class AppFlowsUiTest {
         model.becomeTeamCentral("squadra-prova-2026"); settle()
         model.dismissMessage(); settle()
         tab("Squadra")
-        // The button is below the fold of a lazy list: not composed until the list scrolls to it.
-        compose.onAllNodes(hasScrollToNodeAction() and hasAnyDescendant(hasText("Sincronizzazione tra i telefoni", substring = true)))
-            .onFirst().performScrollToNode(hasText("QR per collegare un nuovo telefono"))
+        scrollTo("QR per collegare un nuovo telefono")
         compose.onNodeWithText("QR per collegare un nuovo telefono").performClick()
         // The QR is prepared in the background: first the waiting text, never the red error.
         waitFor { compose.onAllNodesWithContentDescription("QR di collegamento").fetchSemanticsNodes().isNotEmpty() }
@@ -108,6 +114,8 @@ class AppFlowsUiTest {
 
     @Test fun dragThatCannotBeSavedPutsTheStructureBack() {
         tab("Mappa")
+        // The demo structures arrive locked: unlock one, as the user does before moving it.
+        model.lockPlacement(model.ui.placements.first().id,false); settle()
         val shelf=model.ui.placements.first { !it.locked }
         model.previewMove(shelf.id,shelf.x+0.5f,shelf.y)
         assertNotEquals(shelf.x,model.ui.placements.first { it.id==shelf.id }.x)
