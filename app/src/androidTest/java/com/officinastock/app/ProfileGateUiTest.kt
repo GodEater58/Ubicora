@@ -5,6 +5,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -17,7 +18,7 @@ class ProfileGateUiTest {
     private fun waitFor(text:String,timeoutMs:Long=30_000) {
         val end=System.currentTimeMillis()+timeoutMs
         while(compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()) {
-            assertTrue("Tempo scaduto: $text. Sullo schermo: ${visibleWords().joinToString(" | ")}",System.currentTimeMillis()<end)
+            assertTrue("Tempo scaduto: $text. Stato: ${state()}. Sullo schermo: ${visibleWords().joinToString(" | ")}",System.currentTimeMillis()<end)
             compose.mainClock.advanceTimeBy(100); Thread.sleep(50)
         }
     }
@@ -25,6 +26,8 @@ class ProfileGateUiTest {
         generateSequence(listOf(root)) { level -> level.flatMap { it.children }.ifEmpty { null } }.flatten()
             .flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text } + listOfNotNull(it.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString()) }
     }
+    private fun state():String { var out=""; compose.runOnUiThread { val u=ViewModelProvider(compose.activity)[StockViewModel::class.java].ui
+        out="busy=${u.busy} initialized=${u.initialized} message=${u.message} profiles=${u.profiles.size} profile=${u.profile?.name} locked=${u.sessionLocked} problem=${DbCipher.lastProblem}" }; return out }
     private fun frames() = compose.mainClock.advanceTimeBy(500)
 
     @Test fun onboardingBackgroundLockAndModalIsolation() {
