@@ -9,7 +9,8 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.isRoot
-import androidx.compose.ui.test.printToString
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
@@ -66,7 +67,12 @@ class AppFlowsUiTest {
         val lists = compose.onAllNodes(hasScrollToNodeAction())
         val count = lists.fetchSemanticsNodes().size
         val found = (0 until count).any { i -> runCatching { lists[i].performScrollToNode(hasText(text)) }.isSuccess }
-        assertTrue("Non trovo '$text' in $count liste. Schermo:\n" + compose.onAllNodes(isRoot(), useUnmergedTree = true).printToString(), found)
+        // Only the visible words: the CI annotation keeps the first 700 characters of the message.
+        val words = compose.onAllNodes(isRoot(), useUnmergedTree = true).fetchSemanticsNodes().flatMap { root ->
+            generateSequence(listOf(root)) { level -> level.flatMap { it.children }.ifEmpty { null } }.flatten()
+                .flatMap { (it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text }) + listOfNotNull(it.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString()) }
+        }
+        assertTrue("Non trovo '$text' in $count liste. Sullo schermo: " + words.joinToString(" | "), found)
     }
     private fun waitFor(timeoutMs:Long=10_000,condition:()->Boolean) {
         val end=System.currentTimeMillis()+timeoutMs
