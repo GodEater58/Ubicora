@@ -492,7 +492,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             }
                             if(!change.pressed){break}
                         }
-                        if(transforming && target!=null && initialFurniture!=null) model.previewMove(target.id,initialFurniture.x,initialFurniture.y)
+                        if((transforming || cancelled) && target!=null && initialFurniture!=null) model.previewMove(target.id,initialFurniture.x,initialFurniture.y)
                         if(cancelled || transforming) return@awaitEachGesture
                         if(picking) {
                             if(!dragged && hit!=null) pick(hit)

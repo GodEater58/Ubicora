@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
@@ -791,7 +790,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             }
         })
     }
-    fun commitMove(id:Long,fromX:Float,fromY:Float,x:Float,y:Float) = executeMap {
+    fun commitMove(id:Long,fromX:Float,fromY:Float,x:Float,y:Float) {
+        // runMap drops the save while busy: put the preview back where the database still has it.
+        if(ui.busy) { previewMove(id,fromX,fromY); return }
+        saveMove(id,fromX,fromY,x,y)
+    }
+    private fun saveMove(id:Long,fromX:Float,fromY:Float,x:Float,y:Float) = executeMap {
         requireMapEditable()
         require(db.movePlacement(id,x,y)){"Struttura bloccata o non trovata"}
         val after=requireNotNull(db.placement(id))
@@ -1006,7 +1010,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(ui.sessionLocked) return
         if(joinedWarehouse!=null) pendingWarehouseId=joinedWarehouse
         // 4.13: wait for an operation in progress instead of clearing its busy flag under it.
-        withTimeoutOrNull(30_000) { while(ui.busy) delay(50) }
+        // Wait for the operation in progress however long it takes (restore, CSV import), then show what arrived.
+        while(ui.busy) { if(ui.sessionLocked) return; delay(50) }
         if(ui.sessionLocked) return
         ui=ui.copy(busy=true)
         clearMapHistory()
@@ -1017,7 +1022,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         catch(e:Exception) { ui=ui.copy(message="Archivio non disponibile: ${e.message}") }
         finally { ui=ui.copy(busy=false); drainWalls() }
     }
-    override fun onCleared() { link.stop();super.onCleared() }
+    // Each new ViewModel opens its own StockDb: close this one or connections pile up on the same file.
+    override fun onCleared() { link.stop();db.close();super.onCleared() }
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
     /** 4.11: the team password is device-sealed; after restoring a backup on a new phone it is typed again. */
     fun restoreTeamPassword(password:String) = execute { team.restorePassword(password) }

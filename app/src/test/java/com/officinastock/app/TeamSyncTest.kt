@@ -323,6 +323,29 @@ class TeamSyncTest {
         assertEquals("B", onCentral.first { it.delta == -3.0 }.actor)
     }
 
+    /** 4.20.3: a backup restored on the central keeps which phone made each movement. */
+    @Test fun backupRestoreKeepsThePhoneOfEveryMovement() {
+        val whB = join(satellite, "B")
+        satellite.movement(satellite.items(whB).single().id, -3.0, "Prelievo")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        central.movement(central.items(warehouse).single().id, -1.0, "Prelievo")
+        val app = RuntimeEnvironment.getApplication()
+        val file = java.io.File(app.cacheDir, "actors.osbackup")
+        try {
+            BackupArchive(app, central).export(android.net.Uri.fromFile(file), "test-password-1234")
+            BackupArchive(app, central).restore(android.net.Uri.fromFile(file), "test-password-1234")
+        } finally { file.delete() }
+        val restored = central.movements(TeamSync(central).status().warehouseId!!)
+        assertEquals("A", restored.first { it.delta == -1.0 }.actor)
+        assertEquals("B", restored.first { it.delta == -3.0 }.actor)
+    }
+
+    /** 4.20.3: showing the QR again (a phone joined meanwhile) keeps the code a second phone already scanned. */
+    @Test fun inviteCodeWithTimeLeftIsReused() {
+        val first = TeamSync(central).createInvite()
+        assertEquals(first, TeamSync(central).createInvite())
+    }
+
     /** 4.15: a satellite replaces a lost central without applying twice what was already delivered. */
     @Test fun satelliteReplacesALostCentralAndTheOthersCarryOn() {
         val whB = join(satellite, "B"); val whC = join(other, "C")

@@ -33,6 +33,8 @@ class TeamSync(private val stock: StockDb) {
         const val KEY = "UBICORA_SYNC_KEY"
         /** One-time invite codes shown in the central's QR: valid for 10 minutes. */
         const val INVITE_MINUTES = 10
+        /** A code with less time left than this is replaced, so the QR never shows one about to expire. */
+        private const val INVITE_REUSE_MS = 3 * 60_000L
         private const val INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
@@ -419,6 +421,9 @@ class TeamSync(private val stock: StockDb) {
     /** Central: a new one-time code for the join QR (valid [INVITE_MINUTES] minutes, any number of phones). */
     fun createInvite(): String {
         require(setting("role") == "central") { "Il QR lo mostra il telefono centrale" }
+        // Reuse a code with time left: a phone that already scanned the QR must not find it replaced.
+        val until = setting("invite_until")?.toLongOrNull() ?: 0L
+        if (until - System.currentTimeMillis() > INVITE_REUSE_MS) activeInvite()?.let { return it }
         val random = java.security.SecureRandom()
         val code = (1..10).map { INVITE_ALPHABET[random.nextInt(INVITE_ALPHABET.length)] }.joinToString("")
         TeamSyncSchema.put(db, "invite_code", DeviceSecrets.seal(code))
