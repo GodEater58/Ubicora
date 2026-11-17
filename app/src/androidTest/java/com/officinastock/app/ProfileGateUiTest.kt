@@ -32,7 +32,8 @@ class ProfileGateUiTest {
         waitFor("Crea azienda")
         compose.onNodeWithText("Nome dell'azienda (es. Officina Rossi)").performTextInput("Audit UI")
         compose.onNodeWithText("PIN locale · 4–8 cifre").performTextInput("1234")
-        compose.onNodeWithText("Crea azienda").performClick()
+        frames()   // the typed text reaches the button only at the next frame: before it, the button is disabled
+        compose.onNode(hasText("Crea azienda") and hasClickAction()).assertIsEnabled().performClick()
         waitFor("Dove lavoriamo?")
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
