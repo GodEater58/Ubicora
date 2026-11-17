@@ -1,5 +1,7 @@
 package com.officinastock.app
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
@@ -15,9 +17,13 @@ class ProfileGateUiTest {
     private fun waitFor(text:String,timeoutMs:Long=30_000) {
         val end=System.currentTimeMillis()+timeoutMs
         while(compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()) {
-            assertTrue("Tempo scaduto: $text",System.currentTimeMillis()<end)
+            assertTrue("Tempo scaduto: $text. Sullo schermo: ${visibleWords().joinToString(" | ")}",System.currentTimeMillis()<end)
             compose.mainClock.advanceTimeBy(100); Thread.sleep(50)
         }
+    }
+    private fun visibleWords() = compose.onAllNodes(isRoot(),useUnmergedTree=true).fetchSemanticsNodes().flatMap { root ->
+        generateSequence(listOf(root)) { level -> level.flatMap { it.children }.ifEmpty { null } }.flatten()
+            .flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text } + listOfNotNull(it.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString()) }
     }
     private fun frames() = compose.mainClock.advanceTimeBy(500)
 
