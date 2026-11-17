@@ -9,9 +9,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.hasScrollToNodeAction
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -44,17 +45,24 @@ class AppTourDeviceTest {
         return result!!.getOrThrow()
     }
     /** The map and team screens animate forever: the clock is advanced by hand, never left to idle. */
-    /** Scrolls whichever lazy list holds [text] (off-screen items are not composed); on failure shows the screen. */
-    private fun scrollTo(text: String) {
-        val lists = compose.onAllNodes(hasScrollToNodeAction())
-        val count = lists.fetchSemanticsNodes().size
-        val found = (0 until count).any { i -> runCatching { lists[i].performScrollToNode(hasText(text)) }.isSuccess }
-        // Only the visible words: the CI annotation keeps the first 700 characters of the message.
-        val words = compose.onAllNodes(isRoot(), useUnmergedTree = true).fetchSemanticsNodes().flatMap { root ->
-            generateSequence(listOf(root)) { level -> level.flatMap { it.children }.ifEmpty { null } }.flatten()
-                .flatMap { (it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text }) + listOfNotNull(it.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString()) }
+    /**
+     * Clicks the button [text] in the lazy list of the screen. The clock is paused (endless animations), so the
+     * list is moved with ScrollToIndex, which jumps without animating; ScrollBy would animate and never end.
+     */
+    private fun clickInList(text: String) {
+        val list = compose.onAllNodes(hasScrollToIndexAction()).onFirst()
+        var index = 0
+        while (compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()) {
+            val moved = index < 40 && runCatching { list.performScrollToIndex(index++) }.isSuccess
+            assertTrue("Non trovo '$text'. Sullo schermo: " + visibleWords().joinToString(" | "), moved)
+            compose.mainClock.advanceTimeByFrame()
         }
-        assertTrue("Non trovo '$text' in $count liste. Sullo schermo: " + words.joinToString(" | "), found)
+        compose.onAllNodesWithText(text).onFirst().performSemanticsAction(SemanticsActions.OnClick)
+    }
+    /** The words on screen, short enough for the 700-character CI annotation. */
+    private fun visibleWords() = compose.onAllNodes(isRoot(), useUnmergedTree = true).fetchSemanticsNodes().flatMap { root ->
+        generateSequence(listOf(root)) { level -> level.flatMap { it.children }.ifEmpty { null } }.flatten()
+            .flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { t -> t.text } + listOfNotNull(it.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString()) }
     }
     private fun waitFor(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         val end = System.currentTimeMillis() + timeoutMs
@@ -93,8 +101,7 @@ class AppTourDeviceTest {
         onModel { it.ui }.let { u -> assertTrue("Non è diventato centrale (${u.team.role}): ${u.message}", u.team.role==TeamRole.CENTRAL && u.team.covers(u.warehouse?.id)) }
         onModel { it.dismissMessage() }
         tab("Squadra")
-        scrollTo("QR per collegare un nuovo telefono")
-        compose.onNodeWithText("QR per collegare un nuovo telefono").performClick()
+        clickInList("QR per collegare un nuovo telefono")
         waitFor("QR di invito") { compose.onAllNodesWithContentDescription("QR di collegamento").fetchSemanticsNodes().isNotEmpty() }
         assertFalse(shown("QR non disponibile"))
 
