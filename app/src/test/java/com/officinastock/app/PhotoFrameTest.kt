@@ -22,8 +22,8 @@ class PhotoFrameTest {
         val scale = maxOf(1080f / 3000, 2160f / 4000)
         assertEquals(fw / scale, c[2].toFloat(), 2f)
         assertEquals(fh / scale, c[3].toFloat(), 2f)
-        assertEquals(3000, c[0] * 2 + c[2], 1)          // centred horizontally
-        assertEquals(4000, c[1] * 2 + c[3], 1)          // and vertically
+        assertTrue(kotlin.math.abs(3000 - (c[0] * 2 + c[2])) <= 1)   // centred horizontally
+        assertTrue(kotlin.math.abs(4000 - (c[1] * 2 + c[3])) <= 1)   // and vertically
         assertEquals(PhotoFiles.CARD_ASPECT, c[2].toFloat() / c[3], 0.01f)
     }
 
