@@ -257,6 +257,8 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 db.delete("sku_sequences",null,null)
                 // Cleared first, so no sync trigger fires while the archive is written back.
                 for(table in teamTables) db.delete(table,null,null)
+                // 4.21: card changes waiting for validation belong to the team of the replaced archive.
+                db.delete("team_edits",null,null)
                 for(table in tables) {
                     for(values in snapshots.getValue(table)) {
                         db.insertOrThrow(table,null,values)

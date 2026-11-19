@@ -99,7 +99,7 @@ import java.time.Instant
                 verticalArrangement=Arrangement.spacedBy(8.dp)){
                 OutlinedTextField(search,{search=it},label={Text("Cerca articolo / codice")},singleLine=true,
                     modifier=Modifier.fillMaxWidth())
-                ui.items.filter{search.isBlank() || it.sku.contains(search,true)||it.name.contains(search,true)}
+                ui.items.filter{it.matchesSearch(search)}
                     .take(8).forEach{item->
                         Row(Modifier.fillMaxWidth().clickable{selected=item.id},verticalAlignment=Alignment.CenterVertically){
                             RadioButton(selected=selected==item.id,onClick={selected=item.id})

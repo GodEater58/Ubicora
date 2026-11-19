@@ -61,7 +61,10 @@ fun ArticlePhotoField(
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if(uri!=null) stage(uri.toString())
     }
-    fun launchCamera() {
+    // 4.21: the app's own camera, with the frame of the card photo; the phone's camera only as a fallback.
+    var framedCamera by remember { mutableStateOf(false) }
+    fun launchCamera() { framedCamera=true }
+    fun launchSystemCamera() {
         runCatching {
             val uri=PhotoFiles.captureUri(context)
             newCaptureUri=uri.toString()
@@ -76,6 +79,10 @@ fun ArticlePhotoField(
         if(granted) launchCamera()
         else Toast.makeText(context,"Permesso fotocamera non concesso",Toast.LENGTH_SHORT).show()
     }
+    if(framedCamera) ArticleCameraDialog(
+        onCaptured={ uri -> framedCamera=false; stage(uri.toString()) },
+        onFallback={ framedCamera=false; launchSystemCamera() },
+        onClose={ framedCamera=false })
     val shownPhoto=produceState<android.graphics.Bitmap?>(initialValue=null,pending,savedPhoto) {
         value=withContext(Dispatchers.IO) { PhotoFiles.preview(context,pending,savedPhoto) }
     }.value
@@ -84,7 +91,7 @@ fun ArticlePhotoField(
         Text("FOTO ARTICOLO",color=Mint,fontWeight=FontWeight.Bold,fontSize=11.sp)
         if(shownPhoto!=null) {
             Image(shownPhoto.asImageBitmap(),contentDescription="Foto dell'articolo",
-                modifier=Modifier.fillMaxWidth().height(165.dp).clip(RoundedCornerShape(14.dp)),
+                modifier=Modifier.fillMaxWidth().aspectRatio(PhotoFiles.CARD_ASPECT).clip(RoundedCornerShape(14.dp)),
                 contentScale=ContentScale.Crop)
         } else {
             Surface(color=Surface2,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()) {

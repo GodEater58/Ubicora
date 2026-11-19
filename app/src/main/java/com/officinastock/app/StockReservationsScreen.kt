@@ -62,7 +62,7 @@ import androidx.compose.ui.unit.sp
                 verticalArrangement=Arrangement.spacedBy(8.dp)){
                 OutlinedTextField(value=search,onValueChange={search=it},label={Text("Cerca articolo o codice")},
                     modifier=Modifier.fillMaxWidth(),singleLine=true)
-                ui.items.filter{search.isBlank()||it.name.contains(search,true)||it.sku.contains(search,true)}
+                ui.items.filter{it.matchesSearch(search)}
                     .take(8).forEach{it->
                         Row(Modifier.fillMaxWidth().clickable{chosen=it.id},
                             verticalAlignment=Alignment.CenterVertically){

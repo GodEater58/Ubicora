@@ -41,6 +41,26 @@ class TeamSync(private val stock: StockDb) {
         private const val MAX_SITES = 10
         /** 4.19: the "department" of a satellite that can only withdraw. */
         const val PICK_ONLY = "Solo prelievo"
+        /**
+         * 4.21: a maintainer with a department travels as "Manutentore" plus his categories. Like
+         * [PICK_ONLY] it matches no category, so an older app sees an ordinary department.
+         * A satellite with no line at all is a maintainer of every category, as before.
+         */
+        const val MAINTAINER = "Manutentore"
+        /** 4.21: what a maintainer can change on an article card, in the order shown. */
+        val EDIT_FIELDS = linkedMapOf("sku" to "Codice", "name" to "Nome", "category" to "Categoria", "minimum" to "Scorta minima",
+            "unit" to "Unità", "note" to "Descrizione", "cost" to "Costo unitario", "supplier" to "Fornitore", "lead" to "Giorni di consegna")
+        fun isMaintainer(scope: Collection<String>) = scope.isEmpty() || MAINTAINER in scope
+        /** The categories of a department, without the role marks (empty = every category). */
+        fun department(scope: Collection<String>) = scope.filter { it != MAINTAINER && it != PICK_ONLY }
+        /** An article card as it travels in a change request. */
+        fun card(sku: String, name: String, category: String, minimum: Double, unit: String, note: String,
+                 cost: Double?, supplier: String, lead: Int?): JSONObject =
+            JSONObject().put("sku", sku.trim()).put("name", name.trim()).put("category", category).put("minimum", minimum)
+                .put("unit", unit.trim()).put("note", note.trim()).put("cost", cost ?: JSONObject.NULL)
+                .put("supplier", supplier.trim()).put("lead", lead ?: JSONObject.NULL)
+        private const val MAX_EDITS = 2_000
+        private const val MAX_EDIT_JSON = 20_000
         /** 4.15: photos asked for and carried by one file; what does not fit follows at the next exchanges. */
         private const val MAX_PHOTO_WANTS = 60
         private const val MAX_PHOTO_BYTES = 8 * 1024 * 1024
@@ -63,7 +83,7 @@ class TeamSync(private val stock: StockDb) {
         return TeamSyncStatus(role, setting("warehouse_id")?.toLongOrNull(), setting("letter"),
             if (role == TeamRole.SATELLITE) pending else 0, setting("last_sync")?.toLongOrNull() ?: 0, peers, conflicts,
             lines(setting("scope")), if (role == TeamRole.CENTRAL) scopes() else emptyMap(), teamPw() == null,
-            sites = extraSites().keys.toList(), labelIds = labelIds(), loans = teamLoans())
+            sites = extraSites().keys.toList(), labelIds = labelIds(), loans = teamLoans(), edits = edits(role))
     }
 
     // ---------------------------------------------------------------- 4.15 loans of the team
@@ -337,7 +357,7 @@ class TeamSync(private val stock: StockDb) {
         sql.beginTransaction()
         try {
             sql.delete("team_sync_settings", "key<>'device_uid'", null)
-            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts", "team_loans")) sql.delete(t, null, null)
+            for (t in listOf("team_sync_outbox", "team_sync_peers", "team_sync_conflicts", "team_loans", "team_edits")) sql.delete(t, null, null)
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
     }
@@ -348,23 +368,49 @@ class TeamSync(private val stock: StockDb) {
      * own articles not yet sent can still be corrected.
      */
     fun requireDetailsEditable(itemId: Long) {
-        if (setting("role") != "satellite") return
-        val site = db.rawQuery("SELECT warehouse_id FROM items WHERE id=?", arrayOf(itemId.toString())).use { if (it.moveToFirst()) it.getLong(0) else null }
-        if (site == null || site !in teamIds()) return
-        require(db.rawQuery("SELECT 1 FROM team_sync_outbox WHERE kind='ITEM' AND ref_id=?", arrayOf(itemId.toString())).use { it.moveToFirst() }) {
+        require(detailsEdit(itemId) == DetailsEdit.DIRECT) {
             "Su questo telefono (satellite ${setting("letter")}) i dati dell'articolo si modificano dal telefono centrale. Carichi, prelievi e ubicazione invece sì."
         }
     }
 
-    /** Central: limits satellite [letter] to [categories] (empty = all). Reaches it at the next exchange. */
-    fun setScope(letter: String, categories: List<String>) {
+    /**
+     * 4.21: how the card of [itemId] can be changed here. A maintainer changes the cards of his
+     * department, but the change waits for the central's validation ([DetailsEdit.REVIEW]); the
+     * other satellites cannot change them; the phone's own articles not yet sent change at once.
+     */
+    fun detailsEdit(itemId: Long): DetailsEdit {
+        if (setting("role") != "satellite") return DetailsEdit.DIRECT
+        val (site, category) = db.rawQuery("SELECT warehouse_id,category FROM items WHERE id=?", arrayOf(itemId.toString()))
+            .use { if (it.moveToFirst()) it.getLong(0) to it.getString(1) else null } ?: return DetailsEdit.DIRECT
+        if (site !in teamIds()) return DetailsEdit.DIRECT
+        if (db.rawQuery("SELECT 1 FROM team_sync_outbox WHERE kind='ITEM' AND ref_id=?", arrayOf(itemId.toString())).use { it.moveToFirst() })
+            return DetailsEdit.DIRECT
+        val scope = lines(setting("scope"))
+        require(isMaintainer(scope)) {
+            "Su questo telefono (satellite ${setting("letter")}) i dati dell'articolo si modificano dal telefono centrale. Carichi, prelievi e ubicazione invece sì."
+        }
+        val dept = department(scope)
+        require(dept.isEmpty() || category in dept) {
+            "Articolo fuori dal tuo reparto (${dept.joinToString(", ")}): la scheda la modifica il telefono centrale"
+        }
+        return DetailsEdit.REVIEW
+    }
+
+    /**
+     * Central: what satellite [letter] may do. [maintainer] adds the changes of article cards (validated
+     * here). No category (or, for a maintainer, every one) = the whole warehouse. Reaches it at the next exchange.
+     */
+    fun setScope(letter: String, categories: List<String>, maintainer: Boolean = false) {
         require(setting("role") == "central") { "I reparti li assegna il telefono centrale" }
         require(ArticleCodes.isSatelliteLetter(letter)) { "Lettera non valida" }
-        categories.forEach { ArticleCodes.prefix(it) }
+        department(categories).forEach { ArticleCodes.prefix(it) }
         val all = ArticleCodes.categoryPrefixes.keys
         val chosen = all.filter { it in categories }
-        if (chosen.isEmpty() || chosen.size == all.size) db.delete("team_sync_settings", "key=?", arrayOf("scope:$letter"))
-        else TeamSyncSchema.put(db, "scope:$letter", chosen.joinToString("\n"))
+        when {
+            chosen.isEmpty() || (maintainer && chosen.size == all.size) -> db.delete("team_sync_settings", "key=?", arrayOf("scope:$letter"))
+            maintainer -> TeamSyncSchema.put(db, "scope:$letter", (listOf(MAINTAINER) + chosen).joinToString("\n"))
+            else -> TeamSyncSchema.put(db, "scope:$letter", chosen.joinToString("\n"))
+        }
     }
     /**
      * 4.19: satellite [letter] can only withdraw (and lend): no new articles, no loads, no moves, in
@@ -446,6 +492,146 @@ class TeamSync(private val stock: StockDb) {
 
     fun dismissConflicts() { db.delete("team_sync_conflicts", null, null) }
 
+    // ---------------------------------------------------------------- 4.21 cards changed by maintainers
+
+    /** The card of [itemId] as it travels in a change request, with its global id; null when it is gone. */
+    private fun cardOf(sql: SQLiteDatabase, itemId: Long): Pair<String, JSONObject>? =
+        sql.rawQuery("SELECT uid,sku,name,category,minimum,unit,note,unit_cost,supplier,lead_days FROM items WHERE id=?", arrayOf(itemId.toString())).use { c ->
+            if (!c.moveToFirst()) null else c.getString(0) to card(c.getString(1), c.getString(2), c.getString(3), c.getDouble(4), c.getString(5),
+                c.getString(6), if (c.isNull(7)) null else c.getDouble(7), c.getString(8), if (c.isNull(9)) null else c.getInt(9))
+        }
+    private fun plain(v: Any?): String = when (v) { null, JSONObject.NULL -> ""; is Number -> v.toDouble().toString(); else -> v.toString().trim() }
+    private fun shown(key: String, v: Any?): String = when {
+        v == null || v == JSONObject.NULL || plain(v).isEmpty() -> "—"
+        key == "minimum" -> amount((v as Number).toDouble())
+        key == "cost" -> "€ " + amount((v as Number).toDouble())
+        key == "lead" -> "${(v as Number).toInt()} giorni"
+        else -> v.toString()
+    }
+
+    /**
+     * Satellite, maintainer: asks the central to change the card of [itemId] to [after] (see [card]).
+     * Only the fields that differ travel. The article stays as it is here until the central validates:
+     * the change then arrives with its update, like every other change of the central.
+     */
+    fun requestEdit(itemId: Long, after: JSONObject) {
+        require(detailsEdit(itemId) == DetailsEdit.REVIEW) { "Questa scheda si modifica direttamente" }
+        val sql = db
+        val (itemUid, current) = requireNotNull(cardOf(sql, itemId)) { "Articolo inesistente" }
+        val dept = department(lines(setting("scope")))
+        val category = after.optString("category", current.getString("category"))
+        require(dept.isEmpty() || category in dept) { "Categoria fuori dal tuo reparto (${dept.joinToString(", ")})" }
+        sql.beginTransaction()
+        try {
+            // A change not yet sent for the same article is replaced (its "before" stays the original one).
+            val earlier = sql.rawQuery("SELECT changes FROM team_edits WHERE item_uid=? AND status='sending'", arrayOf(itemUid))
+                .use { if (it.moveToFirst()) JSONObject(it.getString(0)).optJSONObject("before") else null }
+            val base = JSONObject(current.toString()).apply { earlier?.let { e -> e.keys().forEach { k -> put(k, e.get(k)) } } }
+            val changed = JSONObject(); val before = JSONObject()
+            for (key in EDIT_FIELDS.keys) if (after.has(key) && plain(after.get(key)) != plain(base.opt(key))) {
+                changed.put(key, after.get(key)); before.put(key, base.opt(key) ?: JSONObject.NULL)
+            }
+            require(changed.length() > 0) { "Nessun campo cambiato rispetto alla scheda attuale" }
+            // The same checks the central will make when it applies the change.
+            articleValues(JSONObject(current.toString()).apply { changed.keys().forEach { put(it, changed.get(it)) } })
+            sql.delete("team_edits", "item_uid=? AND status IN ('sending','rejected')", arrayOf(itemUid))
+            sql.insertOrThrow("team_edits", null, ContentValues().apply {
+                put("uid", UUID.randomUUID().toString()); put("letter", setting("letter").orEmpty()); put("item_uid", itemUid)
+                put("item_label", "${current.getString("sku")} · ${current.getString("name")}".take(200))
+                put("changes", JSONObject().put("after", changed).put("before", before).toString())
+                put("created_at", System.currentTimeMillis()); put("status", "sending")
+            })
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
+    }
+
+    /** Satellite: forgets an answered change (approved, or sent back and not to be done again). */
+    fun dismissEdit(uid: String) { db.delete("team_edits", "uid=? AND status IN ('approved','rejected')", arrayOf(uid)) }
+
+    /** Central: applies a maintainer's change to the card. Refused (with the reason) when it no longer fits. */
+    fun approveEdit(uid: String) {
+        require(setting("role") == "central") { "Le modifiche le valida il telefono centrale" }
+        val sql = db
+        sql.beginTransaction()
+        try {
+            val (itemUid, changes) = requireNotNull(sql.rawQuery("SELECT item_uid,changes FROM team_edits WHERE uid=? AND status='pending'", arrayOf(uid))
+                .use { if (it.moveToFirst()) it.getString(0) to JSONObject(it.getString(1)) else null }) { "Modifica già gestita" }
+            val (itemId, site) = requireNotNull(teamItem(sql, teamIds(), itemUid)) { "L'articolo non esiste più: rimanda indietro la modifica" }
+            val card = requireNotNull(cardOf(sql, itemId)).second
+            val after = changes.getJSONObject("after")
+            for (key in EDIT_FIELDS.keys) if (after.has(key)) card.put(key, after.get(key))
+            articleValues(card)
+            stock.updateItemDetails(site, itemId, card.getString("name"), card.getString("category"), card.getDouble("minimum"),
+                card.getString("unit"), card.getString("note"), if (card.isNull("cost")) null else card.getDouble("cost"),
+                card.getString("supplier"), if (card.isNull("lead")) null else card.getInt("lead"), sku = card.getString("sku"))
+            decide(sql, uid, "approved", "")
+            sql.setTransactionSuccessful()
+        } finally { sql.endTransaction() }
+    }
+
+    /** Central: sends a maintainer's change back, with what to do again. The card does not change. */
+    fun rejectEdit(uid: String, reason: String) {
+        require(setting("role") == "central") { "Le modifiche le valida il telefono centrale" }
+        require(decide(db, uid, "rejected", reason.trim().take(300).ifEmpty { "Da rifare" }) == 1) { "Modifica già gestita" }
+    }
+    private fun decide(sql: SQLiteDatabase, uid: String, status: String, reason: String): Int =
+        sql.update("team_edits", ContentValues().apply { put("status", status); put("reason", reason); put("decided_at", System.currentTimeMillis()) },
+            "uid=? AND status='pending'", arrayOf(uid))
+
+    /** Central: a change received from satellite [letter]; checked again here, whatever version made it. */
+    private fun receiveEdit(sql: SQLiteDatabase, letter: String, scope: Set<String>?, ids: List<Long>, e: JSONObject): Boolean {
+        val uid = e.getString("uid")
+        require(uid.length in 8..64) { "Modifica non valida nel file" }
+        if (sql.rawQuery("SELECT 1 FROM team_edits WHERE uid=?", arrayOf(uid)).use { it.moveToFirst() }) return false
+        val after = JSONObject(); val before = JSONObject()
+        val change = e.getJSONObject("change")
+        for (key in EDIT_FIELDS.keys) {
+            if (change.getJSONObject("after").has(key)) after.put(key, change.getJSONObject("after").get(key))
+            change.optJSONObject("before")?.takeIf { it.has(key) }?.let { before.put(key, it.get(key)) }
+        }
+        val stored = JSONObject().put("after", after).put("before", before).toString()
+        require(stored.length <= MAX_EDIT_JSON && after.length() > 0) { "Modifica non valida nel file" }
+        val found = teamItem(sql, ids, e.getString("item"))
+        val category = found?.let { f -> sql.rawQuery("SELECT category FROM items WHERE id=?", arrayOf(f.first.toString())).use { it.moveToFirst(); it.getString(0) } }
+        val dept = department(scope.orEmpty())
+        val refusal = when {
+            found == null -> "L'articolo non esiste più"
+            !isMaintainer(scope.orEmpty()) -> "Il telefono $letter non è un manutentore"
+            dept.isNotEmpty() && (category.orEmpty() !in dept || after.optString("category", category.orEmpty()) !in dept) ->
+                "Articolo fuori dal reparto del telefono $letter"
+            else -> null
+        }
+        sql.insertOrThrow("team_edits", null, ContentValues().apply {
+            put("uid", uid); put("letter", letter); put("item_uid", e.getString("item")); put("item_label", e.optString("label").take(200))
+            put("changes", stored); put("created_at", e.optLong("at", System.currentTimeMillis()))
+            put("status", if (refusal == null) "pending" else "rejected"); put("reason", refusal.orEmpty())
+            put("decided_at", if (refusal == null) 0L else System.currentTimeMillis())
+        })
+        return refusal == null
+    }
+
+    /** What the screens show: on the central the changes to validate, on a satellite its own ones. */
+    private fun edits(role: TeamRole): List<TeamEdit> {
+        val read = db
+        val where = if (role == TeamRole.CENTRAL) "status='pending'"
+            else "status IN ('sending','pending','rejected') OR (status='approved' AND decided_at>${System.currentTimeMillis() - 7 * 86_400_000L})"
+        val ids = teamIds()
+        return read.rawQuery("SELECT uid,letter,item_uid,item_label,changes,created_at,status,reason,decided_at FROM team_edits WHERE $where ORDER BY created_at",
+            null).use { c -> buildList {
+            while (c.moveToNext()) {
+                val changes = runCatching { JSONObject(c.getString(4)) }.getOrNull() ?: continue
+                val after = changes.optJSONObject("after") ?: continue
+                val itemId = teamItem(read, ids, c.getString(2))?.first
+                // On the central "before" is the card as it is now; on a satellite, as it was when the change was made.
+                val before = if (role == TeamRole.CENTRAL) itemId?.let { cardOf(read, it)?.second } ?: JSONObject()
+                    else changes.optJSONObject("before") ?: JSONObject()
+                val fields = EDIT_FIELDS.filterKeys { after.has(it) }.map { (key, label) ->
+                    TeamEditField(key, label, shown(key, before.opt(key)), shown(key, after.get(key))) }
+                add(TeamEdit(c.getString(0), c.getString(1), itemId, c.getString(3), fields, c.getLong(5), c.getString(6), c.getString(7), c.getLong(8)))
+            }
+        } }
+    }
+
     // ---------------------------------------------------------------- central
 
     /** Plan, structures and articles of one site, as they travel to the satellites. */
@@ -516,6 +702,13 @@ class TeamSync(private val stock: StockDb) {
                 .put("quantity", c.getDouble(3)).put("at", c.getLong(4)))
         }
         state.put("loans", loans)
+        // 4.21: what the central did with the maintainers' card changes (each satellite reads its own).
+        val reviews = JSONArray()
+        read.rawQuery("SELECT uid,letter,status,reason,decided_at FROM team_edits ORDER BY created_at DESC LIMIT $MAX_EDITS", null).use { c ->
+            while (c.moveToNext()) reviews.put(JSONObject().put("uid", c.getString(0)).put("letter", c.getString(1)).put("status", c.getString(2))
+                .put("reason", c.getString(3)).put("decided_at", c.getLong(4)))
+        }
+        state.put("edit_reviews", reviews)
         write(out, state)
         TeamSyncSchema.put(db, "last_sync", System.currentTimeMillis().toString())
     }
@@ -612,6 +805,14 @@ class TeamSync(private val stock: StockDb) {
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))
             TeamSyncSchema.put(sql, "actor", "")
+            // 4.21: card changes of a maintainer wait here for validation (older files have none).
+            var edits = 0
+            changes.optJSONArray("edits")?.let { list ->
+                require(list.length() <= MAX_EDITS) { "File troppo grande" }
+                for (i in 0 until list.length()) if (receiveEdit(sql, letter, scope, ids, list.getJSONObject(i))) edits++
+            }
+            sql.delete("team_edits", "status<>'pending' AND decided_at>0 AND decided_at<?",
+                arrayOf((System.currentTimeMillis() - 180 * 86_400_000L).toString()))
             // 4.15: the satellite's open loans replace what was known of it (a file of an older version has none: nothing changes).
             changes.optJSONArray("photo_offers")?.let { offers ->
                 for (i in 0 until minOf(offers.length(), MAX_PHOTO_WANTS)) {
@@ -629,7 +830,7 @@ class TeamSync(private val stock: StockDb) {
                 storeLoans(sql, loans, forced = letter, skip = null)
             }
             sql.setTransactionSuccessful()
-            return TeamImportResult(articles, moves, locations, skipped, conflicts, letter)
+            return TeamImportResult(articles, moves, locations, skipped, conflicts, letter, edits = edits)
         } finally { sql.endTransaction() }
     }
 
@@ -687,11 +888,17 @@ class TeamSync(private val stock: StockDb) {
         for (uid in lines(setting("photo_offers"))) read.rawQuery("SELECT photo_file FROM items WHERE uid=? AND photo_file IS NOT NULL", arrayOf(uid)).use { p ->
             if (p.moveToFirst()) { offers.put(JSONObject().put("item", uid).put("photo", p.getString(0))); newPhotos += p.getString(0) }
         }
-        write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid"))
+        // 4.21: card changes not yet received by the central (sent again until it confirms them).
+        val edits = JSONArray()
+        read.rawQuery("SELECT uid,item_uid,item_label,changes,created_at FROM team_edits WHERE status='sending' ORDER BY created_at", null).use { c ->
+            while (c.moveToNext()) edits.put(JSONObject().put("uid", c.getString(0)).put("item", c.getString(1)).put("label", c.getString(2))
+                .put("change", JSONObject(c.getString(3))).put("at", c.getLong(4)))
+        }
+        write(out, JSONObject().put("format", CHANGES).put("version", 1).put("warehouse_uid", setting("warehouse_uid")).put("edits", edits)
             .put("device_uid", deviceUid()).put("letter", setting("letter")).put("created_at", System.currentTimeMillis())
             .put("events", events).put("photos", photosJson(newPhotos))
             .put("photo_wants", JSONArray(lines(setting("photo_wants")).take(MAX_PHOTO_WANTS))).put("photo_offers", offers).put("loans", teamIds().fold(JSONArray()) { all, id -> ownLoans(read, id, setting("letter").orEmpty(), all) }))
-        return events.length()
+        return events.length() + edits.length()
     }
 
     /** Central update on a satellite: map, articles and quantities, keeping unsent local changes. */
@@ -866,6 +1073,19 @@ class TeamSync(private val stock: StockDb) {
         state.optJSONArray("loans")?.let { loans ->
             sql.delete("team_loans", null, null)
             storeLoans(sql, loans, forced = null, skip = setting("letter"))
+        }
+        // 4.21: answers of the central to this phone's card changes.
+        state.optJSONArray("edit_reviews")?.let { reviews ->
+            val mine = setting("letter")
+            for (i in 0 until minOf(reviews.length(), MAX_EDITS)) {
+                val r = reviews.optJSONObject(i) ?: continue
+                val status = r.optString("status")
+                if (r.optString("letter") != mine || status !in setOf("pending", "approved", "rejected")) continue
+                sql.update("team_edits", ContentValues().apply {
+                    put("status", status); put("reason", r.optString("reason").take(300)); put("decided_at", r.optLong("decided_at"))
+                }, "uid=? AND status IN ('sending','pending')", arrayOf(r.optString("uid")))
+            }
+            sql.delete("team_edits", "status='approved' AND decided_at<?", arrayOf((System.currentTimeMillis() - 30 * 86_400_000L).toString()))
         }
         TeamSyncSchema.put(sql, "known_peers", JSONObject().put("processed", state.getJSONObject("processed"))
             .put("letters", state.getJSONObject("letters")).put("scopes", state.optJSONObject("scopes") ?: JSONObject()).toString())

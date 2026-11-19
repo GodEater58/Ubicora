@@ -176,7 +176,7 @@ import java.util.Locale
     val wVal=w.replace(',','.').toFloatOrNull()
     val dVal=d.replace(',','.').toFloatOrNull()
     val valid=wVal!=null&&wVal in .2f..15f&&dVal!=null&&dVal in .2f..15f
-    fun matches(item:StockItem)=item.name.contains(articleQuery,true)||item.sku.contains(articleQuery,true)
+    fun matches(item:StockItem)=item.matchesSearch(articleQuery)
     val inside=items.filter{it.placementId==p.id && matches(it)}
         .sortedWith(compareBy({it.shelfLevel ?: 0},{it.shelfSlot ?: 0},{it.name.lowercase(Locale.ITALY)}))
     val free=items.filter{it.placementId==null && matches(it)}

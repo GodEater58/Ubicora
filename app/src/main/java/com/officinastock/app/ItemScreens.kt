@@ -114,8 +114,13 @@ import kotlinx.coroutines.launch
 private fun EditItemDetailsDialog(
     item: StockItem,
     onClose: () -> Unit,
-    onSave: (String,String,Double,String,String,Double?,String,Int?) -> Unit
+    review: Boolean = false,
+    allowed: List<String> = emptyList(),
+    sentBack: String? = null,
+    onSave: (String,String,String,Double,String,String,Double?,String,Int?) -> Unit
 ) {
+    // 4.21: the code can change too; review = a maintainer's change, applied after the central validates it.
+    var sku by remember(item.id) { mutableStateOf(item.sku) }
     var name by remember(item.id) { mutableStateOf(item.name) }
     var category by remember(item.id) { mutableStateOf(item.category) }
     var minimum by remember(item.id) { mutableStateOf(item.minimum.toString()) }
@@ -127,21 +132,28 @@ private fun EditItemDetailsDialog(
     val parsedMinimum=minimum.replace(',','.').toDoubleOrNull()
     val parsedCost=cost.takeIf { it.isNotBlank() }?.replace(',','.')?.toDoubleOrNull()
     val parsedDays=lead.takeIf { it.isNotBlank() }?.toIntOrNull()
-    val valid=name.trim().length in 1..180 && unit.trim().length in 1..24 &&
+    val valid=sku.trim().length in 1..40 && name.trim().length in 1..180 && unit.trim().length in 1..24 &&
         note.length<=3000 && supplier.length<=160 &&
         parsedMinimum?.let(StockRules::validQuantity)==true &&
         (cost.isBlank() || parsedCost?.let { it.isFinite() && it>=0.0 && it<=100000000.0 }==true) &&
         (lead.isBlank() || parsedDays?.let { it in 0..3650 }==true)
     FullScreenPage("Modifica articolo",onClose=onClose,subtitle=item.name,action={
         OutlinedButton(onClick=onClose,modifier=Modifier.weight(1f)){Text("Annulla")}
-        Button(onClick={onSave(name,category,parsedMinimum!!,unit,note,parsedCost,supplier,parsedDays)},
-            enabled=valid,modifier=Modifier.weight(1f)){Text("Salva modifiche")}
+        Button(onClick={onSave(sku.trim(),name,category,parsedMinimum!!,unit,note,parsedCost,supplier,parsedDays)},
+            enabled=valid,modifier=Modifier.weight(1f)){Text(if(review)"Invia al centrale" else "Salva modifiche")}
     }) {
-            Text("Codice ${item.sku}: non cambia. Giacenza e movimenti restano invariati.",
-                color=TextSecondary,fontSize=12.sp)
+            if(sentBack!=null) Surface(color=Danger.copy(alpha=.10f),shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
+                Text("Il centrale ha rimandato indietro la modifica: $sentBack",Modifier.padding(10.dp),fontSize=13.sp)
+            }
+            if(review) Text("Sei un manutentore: la modifica va al telefono centrale e la scheda cambia quando la valida.",
+                color=Sky,fontSize=12.sp)
+            Text("Giacenza e movimenti restano invariati.",color=TextSecondary,fontSize=12.sp)
+            Input(sku,{sku=it},"Codice articolo")
+            if(sku.trim()!=item.sku) Text("Cambiando il codice va ristampata l'etichetta QR: quella vecchia non sarà più riconosciuta.",
+                fontSize=11.sp,color=Amber)
             Input(name,{name=it},"Nome articolo")
             Text("Categoria",color=TextSecondary,fontSize=12.sp)
-            ArticleCodes.categoryPrefixes.keys.chunked(3).forEach { group ->
+            ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed || it==item.category }.chunked(3).forEach { group ->
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                     group.forEach { cat -> FilterChip(selected=category==cat,onClick={category=cat},
                         label={Text(cat,fontSize=10.sp)}) }
@@ -168,6 +180,7 @@ private fun EditItemDetailsDialog(
     var editPurchase by remember(item.id) { mutableStateOf(false) }
     var editDetails by remember(item.id) { mutableStateOf(false) }
     var askDeleteItem by remember(item.id) { mutableStateOf(false) }
+    val itemEdits=model.ui.team.edits.filter { it.itemId==item.id }
     val canConfirm=quantity.replace(',','.').toDoubleOrNull()?.let{it.isFinite() && (if(action=="rettifica") it>=0.0 && it!=item.quantity else it>0.0)}==true&&(action!="prestito"||borrower.isNotBlank())&&(action!="rettifica"||note.trim().length in 3..250)
     FullScreenPage(item.name,onClose=onDismiss,subtitle="${item.sku} · ${item.category}",action={
         Button(onClick={
@@ -201,6 +214,13 @@ private fun EditItemDetailsDialog(
             ArticlePhotoField(savedPhoto=item.photoFile,selectedUri=null,
                 onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},
                 onRemoveSaved={model.removeItemPhoto(item.id)},busy=model.ui.busy)
+            // 4.21: changes of this card asked by a maintainer: to validate here (central) or sent from here (satellite).
+            val central=model.ui.team.role==TeamRole.CENTRAL
+            itemEdits.forEach { e ->
+                TeamEditCard(e,central,model.ui.busy,showItem=false,
+                    onApprove={model.approveTeamEdit(e.uid)},onReject={model.rejectTeamEdit(e.uid,it)},
+                    onRedo={editDetails=true},onDismiss={model.dismissTeamEdit(e.uid)})
+            }
             OutlinedButton(onClick={editDetails=true},modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.Edit,contentDescription=null,modifier=Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -228,9 +248,14 @@ private fun EditItemDetailsDialog(
         confirmButton={TextButton(onClick={askDeleteItem=false;model.deleteItem(item.id);onDismiss()}){Text("Elimina",color=Danger)}},
         dismissButton={TextButton(onClick={askDeleteItem=false}){Text("Annulla")}})
     if(showQrLabel) QrLabelDialog(item,onDismiss={showQrLabel=false})
-    if(editDetails) EditItemDetailsDialog(item,onClose={editDetails=false}) { name,category,min,unit,note,cost,supplier,days ->
-        model.updateItemDetails(item.id,name,category,min,unit,note,cost,supplier,days)
-        editDetails=false
+    if(editDetails) {
+        val review=model.editNeedsReview(item)
+        EditItemDetailsDialog(item,onClose={editDetails=false},review=review,
+            allowed=if(review) model.departmentCategories() else emptyList(),
+            sentBack=itemEdits.lastOrNull { it.status=="rejected" }?.reason) { sku,name,category,min,unit,note,cost,supplier,days ->
+            model.updateItemDetails(item.id,name,category,min,unit,note,cost,supplier,days,sku=sku)
+            editDetails=false
+        }
     }
     if(editPurchase) PurchasePlanningDialog(item,onClose={editPurchase=false}) { cost,supplier,lead ->
         model.updatePurchase(item.id,cost,supplier,lead)

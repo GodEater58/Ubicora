@@ -57,6 +57,9 @@ object TodayTasks {
     var showIndicators by rememberSaveable { mutableStateOf(false) }
     val team = u.team.takeIf { it.covers(u.warehouse?.id) }
     val conflicts = team?.conflicts?.size ?: 0
+    // 4.21: card changes to validate (central) or sent back to be done again (satellite).
+    val centralPhone = team?.role == TeamRole.CENTRAL
+    val cardEdits = team?.edits?.count { if (centralPhone) it.status == "pending" else it.status == "rejected" } ?: 0
     val managerPending = if (!u.businessMode) 0 else u.orders.count { it.status in listOf("DRAFT", "APPROVED", "ORDERED") } +
         u.stockCounts.count { it.status == "PENDING" } + u.stockTransfers.count { it.status in listOf("REQUESTED", "IN_TRANSIT") } +
         u.maintenanceWork.count { it.status == "OPEN" }
@@ -104,11 +107,19 @@ object TodayTasks {
         if (conflicts > 0) item {
             TodayTask(conflicts, Danger, if (conflicts == 1) "Conflitto dalla squadra" else "Conflitti dalla squadra", "Rivedi cosa non è stato applicato", onClick = goTeam)
         }
+        if (cardEdits > 0) item {
+            TodayTask(cardEdits, Amber, when {
+                centralPhone && cardEdits == 1 -> "Scheda modificata da validare"
+                centralPhone -> "Schede modificate da validare"
+                cardEdits == 1 -> "Modifica rimandata indietro"
+                else -> "Modifiche rimandate indietro"
+            }, if (centralPhone) "Approva o rimanda indietro al manutentore" else "Leggi cosa correggere e rifalla", onClick = goTeam)
+        }
         if (managerPending > 0) item {
             TodayTask(managerPending, Mint, if (managerPending == 1) "Attività di gestione aperta" else "Attività di gestione aperte",
                 "Acquisti, conteggi, trasferimenti, manutenzioni", onClick = goManager)
         }
-        if (critical == 0 && overdue == 0 && unlocated == 0 && conflicts == 0 && managerPending == 0) item {
+        if (critical == 0 && overdue == 0 && unlocated == 0 && conflicts == 0 && cardEdits == 0 && managerPending == 0) item {
             Surface(color = PanelBg, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(if (count == 0) "Aggiungi il primo articolo dalla sezione Articoli." else "Niente da fare adesso: tutto sotto controllo.",
                     color = TextSecondary, modifier = Modifier.padding(16.dp))
