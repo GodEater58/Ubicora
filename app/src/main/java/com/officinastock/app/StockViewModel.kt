@@ -589,11 +589,54 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             photos.forEach { PhotoFiles.delete(getApplication<Application>(),it) }
         }
     }
+    // ---- 4.21: the article being created survives the screen lock and a closed app ----
+    private var draftSave: kotlinx.coroutines.Job? = null
+    fun openNewItem() {
+        val w=ui.warehouse ?: return
+        ui=ui.copy(newItem=ui.newItem?.takeIf { it.warehouseId==w.id } ?: NewItemDraft(w.id))
+    }
+    fun updateNewItem(draft:NewItemDraft) {
+        ui=ui.copy(newItem=draft)
+        val context=getApplication<Application>()
+        draftSave?.cancel()
+        draftSave=viewModelScope.launch(Dispatchers.IO) { kotlinx.coroutines.delay(300); NewItemDrafts.save(context,draft) }
+    }
+    /** "Annulla": the draft and its photo not yet saved are thrown away. */
+    fun closeNewItem() {
+        val d=ui.newItem ?: return
+        draftSave?.cancel()
+        ui=ui.copy(newItem=null)
+        val context=getApplication<Application>()
+        d.photoUri?.let { PhotoFiles.removeCapturedTemp(context,Uri.parse(it)) }
+        NewItemDrafts.clear(context,d.warehouseId)
+    }
+    /** After the app was closed by Android: the unfinished article of this site comes back where it was. */
+    fun restoreNewItem() {
+        val w=ui.warehouse ?: return
+        if(ui.newItem!=null || ui.sessionLocked) return
+        val context=getApplication<Application>()
+        viewModelScope.launch {
+            val saved=withContext(Dispatchers.IO) {
+                NewItemDrafts.load(context,w.id)?.let { d ->
+                    // A photo the phone has meanwhile deleted is dropped, the rest stays.
+                    val readable=d.photoUri?.let { u -> runCatching { context.contentResolver.openInputStream(Uri.parse(u))?.close() != null }.getOrDefault(false) } ?: true
+                    if(readable) d else d.copy(photoUri=null)
+                }
+            } ?: return@launch
+            if(ui.newItem==null && ui.warehouse?.id==saved.warehouseId && !ui.sessionLocked) ui=ui.copy(newItem=saved)
+        }
+    }
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
                 cost:Double?=null,supplier:String="",leadDays:Int?=null,place:NewItemPlace=NewItemPlace()) {
         var created:Long?=null
-        // 4.21: "on the map" opens the location pick once the article exists.
-        execute(onSuccess={ if(place.onMap) created?.let { startLocationPick(listOf(it)) } }) {
+        val draft=ui.newItem
+        // 4.21: "on the map" opens the location pick once the article exists; the draft ends only when saved.
+        execute(onSuccess={
+            draftSave?.cancel()
+            if(ui.newItem==draft) ui=ui.copy(newItem=null)
+            draft?.let { NewItemDrafts.clear(getApplication<Application>(),it.warehouseId) }
+            if(place.onMap) created?.let { startLocationPick(listOf(it)) }
+        }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
@@ -604,9 +647,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         } catch(t:Throwable) {
             PhotoFiles.delete(getApplication<Application>(),picture)
             throw t
-        } finally {
-            photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
         }
+        // The camera file goes only once the article is saved: after an error the draft keeps it.
+        photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
         }
     }
     fun replaceItemPhoto(itemId:Long,photoUri:String) = execute {

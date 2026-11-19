@@ -29,6 +29,8 @@ data class StockUiState(
     val manager: ManagerSnapshot = ManagerSnapshot(),
     val demoCount: Int = 0,
     val createdItemId: Long? = null,
+    /** 4.21: the article being created (kept through the screen lock until Salva or Annulla). */
+    val newItem: NewItemDraft? = null,
     val scannedItemId: Long? = null,
     val busy: Boolean = false,
     val message: String? = null,
