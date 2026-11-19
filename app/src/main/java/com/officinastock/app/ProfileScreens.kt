@@ -26,6 +26,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import androidx.lifecycle.withResumed
 
 // 4.15: moved out of Screens.kt without changes — profiles and warehouses: first profile, PIN, choice of the warehouse.
 
@@ -52,6 +53,28 @@ import kotlinx.coroutines.launch
     var creating by remember { mutableStateOf(false) }
     var picked by remember{mutableStateOf<Profile?>(null)}
     var pin by remember{mutableStateOf("")}
+    // 4.21.1: a profile with the fingerprint on opens with it; the PIN stays one tap away.
+    val context=androidx.compose.ui.platform.LocalContext.current
+    var fingerprintNote by remember{mutableStateOf<String?>(null)}
+    fun open(profile:Profile) {
+        pin="";fingerprintNote=null
+        val activity=context.fragmentActivity()
+        // 4.21.1: every 7 days the PIN is needed once, even with the fingerprint on.
+        if(BiometricLogin.enabled(context,profile.id) && !BiometricLogin.pinStillFresh(context,profile.id))
+            fingerprintNote="Per sicurezza, ogni 7 giorni si entra una volta con il PIN. Poi torna l'impronta."
+        val prompted=activity!=null && fingerprintNote==null && BiometricLogin.enabled(context,profile.id) && runCatching {
+            BiometricLogin.unlock(activity,profile.id,profile.name,onSuccess={model.unlockWithFingerprint(profile)},
+                usePin={ reason -> fingerprintNote=reason;picked=profile })
+        }.isSuccess
+        if(!prompted) picked=profile
+    }
+    // After the screen lock the profile in use is asked at once with the fingerprint, as soon as the app is back in front.
+    val lifecycle=androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(model.ui.sessionLocked) {
+        val current=model.ui.profile
+        if(model.ui.sessionLocked && current!=null && BiometricLogin.enabled(context,current.id) && BiometricLogin.pinStillFresh(context,current.id))
+            runCatching { lifecycle.withResumed { if(model.ui.sessionLocked && picked==null) open(current) } }
+    }
     if(creating){
         androidx.activity.compose.BackHandler { creating=false }
         Column(Modifier.fillMaxSize()) {
@@ -68,7 +91,7 @@ import kotlinx.coroutines.launch
         Spacer(Modifier.height(24.dp))
         LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp),modifier=Modifier.weight(1f)) {
             items(model.ui.profiles,key={it.id}) { profile ->
-                Panel(Modifier.fillMaxWidth().clickable {picked=profile;pin=""}) {
+                Panel(Modifier.fillMaxWidth().clickable {open(profile)}) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
                         Icon(Icons.Outlined.PersonOutline,null,tint=Mint,modifier=Modifier.size(29.dp))
                         Spacer(Modifier.width(14.dp));Column(Modifier.weight(1f)) {
@@ -87,12 +110,15 @@ import kotlinx.coroutines.launch
         val pinFocus=remember{androidx.compose.ui.focus.FocusRequester()}
         LaunchedEffect(p.id) { kotlinx.coroutines.delay(150); runCatching{pinFocus.requestFocus()} }
         AlertDialog(onDismissRequest={picked=null},title={Text("Accedi a ${p.name}")},text={
+          Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            fingerprintNote?.let { Text(it,fontSize=12.sp,color=Amber) }
             OutlinedTextField(pin,onValueChange={pin=it.filter(Char::isDigit).take(8)},label={Text("PIN")},singleLine=true,
                 keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.NumberPassword,
                     imeAction=androidx.compose.ui.text.input.ImeAction.Done),
                 keyboardActions=androidx.compose.foundation.text.KeyboardActions(onDone={ if(pin.isNotEmpty()) { model.unlock(p,pin);picked=null } }),
                 visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 modifier=Modifier.fillMaxWidth().focusRequester(pinFocus))
+          }
         },
             confirmButton={TextButton(onClick={model.unlock(p,pin);picked=null},enabled=pin.isNotEmpty()){Text("Accedi")}},
             dismissButton={TextButton(onClick={picked=null}){Text("Annulla")}})

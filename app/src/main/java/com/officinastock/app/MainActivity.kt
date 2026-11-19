@@ -3,7 +3,7 @@ package com.officinastock.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 
-class MainActivity: ComponentActivity() {
+class MainActivity: FragmentActivity() {
     private val model: StockViewModel by viewModels()
     private var externalActivityPending=false
     override fun startActivityForResult(intent:Intent,requestCode:Int,options:Bundle?) {
@@ -225,8 +225,16 @@ class MainActivity: ComponentActivity() {
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.burstMode) BurstScanScreen(model)
         if(data.profile!=null && !data.sessionLocked && data.warehouse!=null && data.shelfCheck!=null) ShelfCheckScreen(model)
         if(scanning && data.profile!=null && !data.sessionLocked && !data.burstMode) QuickScanScreen(model) { scanning=false }
+        // 4.21: the article being created stays above every tab and comes back after the screen lock.
+        data.newItem?.takeIf { data.profile!=null && !data.sessionLocked && it.warehouseId==data.warehouse?.id }?.let { draft ->
+            NewItemDialog(draft,model::updateNewItem,model::closeNewItem,allowed=model.departmentCategories(),
+                items=data.items,placements=data.placements,busy=data.busy) { name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place ->
+                model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place)
+            }
+        }
       }
     }
+    LaunchedEffect(data.warehouse?.id,data.sessionLocked) { model.restoreNewItem() }
     // 4.13: automatic exchange with the nearby team phones while the app is open (on unlock and every 10 minutes).
     LaunchedEffect(data.sessionLocked,data.team.role,data.team.warehouseId,data.warehouse?.id,UiPrefs.autoSync) {
         if(data.sessionLocked || data.warehouse==null || data.team.role==TeamRole.NONE || !UiPrefs.autoSync) return@LaunchedEffect

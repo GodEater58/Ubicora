@@ -7,7 +7,7 @@ LICENZE OPEN SOURCE: librerie esplicitamente dichiarate a runtime.
 Per i componenti sotto indicati soggetti ad Apache License 2.0, il testo completo
 si trova nella sezione "Licenze" dell'app.
 
-AndroidX / Jetpack Compose, Activity, Lifecycle, Core, ExifInterface, CameraX
+AndroidX / Jetpack Compose, Activity, Lifecycle, Core, ExifInterface, CameraX, Biometric, Fragment
   Autori: Android Open Source Project / Google e contributori.
   Licenza prevalente dei moduli usati: Apache License 2.0.
   Codice e avvisi upstream: https://android.googlesource.com/platform/frameworks/support/

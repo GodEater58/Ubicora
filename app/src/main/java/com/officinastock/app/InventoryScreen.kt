@@ -40,7 +40,6 @@ import kotlinx.coroutines.launch
         u.manager.usage.filter { it.consumed90>0.0 }.map { it.itemId }.toSet()
     }
     LaunchedEffect(requestedFocus){activeFocus=requestedFocus}
-    var add by remember{mutableStateOf(false)}
     var menuItemId by remember{mutableStateOf<Long?>(null)}
     var quantityFor by remember{mutableStateOf<Pair<Long,Boolean>?>(null)}
     var transferFor by remember{mutableStateOf<Long?>(null)}
@@ -92,7 +91,7 @@ import kotlinx.coroutines.launch
                 Icon(if(UiPrefs.compactList) Icons.Outlined.ViewAgenda else Icons.Outlined.ViewHeadline,
                     if(UiPrefs.compactList) "Vista con foto" else "Vista compatta",tint=TextSecondary)
             }
-            if(!model.pickOnly) FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
+            if(!model.pickOnly) FilledIconButton(onClick={model.openNewItem()},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome, categoria o descrizione")},singleLine=true,
@@ -146,6 +145,7 @@ import kotlinx.coroutines.launch
                         Row(Modifier.heightIn(min=60.dp).padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(hit.item.name,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                if(hit.item.note.isNotBlank()) Text(hit.item.note,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                                 Text(hit.site.name,color=Sky,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
                             }
                             Text("${amount(hit.item.quantity)} ${hit.item.unit}",fontWeight=FontWeight.Bold,color=if(hit.item.quantity>0.0) TextPrimary else TextSecondary)
@@ -155,10 +155,6 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),items=u.items,placements=u.placements,
-        save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place->
-        model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place);add=false
-    })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})
     }

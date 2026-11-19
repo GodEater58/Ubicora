@@ -89,6 +89,28 @@ import androidx.compose.ui.unit.sp
         }
         if (done) Text("PIN cambiato. Ricorda: un backup fatto prima contiene ancora il PIN vecchio.", fontSize = 11.sp, color = Mint)
         if (changing) ChangePinDialog(model, onClose = { changing = false }, onChanged = { changing = false; done = true })
+        // 4.21.1: fingerprint instead of the PIN, for this profile on this phone.
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val profile = model.ui.profile
+        if (profile != null && (BiometricLogin.available(context) || BiometricLogin.enabled(context, profile.id))) {
+            var on by remember(profile.id) { mutableStateOf(BiometricLogin.enabled(context, profile.id)) }
+            var note by remember(profile.id) { mutableStateOf<String?>(null) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Fingerprint, null, tint = Mint); Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Accesso con impronta", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Al posto del PIN, solo su questo telefono. Ogni 7 giorni si entra una volta con il PIN.", fontSize = 11.sp, color = TextSecondary)
+                }
+                Switch(checked = on, enabled = !model.ui.busy, onCheckedChange = { wanted ->
+                    note = null
+                    if (!wanted) { BiometricLogin.disable(context, profile.id); on = false }
+                    else context.fragmentActivity()?.let { activity ->
+                        BiometricLogin.enable(activity, profile.id, profile.name) { error -> on = error == null; note = error }
+                    } ?: run { note = "Impronta non disponibile" }
+                })
+            }
+            note?.let { Text(it, fontSize = 11.sp, color = Amber) }
+        }
     }
 }
 

@@ -77,6 +77,9 @@ import androidx.compose.ui.unit.sp
                         Text(entry.name, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold,
                             lineHeight = 19.sp)
                     }
+                    // 4.21.1: the description right under the name (it is often what was searched for).
+                    if (entry.note.isNotBlank()) Text(entry.note, fontSize = 12.sp, color = TextPrimary.copy(alpha = .82f),
+                        maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
                     // Where to find it comes first: it is what the operator looks for.
                     Text(Locations.describe(place, entry), color = if (place == null) Amber else Sky, fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
