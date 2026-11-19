@@ -3,7 +3,7 @@ package com.officinastock.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 
-class MainActivity: ComponentActivity() {
+class MainActivity: FragmentActivity() {
     private val model: StockViewModel by viewModels()
     private var externalActivityPending=false
     override fun startActivityForResult(intent:Intent,requestCode:Int,options:Bundle?) {

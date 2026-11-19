@@ -474,6 +474,11 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         pendingProfileId=profile.id
     }
+    /** 4.21.1: the fingerprint was verified by Android with the profile's Keystore key (see [BiometricLogin]). */
+    fun unlockWithFingerprint(profile: Profile) = execute {
+        require(db.profiles().any { it.id==profile.id }) { "Profilo inesistente" }
+        pendingProfileId=profile.id
+    }
     fun signOut() { if(!ui.busy) {clearMapHistory();archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
     fun leaveWarehouse() { if(!ui.busy) {clearMapHistory();pendingCsvImport=null;ui=ui.copy(warehouse=null,items=emptyList(),placements=emptyList(),walls=emptyList(),movements=emptyList(),loans=emptyList(),orders=emptyList(),stockCounts=emptyList(),stockTransfers=emptyList(),maintenanceWork=emptyList(),operationsEvents=emptyList(),csvPreviewCount=null)} }
     fun selectWarehouse(w: Warehouse) {
