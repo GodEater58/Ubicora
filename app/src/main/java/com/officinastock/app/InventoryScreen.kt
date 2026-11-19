@@ -80,7 +80,7 @@ import kotlinx.coroutines.launch
             StockFocus.IDLE_90 -> item.id !in idleIds
             StockFocus.FAVORITES -> UiPrefs.isFavorite(item.warehouseId,item.id)
         }
-        matches && (query.isBlank()||listOf(item.name,item.sku,item.category).any{v->v.contains(query,true)})
+        matches && item.matchesSearch(query)
     },sort,lastMoved).sortedByDescending { UiPrefs.isFavorite(it.warehouseId,it.id) } }   // 4.10: favourites first, order kept
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -95,7 +95,7 @@ import kotlinx.coroutines.launch
             if(!model.pickOnly) FilledIconButton(onClick={add=true},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o categoria")},singleLine=true,
+            OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome, categoria o descrizione")},singleLine=true,
                 leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 // 4.10: scan → quantity → next article, until "Fine".
@@ -155,8 +155,9 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays->
-        model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays);add=false
+    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),items=u.items,placements=u.placements,
+        save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place->
+        model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place);add=false
     })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})

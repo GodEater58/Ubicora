@@ -64,6 +64,12 @@ object TeamSyncSchema {
         db.execSQL("""CREATE TABLE IF NOT EXISTS team_sync_conflicts(
             id INTEGER PRIMARY KEY AUTOINCREMENT, letter TEXT NOT NULL, item TEXT NOT NULL,
             detail TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+        // 4.21: changes of article cards asked by maintainers (satellite: its own; central: the ones to validate).
+        db.execSQL("""CREATE TABLE IF NOT EXISTS team_edits(
+            uid TEXT PRIMARY KEY NOT NULL, letter TEXT NOT NULL, item_uid TEXT NOT NULL, item_label TEXT NOT NULL,
+            changes TEXT NOT NULL, created_at INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('sending','pending','approved','rejected')),
+            reason TEXT NOT NULL DEFAULT '', decided_at INTEGER NOT NULL DEFAULT 0)""")
         // Outbox triggers: active only on a satellite, only for the synced warehouse, and never
         // while a central update is being applied (that is not a local change to send back).
         val active = """(SELECT value FROM team_sync_settings WHERE key='role')='satellite'

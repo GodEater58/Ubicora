@@ -368,12 +368,12 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
 
     fun items(warehouseId: Long, filter: String = ""): List<StockItem> {
         val query = """SELECT id,warehouse_id,sku,name,category,quantity,minimum,unit,placement_id,note,photo_file,unit_cost,supplier,lead_days,shelf_level,shelf_slot
-            FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ?)
+            FROM items WHERE warehouse_id=? AND (?='' OR sku LIKE ? OR name LIKE ? OR category LIKE ? OR note LIKE ?)
             ORDER BY name COLLATE NOCASE,id"""
         val safeFilter = "%${filter.trim().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")}%"
         // Backslash escaping is explicit for SQL LIKE so '%' in search is interpreted literally.
         val escapedQuery = query.replace(" LIKE ?", " LIKE ? ESCAPE '\\'")
-        return readableDatabase.rawQuery(escapedQuery,arrayOf(warehouseId.toString(),filter.trim(),safeFilter,safeFilter,safeFilter)).use { c ->
+        return readableDatabase.rawQuery(escapedQuery,arrayOf(warehouseId.toString(),filter.trim(),safeFilter,safeFilter,safeFilter,safeFilter)).use { c ->
             buildList { while(c.moveToNext()) add(c.toItem()) }
         }
     }
@@ -436,7 +436,7 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
     fun updateItemDetails(
         warehouseId: Long, itemId: Long, name: String, category: String,
         minimum: Double, unit: String, note: String, cost: Double?,
-        supplier: String, leadDays: Int?
+        supplier: String, leadDays: Int?, sku: String? = null
     ) {
         require(name.trim().length in 1..180) { "Nome articolo: massimo 180 caratteri" }
         require(unit.trim().length in 1..24) { "Unità di misura: da 1 a 24 caratteri" }
@@ -465,7 +465,15 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
                 "Impossibile cambiare l'unità di misura: completa o annulla prima acquisti, conteggi, trasferimenti, manutenzioni e prestiti aperti."
             }
         }
+        // 4.21: the code can change too (the QR label must then be printed again); never onto another article's code.
+        val newSku=sku?.trim()?.takeIf { it!=original.sku }
+        if(newSku!=null) {
+            require(newSku.length in 1..40 && newSku.none { it.isISOControl() }) { "Codice articolo: da 1 a 40 caratteri" }
+            require(readableDatabase.rawQuery("SELECT 1 FROM items WHERE warehouse_id=? AND sku=? AND id<>?",
+                arrayOf(warehouseId.toString(),newSku,itemId.toString())).use { !it.moveToFirst() }) { "Il codice $newSku è già di un altro articolo" }
+        }
         val values=ContentValues().apply {
+            newSku?.let { put("sku",it) }
             put("name",name.trim());put("category",category);put("minimum",minimum)
             put("unit",unit.trim());put("note",note.trim())
             if(cost==null)putNull("unit_cost") else put("unit_cost",cost)
@@ -474,6 +482,7 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         }
         require(writableDatabase.update("items",values,"id=? AND warehouse_id=?",
             arrayOf(itemId.toString(),warehouseId.toString()))==1) { "Articolo non aggiornato" }
+        newSku?.let { bumpSequence(writableDatabase,it) }
     }
     /** Aggregazione server-side SQLite: non carichiamo migliaia di singoli movimenti nel Compose tree. */
     fun dailyActivity(warehouseId: Long, since: Long): List<DailyActivity> = readableDatabase.rawQuery(

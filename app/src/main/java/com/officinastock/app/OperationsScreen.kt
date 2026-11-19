@@ -344,7 +344,7 @@ private fun statusLabel(status:String)=when(status) {
             if(kind!="maintenance")Input(search,{search=it},"Cerca articolo / codice")
             if(kind=="maintenance")Input(search,{search=it},"Ricambio facoltativo (cerca)")
             val candidates=ui.items.filter {
-                search.isBlank() || it.name.contains(search,true) || it.sku.contains(search,true)
+                it.matchesSearch(search)
             }.take(6)
             candidates.forEach{item->
                 Row(Modifier.fillMaxWidth().clickable{selected=item.id},verticalAlignment=Alignment.CenterVertically) {

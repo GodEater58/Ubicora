@@ -26,6 +26,7 @@ Il database del telefono è SQLite cifrato (SQLCipher). Le tabelle sono create i
 | `team_sync_conflicts` | modifiche rifiutate dal centrale | `TeamSyncSchema.kt` |
 | `movement_actors` | lettera del telefono che ha fatto ogni movimento (4.15) | `TeamSyncSchema.kt` |
 | `team_loans` | prestiti aperti sugli altri telefoni, copia dell'ultimo scambio (4.15) | `TeamSyncSchema.kt` |
+| `team_edits` | modifiche alle schede chieste dai manutentori: da validare sul centrale, inviate o con la risposta sul satellite (4.21) | `TeamSyncSchema.kt` |
 
 ## Gestione aziendale
 
@@ -49,5 +50,5 @@ Il database del telefono è SQLite cifrato (SQLCipher). Le tabelle sono create i
 ## Regole
 
 - Le tabelle di base hanno una versione dello schema e migrazioni in `StockDb.kt` (`onUpgrade`).
-- Le tabelle accessorie della 4.15 (`movement_actors`, `team_loans`) sono create con `IF NOT EXISTS` all'apertura, senza cambiare la versione, e non fanno parte del backup: si ricostruiscono con l'uso.
+- Le tabelle accessorie della 4.15 (`movement_actors`, `team_loans`) sono create con `IF NOT EXISTS` all'apertura, senza cambiare la versione, e non fanno parte del backup: si ricostruiscono con l'uso. Lo stesso vale per `team_edits` (4.21), che il ripristino di un backup svuota.
 - Il backup cifrato elenca le tabelle che salva in `BackupArchive.kt`.

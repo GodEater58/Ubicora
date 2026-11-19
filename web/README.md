@@ -1,4 +1,4 @@
-# Ubicora Web 1.1.1 — PC e browser mobile
+# Ubicora Web 1.1.2 — PC e browser mobile
 
 ## Uso immediato, senza installazione
 

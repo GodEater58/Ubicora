@@ -32,6 +32,17 @@
 
 > Schermate della 4.20.2 con il magazzino dimostrativo. Si rifanno da sole con **Actions → Schermate → Run workflow** (escono sul ramo `schermate-output`); il prelievo a raffica non c'è perché la fotocamera si vede solo su un telefono vero.
 
+## Novità della 4.21
+
+| | Novità | In breve |
+|---|---|---|
+| 🔎 | **Ricerca per descrizione** | Tutte le ricerche degli articoli guardano anche la descrizione, con più parole insieme |
+| 🛠️ | **Manutentore con reparto** | Il manutentore ha le sue categorie (es. elettrico) e modifica le schede degli articoli del reparto; il centrale **valida** ogni modifica o la **rimanda indietro** con una nota |
+| ➕ | **Nuovo articolo in tre passi** | Foto, nome e categoria con gli articoli simili da copiare, quantità e ubicazione |
+| 📸 | **Foto con il riquadro** | La fotocamera dell'app mostra il riquadro esatto della foto della scheda e taglia lo scatto su quello |
+
+Dettagli: [4.21](docs/CHANGELOG_4_21_0.md)
+
 ## Novità dalla 4.17 alla 4.20
 
 | | Novità | In breve |
@@ -56,7 +67,7 @@ Dettagli e cose da collaudare: [4.17](docs/CHANGELOG_4_17_0.md) · [4.18](docs/C
 | 📦 | **Articoli** | Codici automatici per categoria, unità di misura da menu, foto, scorta minima, preferiti ★, carico/prelievo con uno scorrimento e «Annulla», vista compatta, storico dei movimenti nella stessa sezione |
 | 📷 | **QR** | Etichette per articoli e strutture, scanner al centro della barra in basso, **prelievo a raffica** in una sola schermata |
 | 🗺️ | **Mappa** | Pianta in metri, pulita e girata per riempire il telefono: **ricerca con gli scaffali che si accendono**, **«dov'è» con percorso dall'ingresso**, **scaffale visto di fronte** ripiano per ripiano, tag NFC sugli scaffali; strumenti di disegno dietro «Modifica»; viste a colori, PDF, rilievo AR, prelievo guidato |
-| 👥 | **Lavoro in squadra** | Un telefono **centrale** e più **satelliti**: si sincronizzano da vicini (Bluetooth + Wi-Fi diretto, senza internet) o con file cifrati; **permessi** per satellite (solo prelievo, reparto, manutentore); prestiti visibili a tutti; un satellite può sostituire il centrale |
+| 👥 | **Lavoro in squadra** | Un telefono **centrale** e più **satelliti**: si sincronizzano da vicini (Bluetooth + Wi-Fi diretto, senza internet) o con file cifrati; **permessi** per satellite (solo prelievo, reparto, manutentore con reparto e schede validate dal centrale); prestiti visibili a tutti; un satellite può sostituire il centrale |
 | 🏢 | **Azienda e sedi** | Più sedi per azienda, ricerca tra le sedi, trasferimenti di pezzi da una sede all'altra |
 | 📊 | **Gestione** | Movimenti, prestiti, lista da ordinare da condividere, acquisti, inventari, trasferimenti, manutenzioni, lotti e report (modalità aziendale) |
 | 📥 | **Excel** | [Modello anagrafica](docs/Ubicora_Modello_Anagrafica.xlsx) per caricare tutti gli articoli in una volta; esportazione CSV |

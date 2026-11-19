@@ -23,6 +23,9 @@ data class MapResults(
     val isEmpty: Boolean get() = items.isEmpty() && structures.isEmpty()
 }
 
+/** 4.21: one rule for every article search: each word typed is looked for in code, name, category and description. */
+fun StockItem.matchesSearch(query: String): Boolean = query.isBlank() || MapSearch.matches(this, query)
+
 object MapSearch {
     private fun words(text: String) = text.lowercase(Locale.ITALY).split(' ', '\t', ',', ';').map { it.trim() }.filter { it.isNotEmpty() }
     private fun fold(text: String) = text.lowercase(Locale.ITALY)

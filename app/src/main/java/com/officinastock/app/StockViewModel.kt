@@ -394,14 +394,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val t=ui.team
         return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope.isNotEmpty() && category!=null && category !in t.scope
     }
-    private fun department()=if(pickOnly) "solo prelievo" else ui.team.scope.joinToString(", ")
+    private fun department()=if(pickOnly) "solo prelievo" else ui.team.department.joinToString(", ")
     /** 4.20: false on a satellite, where the map comes from the central (same rule as [requireMapEditable]). */
     val mapEditable:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
     /** 4.19.2: a satellite that can only withdraw and lend here. */
     val pickOnly:Boolean get() { val t=ui.team; return t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id) && t.scope==listOf(TeamSync.PICK_ONLY) }
     /** Categories offered for a new article: the department on a satellite, otherwise all (empty). */
     fun departmentCategories():List<String> { val t=ui.team
-        return if(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) t.scope else emptyList() }
+        return if(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) t.department else emptyList() }
     private fun requireDepartment(itemIds:List<Long>,what:String) {
         val outside=ui.items.filter { it.id in itemIds && outsideDepartment(it.category) }
         require(outside.isEmpty()) { "${outside.first().name} non è del tuo reparto (${department()}): $what" }
@@ -590,16 +590,23 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
     }
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
-                cost:Double?=null,supplier:String="",leadDays:Int?=null) = execute {
+                cost:Double?=null,supplier:String="",leadDays:Int?=null,place:NewItemPlace=NewItemPlace()) {
+        var created:Long?=null
+        // 4.21: "on the map" opens the location pick once the article exists.
+        execute(onSuccess={ if(place.onMap) created?.let { startLocationPick(listOf(it)) } }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
-            pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+            val id=db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+            pendingNewItem = if(place.onMap) null else id
+            created=id
+            place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) }
         } catch(t:Throwable) {
             PhotoFiles.delete(getApplication<Application>(),picture)
             throw t
         } finally {
             photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
+        }
         }
     }
     fun replaceItemPhoto(itemId:Long,photoUri:String) = execute {
@@ -620,16 +627,38 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         db.updatePhoto(itemId,null)
         PhotoFiles.delete(getApplication<Application>(),current.photoFile)
     }
+    /** 4.21: true when a change to this card goes to the central for validation (maintainer on a satellite). */
+    fun editNeedsReview(item:StockItem):Boolean { val t=ui.team; return t.maintainer && t.covers(item.warehouseId) }
+    private fun sentForReview() { ui=ui.copy(message="Modifica inviata al telefono centrale: sarà applicata quando la valida") }
     fun updateItemDetails(itemId: Long, name: String, category: String, minimum: Double,
-                          unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?) = execute {
-        team.requireDetailsEditable(itemId)
-        require(!outsideDepartment(category)) { "Categoria fuori dal tuo reparto (${department()})" }
-        db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays)
+                          unit: String, note: String, cost: Double?, supplier: String, leadDays: Int?, sku: String? = null) {
+        var review=false
+        execute(onSuccess={ if(review) sentForReview() }) {
+            if(team.detailsEdit(itemId)==DetailsEdit.REVIEW) {
+                val current=requireNotNull(db.item(itemId)){"Articolo inesistente"}
+                team.requestEdit(itemId,TeamSync.card(sku ?: current.sku,name,category,minimum,unit,note,cost,supplier,leadDays))
+                review=true
+            } else {
+                require(!outsideDepartment(category)) { "Categoria fuori dal tuo reparto (${department()})" }
+                db.updateItemDetails(requireWarehouse(),itemId,name,category,minimum,unit,note,cost,supplier,leadDays,sku=sku)
+            }
+        }
     }
-    fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) = execute {
-        team.requireDetailsEditable(itemId)
-        db.updatePurchase(itemId,cost,supplier,leadDays)
+    fun updatePurchase(itemId:Long,cost:Double?,supplier:String,leadDays:Int?) {
+        var review=false
+        execute(onSuccess={ if(review) sentForReview() }) {
+            if(team.detailsEdit(itemId)==DetailsEdit.REVIEW) {
+                val i=requireNotNull(db.item(itemId)){"Articolo inesistente"}
+                team.requestEdit(itemId,TeamSync.card(i.sku,i.name,i.category,i.minimum,i.unit,i.note,cost,supplier,leadDays))
+                review=true
+            } else db.updatePurchase(itemId,cost,supplier,leadDays)
+        }
     }
+    /** 4.21, central: validates a maintainer's change of a card, or sends it back with what to do again. */
+    fun approveTeamEdit(uid:String) = execute(onSuccess={ ui=ui.copy(message="Modifica approvata: arriva a tutti al prossimo scambio") }) { team.approveEdit(uid) }
+    fun rejectTeamEdit(uid:String,reason:String) = execute(onSuccess={ ui=ui.copy(message="Modifica rimandata indietro: il manutentore la vedrà al prossimo scambio") }) { team.rejectEdit(uid,reason) }
+    /** 4.21, satellite: forgets an answered change. */
+    fun dismissTeamEdit(uid:String) = execute { team.dismissEdit(uid) }
     fun movement(itemId:Long,delta:Double,note:String) {
         val item=ui.items.firstOrNull { it.id==itemId }
         val label=MovementUndo.label(delta,item)
@@ -1028,7 +1057,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** 4.11: the team password is device-sealed; after restoring a backup on a new phone it is typed again. */
     fun restoreTeamPassword(password:String) = execute { team.restorePassword(password) }
     /** Central: departments of a satellite letter (empty = all categories). */
-    fun setTeamScope(letter:String,categories:List<String>) = execute { team.setScope(letter,categories) }
+    fun setTeamScope(letter:String,categories:List<String>,maintainer:Boolean=false) = execute { team.setScope(letter,categories,maintainer) }
     /** Runs a sync file operation on the IO thread, then reloads; returns the text to show. */
     private suspend fun teamFile(block:()->String):String {
         require(!ui.busy && ui.profile!=null && !ui.sessionLocked) { "Attendi il completamento dell'operazione in corso" }
@@ -1054,7 +1083,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             if(team.status().role==TeamRole.CENTRAL) {
                 val r=team.importChanges(input)
                 "Importati: ${r.articles} articoli nuovi, ${r.movements} movimenti, ${r.locations} spostamenti" +
-                    (if(r.skipped>0) " · ${r.skipped} già importati" else "") + (if(r.conflicts>0) " · ${r.conflicts} conflitti da controllare" else "")
+                    (if(r.skipped>0) " · ${r.skipped} già importati" else "") + (if(r.conflicts>0) " · ${r.conflicts} conflitti da controllare" else "") +
+                    (if(r.edits>0) " · ${r.edits} modifiche alle schede da validare" else "")
             } else {
                 val r=team.importState(input)
                 "Aggiornato dal centrale: ${r.articles} articoli" + (if(r.removed>0) " · ${r.removed} eliminati" else "") + (if(r.skipped>0) " · ${r.skipped} tue modifiche ancora da inviare" else "")

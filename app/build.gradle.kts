@@ -12,8 +12,8 @@ android {
         applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4203
-        versionName = "4.20.3"
+        versionCode = 4210
+        versionName = "4.21.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -72,6 +72,12 @@ dependencies {
     implementation("androidx.sqlite:sqlite:2.4.0")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
+    // 4.21: in-app camera for article photos, with the frame of the card photo.
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")

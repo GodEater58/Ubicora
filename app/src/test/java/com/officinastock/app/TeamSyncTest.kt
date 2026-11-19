@@ -557,4 +557,111 @@ class TeamSyncTest {
         satellite.movement(vite, 1.0, "Carico")
         assertEquals(8.0, qty(satellite, wh, "Vite M8"), 0.0)
     }
+
+    // ---------------------------------------------------------------- 4.21 maintainers change cards, the central validates
+
+    @Test fun aMaintainerChangesACardOfHisDepartmentOnlyAfterTheCentralValidates() {
+        TeamSync(central).setScope("B", listOf("Ricambi"), maintainer = true)
+        assertEquals(listOf(TeamSync.MAINTAINER, "Ricambi"), TeamSync(central).status().scopes["B"])
+        val wh = join(satellite, "B")
+        val status = TeamSync(satellite).status()
+        assertTrue(status.maintainer)
+        assertEquals(listOf("Ricambi"), status.department)
+        val vite = satellite.items(wh).single().id
+        assertEquals(DetailsEdit.REVIEW, TeamSync(satellite).detailsEdit(vite))
+        TeamSync(satellite).requestEdit(vite, TeamSync.card("RIC-VITE8", "Vite M8 zincata", "Ricambi", 3.0, "pz", "Testa esagonale", null, "", null))
+        assertEquals("Vite M8", satellite.item(vite)!!.name)                 // nothing changes before the validation
+        assertEquals("sending", TeamSync(satellite).status().edits.single().status)
+        val file = changes(satellite)
+        assertEquals(1, TeamSync(central).importChanges(ByteArrayInputStream(file)).edits)
+        assertEquals(0, TeamSync(central).importChanges(ByteArrayInputStream(file)).edits)   // the same file twice
+        val pending = TeamSync(central).status().edits.single()
+        assertEquals("B", pending.letter)
+        assertEquals(listOf("sku", "name", "minimum", "note"), pending.fields.map { it.key })
+        assertEquals("Vite M8", pending.fields[1].before)
+        assertEquals("Vite M8 zincata", pending.fields[1].after)
+        assertEquals("Vite M8", central.items(warehouse).single().name)
+        TeamSync(central).approveEdit(pending.uid)
+        val card = central.items(warehouse).single()
+        assertEquals("Vite M8 zincata", card.name); assertEquals("RIC-VITE8", card.sku)
+        assertEquals("Testa esagonale", card.note); assertEquals(3.0, card.minimum, 0.0)
+        assertEquals(10.0, card.quantity, 0.0)                               // stock untouched
+        assertTrue(TeamSync(central).status().edits.isEmpty())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals("Vite M8 zincata", satellite.item(vite)!!.name)
+        assertEquals("RIC-VITE8", satellite.item(vite)!!.sku)
+        assertEquals("approved", TeamSync(satellite).status().edits.single().status)
+    }
+
+    @Test fun aChangeSentBackKeepsTheCardAndTellsTheMaintainerWhatToCorrect() {
+        TeamSync(central).setScope("B", emptyList())                        // maintainer of every category
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, "Vite M80", "Ricambi", 2.0, "pz", "", null, "", null))
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        val uid = TeamSync(central).status().edits.single().uid
+        TeamSync(central).rejectEdit(uid, "Il nome è sbagliato: è una M8")
+        refused { TeamSync(central).approveEdit(uid) }                       // already answered
+        assertEquals("Vite M8", central.items(warehouse).single().name)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val back = TeamSync(satellite).status().edits.single()
+        assertEquals("rejected", back.status)
+        assertEquals("Il nome è sbagliato: è una M8", back.reason)
+        assertEquals("Vite M8", satellite.item(vite.id)!!.name)
+        // Done again: the new change replaces the one sent back.
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, "Vite M8 inox", "Ricambi", 2.0, "pz", "", null, "", null))
+        assertEquals(listOf("sending"), TeamSync(satellite).status().edits.map { it.status })
+        assertEquals(1, TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite))).edits)
+    }
+
+    @Test fun operatorsAndMaintainersOfAnotherDepartmentCannotChangeTheCard() {
+        TeamSync(central).setScope("B", listOf("Elettrico"), maintainer = true)
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single().id                          // "Ricambi"
+        refused { TeamSync(satellite).detailsEdit(vite) }
+        TeamSync(central).setScope("B", listOf("Ricambi"))                   // operator: no cards
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertFalse(TeamSync(satellite).status().maintainer)
+        refused { TeamSync(satellite).detailsEdit(vite) }
+        // Unchanged values are not a change.
+        TeamSync(central).setScope("B", emptyList())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val v = satellite.item(vite)!!
+        refused { TeamSync(satellite).requestEdit(vite, TeamSync.card(v.sku, v.name, v.category, v.minimum, v.unit, v.note, v.unitCost, v.supplier, v.leadDays)) }
+    }
+
+    @Test fun theCentralChecksAgainAChangeFromAPhoneThatIsNoLongerAMaintainer() {
+        TeamSync(central).setScope("B", emptyList())
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, "Vite", "Ricambi", 2.0, "pz", "", null, "", null))
+        TeamSync(central).setScope("B", listOf("Ricambi"))                   // meanwhile: operator
+        assertEquals(0, TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite))).edits)
+        assertTrue(TeamSync(central).status().edits.isEmpty())
+        assertEquals("Vite M8", central.items(warehouse).single().name)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val back = TeamSync(satellite).status().edits.single()
+        assertEquals("rejected", back.status)
+        assertTrue(back.reason.contains("manutentore"))
+    }
+
+    @Test fun anOperatorOfEveryCategoryStaysAnOperator() {
+        val all = ArticleCodes.categoryPrefixes.keys.toList()
+        TeamSync(central).setScope("B", all)
+        assertEquals(all, TeamSync(central).status().scopes["B"])
+        TeamSync(central).setScope("B", all, maintainer = true)
+        assertNull(TeamSync(central).status().scopes["B"])                  // maintainer of everything, as before
+    }
+
+    @Test fun aCodeChangeOnTheCentralNeverTakesAnotherArticlesCode() {
+        val guanti = central.addItem(warehouse, "Guanti", "DPI", 0.0, 0.0, "paia", "")
+        val vite = central.items(warehouse).single { it.name == "Vite M8" }
+        try {
+            central.updateItemDetails(warehouse, vite.id, vite.name, vite.category, vite.minimum, vite.unit, vite.note, null, "", null,
+                sku = central.item(guanti)!!.sku)
+            fail("accettato")
+        } catch (e: IllegalArgumentException) { assertTrue(e.message!!.contains("già")) }
+        central.updateItemDetails(warehouse, vite.id, vite.name, vite.category, vite.minimum, vite.unit, vite.note, null, "", null, sku = "RIC-999")
+        assertEquals("RIC-999", central.item(vite.id)!!.sku)
+    }
 }

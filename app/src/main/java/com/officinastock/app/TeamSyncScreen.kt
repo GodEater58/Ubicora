@@ -120,8 +120,8 @@ import java.util.Locale
                 }
                 if (synced) {
                     HorizontalDivider()
-                    Text("PERMESSI DEI MANUTENTORI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Text("Fuori dalle sue categorie un manutentore vede gli articoli e può solo prelevare.",
+                    Text("PERMESSI DEI TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+                    Text("Fuori dal suo reparto un telefono vede gli articoli e può solo prelevare. Le schede modificate da un manutentore le validi tu.",
                         fontSize = 11.sp, color = TextSecondary)
                     // 4.19.3: only the satellites that are really linked, not a fixed list of letters.
                     val linked = (t.peers.map { it.letter } + t.scopes.keys).filter { it.isNotBlank() }.distinct().sorted()
@@ -130,7 +130,7 @@ import java.util.Locale
                         val cats = t.scopes[l].orEmpty()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(l, fontWeight = FontWeight.Bold, color = Mint, modifier = Modifier.width(24.dp))
-                            Text(if (cats.isEmpty()) "Manutentore · tutte le categorie" else cats.joinToString(", "), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(permissionLabel(cats), fontSize = 13.sp, modifier = Modifier.weight(1f))
                             TextButton(onClick = { scopeChoice = cats.toSet(); editScope = l }, enabled = !u.busy) { Text("Modifica") }
                         }
                     }
@@ -148,8 +148,7 @@ import java.util.Locale
                 Text(if (synced) "Sedi della squadra: $sharedSites · la mappa la modifica solo il centrale"
                     else "Questa sede non è condivisa con la squadra: aprine una condivisa per gestire gli scambi.",
                     fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
-                Text(when { t.scope.isEmpty() -> "Permessi: manutentore, tutte le categorie"; t.scope == listOf(TeamSync.PICK_ONLY) -> "Permessi: solo prelievo e prestito"
-                    else -> "Reparto: " + t.scope.joinToString(", ") + " · fuori reparto puoi solo prelevare" },
+                Text("Permessi: " + permissionLabel(t.scope) + (if (t.department.isNotEmpty()) " · fuori reparto puoi solo prelevare" else ""),
                     fontSize = 12.sp, color = if (t.scope.isEmpty()) TextSecondary else Mint)
                 Surface(color = (if (t.pending > 0) Amber else Mint).copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
                     Text(if (t.pending > 0) "${t.pending} modifiche da inviare al centrale" else "Tutto inviato al centrale",
@@ -192,6 +191,7 @@ import java.util.Locale
             }
         }
         if (t.lastSync > 0) Text("Ultimo scambio: ${date(t.lastSync)}", fontSize = 11.sp, color = TextSecondary)
+        TeamEditsSection(model)
         if (t.conflicts.isNotEmpty()) OutlinedButton(onClick = { showConflicts = true }, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.WarningAmber, null, tint = Amber); Spacer(Modifier.width(8.dp)); Text("${t.conflicts.size} conflitti da controllare", color = Amber)
         }
@@ -294,28 +294,57 @@ import java.util.Locale
             // 4.19: three levels, from the most limited to the freest.
             val pickOnly = TeamSync.PICK_ONLY in scopeChoice
             Text("Cosa può fare il telefono $l. Arriva al prossimo scambio.", fontSize = 12.sp, color = TextSecondary)
+            // 4.21: the maintainer has a department too, and changes the cards in it (validated by the central).
+            val maintainer = !pickOnly && TeamSync.isMaintainer(scopeChoice)
+            val chosen = TeamSync.department(scopeChoice)
             listOf(Triple("Solo prelievo", "Preleva e presta. Non crea, non carica, non sposta.", 0),
                 Triple("Operatore di reparto", "Tutto nelle categorie spuntate; fuori solo prelievo.", 1),
-                Triple("Manutentore", "Crea, carica e sposta in tutte le categorie.", 2)).forEach { (title, hint, level) ->
-                val selected = when (level) { 0 -> pickOnly; 1 -> !pickOnly && scopeChoice.isNotEmpty(); else -> scopeChoice.isEmpty() }
+                Triple("Manutentore", "Come l'operatore, e in più modifica le schede degli articoli del suo reparto: le modifiche le validi tu.", 2)).forEach { (title, hint, level) ->
+                val selected = when (level) { 0 -> pickOnly; 1 -> !pickOnly && !maintainer; else -> maintainer }
                 Row(Modifier.fillMaxWidth().clickable {
-                    scopeChoice = when (level) { 0 -> setOf(TeamSync.PICK_ONLY); 1 -> (scopeChoice - TeamSync.PICK_ONLY).ifEmpty { setOf(ArticleCodes.categoryPrefixes.keys.first()) }; else -> emptySet() }
+                    scopeChoice = when (level) {
+                        0 -> setOf(TeamSync.PICK_ONLY)
+                        1 -> chosen.toSet().ifEmpty { setOf(ArticleCodes.categoryPrefixes.keys.first()) }
+                        else -> setOf(TeamSync.MAINTAINER) + chosen
+                    }
                 }.heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = selected, onClick = null)
                     Spacer(Modifier.width(10.dp))
                     Column { Text(title, fontWeight = FontWeight.SemiBold); Text(hint, fontSize = 12.sp, color = TextSecondary) }
                 }
             }
-            if (!pickOnly && scopeChoice.isNotEmpty()) ArticleCodes.categoryPrefixes.keys.forEach { c ->
-                Row(Modifier.fillMaxWidth().padding(start = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = c in scopeChoice, onCheckedChange = { on -> scopeChoice = if (on) scopeChoice + c else scopeChoice - c })
-                    Text(c)
+            if (!pickOnly) {
+                Text(if (maintainer) "Reparto del manutentore (nessuna spunta = tutte le categorie):" else "Categorie del reparto:",
+                    fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(start = 24.dp, top = 4.dp))
+                ArticleCodes.categoryPrefixes.keys.forEach { c ->
+                    Row(Modifier.fillMaxWidth().padding(start = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = c in chosen, onCheckedChange = { on ->
+                            val next = if (on) chosen + c else chosen - c
+                            // An operator keeps at least one category: with none he would become a maintainer of everything.
+                            if (maintainer) scopeChoice = setOf(TeamSync.MAINTAINER) + next
+                            else if (next.isNotEmpty()) scopeChoice = next.toSet()
+                        })
+                        Text(c)
+                    }
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { if (TeamSync.PICK_ONLY in scopeChoice) model.setTeamPickOnly(l) else model.setTeamScope(l, scopeChoice.toList()); editScope = null }) { Text("Salva") } },
+    }, confirmButton = { TextButton(onClick = {
+            if (TeamSync.PICK_ONLY in scopeChoice) model.setTeamPickOnly(l)
+            else model.setTeamScope(l, TeamSync.department(scopeChoice), maintainer = TeamSync.isMaintainer(scopeChoice))
+            editScope = null }) { Text("Salva") } },
         dismissButton = { TextButton(onClick = { editScope = null }) { Text("Annulla") } }) }
 
     result?.let { text -> AlertDialog(onDismissRequest = { result = null }, title = { Text("Sincronizzazione") }, text = { Text(text) },
         confirmButton = { TextButton(onClick = { result = null }) { Text("OK") } }) }
+}
+
+/** 4.21: what a phone may do, in words: "Solo prelievo", "Operatore · Elettrico", "Manutentore · Meccanica, Pneumatica". */
+fun permissionLabel(scope: List<String>): String {
+    val department = TeamSync.department(scope)
+    return when {
+        scope == listOf(TeamSync.PICK_ONLY) -> "Solo prelievo e prestito"
+        TeamSync.isMaintainer(scope) -> "Manutentore · " + (department.joinToString(", ").ifEmpty { "tutte le categorie" })
+        else -> "Operatore · " + department.joinToString(", ")
+    }
 }
