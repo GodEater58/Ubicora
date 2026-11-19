@@ -59,53 +59,155 @@ import kotlinx.coroutines.launch
     }
 }
 
-@Composable fun NewItemDialog(onClose:()->Unit,allowed:List<String> = emptyList(),save:(String,String,Double,Double,String,String,String?,Double?,String,Int?)->Unit) {
+/** 4.21: where a new article goes, chosen in the last step: a structure (with shelf/position) or the map. */
+data class NewItemPlace(val placementId: Long? = null, val level: Int? = null, val slot: Int? = null, val onMap: Boolean = false)
+
+/**
+ * 4.21: a new article in three steps: photo, what it is (with similar articles to copy from), how many
+ * and where. Cost, supplier and delivery are folded away in the last step (they can also be added later).
+ */
+@Composable fun NewItemDialog(onClose:()->Unit,allowed:List<String> = emptyList(),items:List<StockItem> = emptyList(),
+        placements:List<Placement> = emptyList(),
+        save:(String,String,Double,Double,String,String,String?,Double?,String,Int?,NewItemPlace)->Unit) {
     // A satellite with a department only sees its own categories (4.9).
     val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }.ifEmpty { ArticleCodes.categoryPrefixes.keys.toList() }
-    var name by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf(if("Ricambi" in categories) "Ricambi" else categories.first()) }
-    var qty by remember { mutableStateOf("0") }
-    var min by remember { mutableStateOf("0") }
-    var unit by remember { mutableStateOf("pz") }
-    var note by remember { mutableStateOf("") }
-    var unitCost by remember { mutableStateOf("") }
-    var supplier by remember { mutableStateOf("") }
-    var leadDays by remember { mutableStateOf("") }
+    var step by rememberSaveable { mutableIntStateOf(1) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var category by rememberSaveable { mutableStateOf(if("Ricambi" in categories) "Ricambi" else categories.first()) }
+    var qty by rememberSaveable { mutableStateOf("0") }
+    var min by rememberSaveable { mutableStateOf("0") }
+    var unit by rememberSaveable { mutableStateOf("pz") }
+    var note by rememberSaveable { mutableStateOf("") }
+    var unitCost by rememberSaveable { mutableStateOf("") }
+    var supplier by rememberSaveable { mutableStateOf("") }
+    var leadDays by rememberSaveable { mutableStateOf("") }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val valid=name.trim().length in 1..180&&unit.trim().length<=24&&note.length<=3000&&supplier.length<=160&&qty.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true&&min.replace(',','.').toDoubleOrNull()?.let(StockRules::validQuantity)==true
-            &&(unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true)
-            &&(leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)
-    FullScreenPage("Nuovo articolo",onClose=onClose,action={
-        OutlinedButton(onClick=onClose,modifier=Modifier.weight(1f)){Text("Annulla")}
-        Button(onClick={save(name,category,qty.replace(',','.').toDouble(),min.replace(',','.').toDouble(),unit,note,photoUri,
-            unitCost.takeIf{it.isNotBlank()}?.replace(',','.')?.toDouble(),supplier,leadDays.takeIf{it.isNotBlank()}?.toInt())},
-            enabled=valid,modifier=Modifier.weight(1f)){Text("Salva")}
+    var copiedFrom by rememberSaveable { mutableStateOf<Long?>(null) }
+    var place by remember { mutableStateOf<NewItemPlace?>(null) }
+    var pickPlace by remember { mutableStateOf(false) }
+    var moreDetails by rememberSaveable { mutableStateOf(false) }
+    val qtyValue=qty.replace(',','.').toDoubleOrNull()
+    val minValue=min.replace(',','.').toDoubleOrNull()
+    val nameOk=name.trim().length in 1..180 && note.length<=3000
+    val numbersOk=unit.trim().length in 1..24 && supplier.length<=160 &&
+        qtyValue?.let(StockRules::validQuantity)==true && minValue?.let(StockRules::validQuantity)==true &&
+        (unitCost.isBlank()||unitCost.replace(',','.').toDoubleOrNull()?.let{it.isFinite()&&it>=0.0&&it<=100000000.0}==true) &&
+        (leadDays.isBlank()||leadDays.toIntOrNull()?.let{it in 0..3650}==true)
+    // Similar articles already in the warehouse: same words of the name (at least 3 letters typed).
+    val similar=remember(name,items) {
+        val words=name.trim().lowercase(Locale.ITALY).split(' ').filter { it.length>=3 }
+        if(words.isEmpty()) emptyList() else items.filter { i -> words.any { w -> i.name.lowercase(Locale.ITALY).contains(w) } }.take(4)
+    }
+    fun copy(from:StockItem) {
+        copiedFrom=from.id
+        if(from.category in categories) category=from.category
+        unit=from.unit; min=amount(from.minimum)
+        if(note.isBlank()) note=from.note
+        unitCost=from.unitCost?.let(::amount).orEmpty(); supplier=from.supplier; leadDays=from.leadDays?.toString().orEmpty()
+        place=from.placementId?.let { NewItemPlace(it,from.shelfLevel,from.shelfSlot) }
+    }
+    fun bump(delta:Double,value:String):String = amount(((value.replace(',','.').toDoubleOrNull() ?: 0.0)+delta).coerceAtLeast(0.0))
+    FullScreenPage("Nuovo articolo",onClose=onClose,subtitle="Passo $step di 3 · "+when(step){1->"foto";2->"cos'è";else->"quanti e dove"},action={
+        OutlinedButton(onClick={ if(step==1) onClose() else step-- },modifier=Modifier.weight(1f)){Text(if(step==1)"Annulla" else "Indietro")}
+        when(step) {
+            1 -> Button(onClick={step=2},modifier=Modifier.weight(1f)){Text(if(photoUri==null)"Salta la foto" else "Avanti")}
+            2 -> Button(onClick={step=3},enabled=nameOk,modifier=Modifier.weight(1f)){Text("Avanti")}
+            else -> Button(onClick={save(name,category,qtyValue!!,minValue!!,unit,note,photoUri,
+                unitCost.takeIf{it.isNotBlank()}?.replace(',','.')?.toDouble(),supplier,leadDays.takeIf{it.isNotBlank()}?.toInt(),place ?: NewItemPlace())},
+                enabled=nameOk&&numbersOk,modifier=Modifier.weight(1f)){Text("Salva")}
+        }
     }) {
-            Input(name,{name=it},"Nome articolo")
-            Text("Categoria",color=TextSecondary,fontSize=12.sp)
-            Column { categories.chunked(3).forEach { group->
-                Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    group.forEach { cat ->
-                        FilterChip(selected=category==cat,onClick={category=cat;unit=MeasureUnits.afterCategoryChange(cat,unit)},label={Text(cat,fontSize=10.sp)})
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                (1..3).forEach { n -> Surface(color=if(n<=step) Mint else Surface2,shape=RoundedCornerShape(2.dp),
+                    modifier=Modifier.weight(1f).height(4.dp)) {} }
+            }
+            when(step) {
+                1 -> {
+                    Text("Fotografa l'articolo",fontWeight=FontWeight.SemiBold,fontSize=17.sp)
+                    Text("Quello che sta nel riquadro è la foto della scheda. Puoi anche saltarla e aggiungerla dopo.",
+                        fontSize=12.sp,color=TextSecondary)
+                    ArticlePhotoField(savedPhoto=null,selectedUri=photoUri,onSelected={photoUri=it},onApply=null,onRemoveSaved=null)
+                }
+                2 -> {
+                    Text("Cos'è?",fontWeight=FontWeight.SemiBold,fontSize=17.sp)
+                    Input(name,{name=it},"Nome articolo")
+                    Text("Codice ${ArticleCodes.prefix(category)}-······ · automatico",fontSize=12.sp,color=TextSecondary)
+                    if(similar.isNotEmpty()) {
+                        Text("Simili già in magazzino: tocca per copiare i dati",fontSize=12.sp,color=TextSecondary)
+                        Surface(color=PanelBg,shape=RoundedCornerShape(12.dp)) { Column {
+                            similar.forEach { s ->
+                                Row(Modifier.fillMaxWidth().clickable{copy(s)}.padding(horizontal=12.dp,vertical=10.dp),
+                                    verticalAlignment=Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(s.name,fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                        Text("${s.sku} · ${s.category}",fontSize=11.sp,color=TextSecondary)
+                                    }
+                                    if(copiedFrom==s.id) Text("copiato",fontSize=11.sp,color=Mint)
+                                    else Icon(Icons.Outlined.ContentCopy,"Copia i dati",tint=TextSecondary,modifier=Modifier.size(18.dp))
+                                }
+                            }
+                        } }
+                    }
+                    Text(if(allowed.isEmpty()) "Categoria" else "Categoria del tuo reparto",color=TextSecondary,fontSize=12.sp)
+                    Column { categories.chunked(3).forEach { group->
+                        Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            group.forEach { cat ->
+                                FilterChip(selected=category==cat,onClick={category=cat;unit=MeasureUnits.afterCategoryChange(cat,unit)},label={Text(cat,fontSize=10.sp)})
+                            }
+                        }
+                    } }
+                    Input(note,{note=it},"Descrizione (facoltativa)")
+                }
+                else -> {
+                    Text("Quanti e dove?",fontWeight=FontWeight.SemiBold,fontSize=17.sp)
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f)) { Text("Quantità · $unit",fontSize=12.sp,color=TextSecondary)
+                            Stepper(qty,{qty=it},onMinus={qty=bump(-1.0,qty)},onPlus={qty=bump(1.0,qty)}) }
+                        Column(Modifier.weight(1f)) { Text("Scorta minima",fontSize=12.sp,color=TextSecondary)
+                            Stepper(min,{min=it},onMinus={min=bump(-1.0,min)},onPlus={min=bump(1.0,min)}) }
+                    }
+                    UnitPicker(unit,category,{unit=it})
+                    Text("Dove lo metti",fontSize=12.sp,color=TextSecondary)
+                    val chosen=place
+                    OutlinedButton(onClick={pickPlace=true},modifier=Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.Place,null,modifier=Modifier.size(18.dp));Spacer(Modifier.width(8.dp))
+                        Text(when {
+                            chosen==null || (chosen.placementId==null && !chosen.onMap) -> "Scegli l'ubicazione (facoltativa)"
+                            chosen.onMap -> "Sulla mappa, dopo il salvataggio"
+                            else -> placements.firstOrNull { it.id==chosen.placementId }?.let { p ->
+                                p.label+listOfNotNull(chosen.level?.let{"R$it"},chosen.slot?.let{"P$it"}).joinToString(" ").let { if(it.isEmpty()) "" else " · $it" }
+                            } ?: "Scegli l'ubicazione (facoltativa)"
+                        },maxLines=2,overflow=TextOverflow.Ellipsis)
+                    }
+                    TextButton(onClick={moreDetails=!moreDetails},modifier=Modifier.fillMaxWidth()) {
+                        Text("Costo, fornitore e consegna (facoltativi)",modifier=Modifier.weight(1f),color=TextSecondary)
+                        Icon(if(moreDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,null,tint=TextSecondary)
+                    }
+                    if(moreDetails) {
+                        Input(unitCost,{unitCost=it},"Costo unitario (€)",number=true)
+                        Input(supplier,{supplier=it},"Fornitore")
+                        Input(leadDays,{leadDays=it},"Giorni di consegna",number=true)
                     }
                 }
-            } }
-            Surface(color=Mint.copy(alpha=.10f),shape=RoundedCornerShape(12.dp)) {
-                Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Text("Codice automatico",color=Mint,fontWeight=FontWeight.SemiBold)
-                    Text("${ArticleCodes.prefix(category)}-######  ·  progressivo assegnato al salvataggio",fontSize=12.sp,color=TextSecondary)
-                }
             }
-            Input(note,{note=it},"Descrizione (facoltativa)")
-            Input(qty,{qty=it},"Quantità iniziale",number=true)
-            Input(min,{min=it},"Soglia minima",number=true)
-            UnitPicker(unit,category,{unit=it})
-            Text("DATI PER IL CONTROLLO MANAGERIALE · FACOLTATIVI",fontSize=10.sp,color=Mint,fontWeight=FontWeight.Bold)
-            Input(unitCost,{unitCost=it},"Costo unitario (€)",number=true)
-            Input(supplier,{supplier=it},"Fornitore")
-            Input(leadDays,{leadDays=it},"Giorni di consegna",number=true)
-            ArticlePhotoField(savedPhoto=null,selectedUri=photoUri,
-                onSelected={photoUri=it},onApply=null,onRemoveSaved=null)
+    }
+    if(pickPlace) {
+        // The picker works on an article: a placeholder with the place chosen so far.
+        val draft=StockItem(0,0,"",name,category,0.0,0.0,unit,place?.placementId,"",shelfLevel=place?.level,shelfSlot=place?.slot)
+        LocationPickerDialog(draft,placements,onMap={place=NewItemPlace(onMap=true);pickPlace=false},onClose={pickPlace=false}) { placementId,level,slot ->
+            place=NewItemPlace(placementId,level,slot);pickPlace=false
+        }
+    }
+}
+
+/** 4.21: a number with − and + beside it, still typed by hand when needed. */
+@Composable private fun Stepper(value:String,onChange:(String)->Unit,onMinus:()->Unit,onPlus:()->Unit) {
+    Row(verticalAlignment=Alignment.CenterVertically) {
+        FilledTonalIconButton(onClick=onMinus) { Icon(Icons.Outlined.Remove,"Meno") }
+        OutlinedTextField(value,onChange,singleLine=true,modifier=Modifier.weight(1f),
+            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
+            textStyle=LocalTextStyle.current.copy(textAlign=androidx.compose.ui.text.style.TextAlign.Center))
+        FilledTonalIconButton(onClick=onPlus) { Icon(Icons.Outlined.Add,"Più") }
     }
 }
 

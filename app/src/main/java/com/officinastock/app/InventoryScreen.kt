@@ -155,8 +155,9 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays->
-        model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays);add=false
+    if(add) NewItemDialog(onClose={add=false},allowed=model.departmentCategories(),items=u.items,placements=u.placements,
+        save={name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place->
+        model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place);add=false
     })
     labelItem?.let { current ->
         QrLabelDialog(current,onDismiss={labelItem=null})

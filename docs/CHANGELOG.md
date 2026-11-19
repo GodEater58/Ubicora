@@ -4,7 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
-| [4.21.0 / Web 1.1.2](CHANGELOG_4_21_0.md) | ricerca anche per descrizione; manutentore con reparto che modifica le schede, validate dal centrale; fotocamera con il riquadro della foto della scheda. |
+| [4.21.0 / Web 1.1.2](CHANGELOG_4_21_0.md) | ricerca anche per descrizione; manutentore con reparto che modifica le schede, validate dal centrale; fotocamera con il riquadro della foto della scheda; nuovo articolo in tre passi. |
 | [4.20.3](CHANGELOG_4_20_3.md) | correzioni: un aggiornamento del centrale più vecchio non cancella più articoli e prelievi sul satellite; non si elimina un articolo con trasferimenti, ordini, conteggi o manutenzioni aperti. |
 | [4.20.2](CHANGELOG_4_20_2.md) | percorso «dov'è» attorno a strutture e pareti, frecce sul bordo quando si ingrandisce, ritocchi alla modifica della pianta. |
 | [4.20.1](CHANGELOG_4_20_1.md) | cancello scorrevole tra i passaggi; il percorso «dov'è» parte dal centro del varco. |

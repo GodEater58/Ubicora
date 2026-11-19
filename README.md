@@ -38,6 +38,7 @@
 |---|---|---|
 | 🔎 | **Ricerca per descrizione** | Tutte le ricerche degli articoli guardano anche la descrizione, con più parole insieme |
 | 🛠️ | **Manutentore con reparto** | Il manutentore ha le sue categorie (es. elettrico) e modifica le schede degli articoli del reparto; il centrale **valida** ogni modifica o la **rimanda indietro** con una nota |
+| ➕ | **Nuovo articolo in tre passi** | Foto, nome e categoria con gli articoli simili da copiare, quantità e ubicazione |
 | 📸 | **Foto con il riquadro** | La fotocamera dell'app mostra il riquadro esatto della foto della scheda e taglia lo scatto su quello |
 
 Dettagli: [4.21](docs/CHANGELOG_4_21_0.md)

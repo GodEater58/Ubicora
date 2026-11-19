@@ -590,16 +590,23 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         }
     }
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
-                cost:Double?=null,supplier:String="",leadDays:Int?=null) = execute {
+                cost:Double?=null,supplier:String="",leadDays:Int?=null,place:NewItemPlace=NewItemPlace()) {
+        var created:Long?=null
+        // 4.21: "on the map" opens the location pick once the article exists.
+        execute(onSuccess={ if(place.onMap) created?.let { startLocationPick(listOf(it)) } }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
-            pendingNewItem = db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+            val id=db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+            pendingNewItem = if(place.onMap) null else id
+            created=id
+            place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) }
         } catch(t:Throwable) {
             PhotoFiles.delete(getApplication<Application>(),picture)
             throw t
         } finally {
             photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
+        }
         }
     }
     fun replaceItemPhoto(itemId:Long,photoUri:String) = execute {
