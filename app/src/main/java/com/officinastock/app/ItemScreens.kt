@@ -280,6 +280,13 @@ private fun EditItemDetailsDialog(
         },enabled=canConfirm,modifier=Modifier.fillMaxWidth()){Text("Conferma ${action}")}
     }) {
             // 4.19.3: quantity, place and the movement first; photo and the card details below.
+            // 4.21.1: the description at the top, under the name, where it cannot be missed.
+            if(item.note.isNotBlank()) Surface(color=PanelBg,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal=12.dp,vertical=8.dp)) {
+                    Text("DESCRIZIONE",color=Mint,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                    Text(item.note,fontSize=14.sp,color=TextPrimary)
+                }
+            }
             Text("Disponibili: ${amount(item.quantity)} ${item.unit}",fontWeight=FontWeight.Bold,fontSize=21.sp,color=Mint)
             val location=placements.firstOrNull{it.id==item.placementId}
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -324,7 +331,6 @@ private fun EditItemDetailsDialog(
                 Spacer(Modifier.width(7.dp))
                 Text("Costo, fornitore e tempi di riordino")
             }
-            if(item.note.isNotBlank()) Text(item.note,color=TextSecondary,fontSize=12.sp)
             if(model.canDeleteItems) TextButton(onClick={askDeleteItem=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.DeleteOutline,null,tint=Danger);Spacer(Modifier.width(6.dp));Text("Elimina articolo",color=Danger)
             }

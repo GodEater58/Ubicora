@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.sp
                 ResultRow(dot = Amber, outlined = place == null, title = item.name,
                     detail = if (place == null) "Senza posto · tocca per vedere dove metterlo" else MapRoute.placeText(place, item),
                     detailColor = if (place == null) TextSecondary else Sky,
-                    quantity = "${amount(item.quantity)} ${item.unit}") { onItem(item) }
+                    quantity = "${amount(item.quantity)} ${item.unit}", subtitle = item.note) { onItem(item) }
             }
             if (results.items.size > 40) Text("e altri ${results.items.size - 40}: scrivi qualche lettera in più", color = TextSecondary,
                 fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -64,13 +64,14 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable private fun ResultRow(dot: Color, outlined: Boolean, title: String, detail: String, detailColor: Color = TextSecondary,
-                                  quantity: String, onClick: () -> Unit) {
+                                  quantity: String, subtitle: String = "", onClick: () -> Unit) {
     Surface(onClick = onClick, color = Color.Transparent, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(12.dp).then(if (outlined) Modifier.border(BorderStroke(2.dp, TextSecondary), RoundedCornerShape(6.dp))
                 else Modifier.background(dot, RoundedCornerShape(6.dp))))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle.isNotBlank()) Text(subtitle, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(detail, fontSize = 13.sp, fontWeight = if (detailColor == Sky) FontWeight.Bold else FontWeight.Normal, color = detailColor,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -88,6 +89,7 @@ import androidx.compose.ui.unit.sp
                 if (item.photoFile != null) ArticleThumbnail(item.photoFile)
                 Column(Modifier.weight(1f)) {
                     Text(item.name, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (item.note.isNotBlank()) Text(item.note, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text("${item.sku} · ${item.category}", fontSize = 13.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Column(horizontalAlignment = Alignment.End) {

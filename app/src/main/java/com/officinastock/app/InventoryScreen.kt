@@ -145,6 +145,7 @@ import kotlinx.coroutines.launch
                         Row(Modifier.heightIn(min=60.dp).padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(hit.item.name,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                if(hit.item.note.isNotBlank()) Text(hit.item.note,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                                 Text(hit.site.name,color=Sky,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
                             }
                             Text("${amount(hit.item.quantity)} ${hit.item.unit}",fontWeight=FontWeight.Bold,color=if(hit.item.quantity>0.0) TextPrimary else TextSecondary)
