@@ -99,7 +99,7 @@ import androidx.compose.ui.unit.sp
                 Icon(Icons.Outlined.Fingerprint, null, tint = Mint); Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Accesso con impronta", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("Al posto del PIN, solo su questo telefono. Il PIN resta valido.", fontSize = 11.sp, color = TextSecondary)
+                    Text("Al posto del PIN, solo su questo telefono. Ogni 7 giorni si entra una volta con il PIN.", fontSize = 11.sp, color = TextSecondary)
                 }
                 Switch(checked = on, enabled = !model.ui.busy, onCheckedChange = { wanted ->
                     note = null

@@ -40,8 +40,23 @@ object BiometricLogin {
         BiometricManager.from(context).canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
     fun enabled(context: Context, profileId: Long): Boolean = prefs(context).contains("p$profileId")
 
+    /** The PIN is asked again when its last use is older than this, even with the fingerprint on. */
+    const val PIN_EVERY_MS = 7L * 24 * 60 * 60 * 1000
+    /** Called after every correct PIN: the 7 days start again. */
+    fun pinUsed(context: Context, profileId: Long, now: Long = System.currentTimeMillis()) {
+        prefs(context).edit().putLong("pin_at_$profileId", now).apply()
+    }
+    /**
+     * True when the fingerprint may be used now: the PIN was typed in the last 7 days. A clock moved
+     * back before the last PIN also asks for the PIN, so changing the date does not stretch the 7 days.
+     */
+    fun pinStillFresh(context: Context, profileId: Long, now: Long = System.currentTimeMillis()): Boolean {
+        val last = prefs(context).getLong("pin_at_$profileId", 0L)
+        return last > 0L && now >= last && now - last < PIN_EVERY_MS
+    }
+
     fun disable(context: Context, profileId: Long) {
-        prefs(context).edit().remove("p$profileId").apply()
+        prefs(context).edit().remove("p$profileId").apply()   // the date of the last PIN stays
         runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(alias(profileId)) }
     }
 

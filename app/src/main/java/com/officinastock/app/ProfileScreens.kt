@@ -59,7 +59,10 @@ import androidx.lifecycle.withResumed
     fun open(profile:Profile) {
         pin="";fingerprintNote=null
         val activity=context.fragmentActivity()
-        val prompted=activity!=null && BiometricLogin.enabled(context,profile.id) && runCatching {
+        // 4.21.1: every 7 days the PIN is needed once, even with the fingerprint on.
+        if(BiometricLogin.enabled(context,profile.id) && !BiometricLogin.pinStillFresh(context,profile.id))
+            fingerprintNote="Per sicurezza, ogni 7 giorni si entra una volta con il PIN. Poi torna l'impronta."
+        val prompted=activity!=null && fingerprintNote==null && BiometricLogin.enabled(context,profile.id) && runCatching {
             BiometricLogin.unlock(activity,profile.id,profile.name,onSuccess={model.unlockWithFingerprint(profile)},
                 usePin={ reason -> fingerprintNote=reason;picked=profile })
         }.isSuccess
@@ -69,7 +72,7 @@ import androidx.lifecycle.withResumed
     val lifecycle=androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(model.ui.sessionLocked) {
         val current=model.ui.profile
-        if(model.ui.sessionLocked && current!=null && BiometricLogin.enabled(context,current.id))
+        if(model.ui.sessionLocked && current!=null && BiometricLogin.enabled(context,current.id) && BiometricLogin.pinStillFresh(context,current.id))
             runCatching { lifecycle.withResumed { if(model.ui.sessionLocked && picked==null) open(current) } }
     }
     if(creating){

@@ -472,11 +472,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     init { refresh() }
     fun unlock(profile: Profile,pin: String) = execute {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
+        BiometricLogin.pinUsed(getApplication(),profile.id)   // 4.21.1: the fingerprint is good for 7 more days
         pendingProfileId=profile.id
     }
     /** 4.21.1: the fingerprint was verified by Android with the profile's Keystore key (see [BiometricLogin]). */
     fun unlockWithFingerprint(profile: Profile) = execute {
         require(db.profiles().any { it.id==profile.id }) { "Profilo inesistente" }
+        require(BiometricLogin.pinStillFresh(getApplication(),profile.id)) { "Sono passati 7 giorni: accedi con il PIN" }
         pendingProfileId=profile.id
     }
     fun signOut() { if(!ui.busy) {clearMapHistory();archiveAuthorization=null;pendingCsvImport=null;ui=StockUiState(profiles=ui.profiles,initialized=true)} }
