@@ -66,6 +66,7 @@ object TodayTasks {
         u.stockCounts.count { it.status == "PENDING" } + u.stockTransfers.count { it.status in listOf("REQUESTED", "IN_TRANSIT") } +
         u.maintenanceWork.count { it.status == "OPEN" }
     val recent = u.movements.take(4)
+    val finishing = remember(u.items) { u.items.filter { it.lowStock }.sortedBy { it.quantity / maxOf(it.minimum, 1.0) }.take(12) }
     if (askLoanDays) LoanDaysDialog(loanDays) { askLoanDays = false }
     var pickSite by remember { mutableStateOf(false) }
     if (pickSite) SiteSheet(model) { pickSite = false }
@@ -89,7 +90,7 @@ object TodayTasks {
         if (team != null) item { TeamStatusRow(team, goTeam) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TodayNumber(count.toString(), "Referenze", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
+                TodayNumber(count.toString(), "Articoli", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
                 TodayNumber(critical.toString(), "Da riordinare", if (critical > 0) Amber else TextSecondary, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
                 val lent = u.loans.size + u.team.loans.size
                 TodayNumber(lent.toString(), "In prestito", if (lent > 0) Sky else TextSecondary, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
@@ -104,7 +105,7 @@ object TodayTasks {
                     TextButton(onClick = { onStockFocus(StockFocus.CRITICAL) }) { Text("Vedi tutti") }
                 }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(u.items.filter { it.lowStock }.sortedBy { it.quantity / maxOf(it.minimum, 1.0) }.take(12), key = { it.id }) { item ->
+                    items(finishing, key = { it.id }) { item ->
                         FinishingTile(item) { onItemFocus(item.id) }
                     }
                 }

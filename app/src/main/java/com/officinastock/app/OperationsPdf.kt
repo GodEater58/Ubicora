@@ -71,7 +71,7 @@ object OperationsPdf {
             writeLine("Dati locali, relativi al magazzino selezionato. Scorte note: valori parziali se mancano costi.")
             section("Sintesi scorte")
             writeLine("Articoli: "+report.itemCount+" · Esauriti: "+report.zeroStock+" · Sotto soglia: "+report.lowStock)
-            writeLine("Senza ubicazione: "+report.missingLocation+" · Costo noto per "+report.pricedCount+" articoli")
+            writeLine("Senza posto: "+report.missingLocation+" · Costo noto per "+report.pricedCount+" articoli")
             writeLine("Valore noto scorte: "+eur.format(report.knownStockValue))
             writeLine("Budget mensile: "+(state.monthlyBudget?.let{eur.format(it)} ?: "non impostato"))
             section("Acquisti")

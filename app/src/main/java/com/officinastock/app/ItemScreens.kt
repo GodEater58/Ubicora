@@ -15,6 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -309,7 +313,8 @@ private fun EditItemDetailsDialog(
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 listOf("prelievo" to "Preleva","carico" to "Carica","prestito" to "Presta").forEach { (key,label) ->
                     val on=action==key
-                    Surface(onClick={action=key},modifier=Modifier.weight(1f).height(64.dp),shape=RoundedCornerShape(20.dp),
+                    Surface(onClick={action=key},modifier=Modifier.weight(1f).height(64.dp)
+                        .semantics { selected=on; role=Role.RadioButton },shape=RoundedCornerShape(20.dp),
                         color=if(on) Mint else PanelBg) {
                         Box(contentAlignment=Alignment.Center) {
                             Text(label,fontFamily=Display,fontWeight=FontWeight.Bold,fontSize=17.sp,color=if(on) OnMint else TextPrimary)
@@ -322,8 +327,9 @@ private fun EditItemDetailsDialog(
                     color=if(action=="rettifica") Amber else TextSecondary)
             }
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                val step={ d:Int -> val now=quantity.replace(',','.').toDoubleOrNull() ?: 0.0
-                    quantity=amount(maxOf(0.0,now+d)) }
+                // Exact decimals: 0,125 + 1 = 1,125 (no rounding); text that is not a number is left alone.
+                val step={ d:Int -> quantity.replace(',','.').toBigDecimalOrNull()?.let { now ->
+                    quantity=(now+d.toBigDecimal()).max(java.math.BigDecimal.ZERO).stripTrailingZeros().toPlainString().replace('.',',') } }
                 FilledTonalIconButton(onClick={step(-1)},modifier=Modifier.size(56.dp)) { Icon(Icons.Outlined.Remove,contentDescription="Uno in meno") }
                 Box(Modifier.weight(1f)) { Input(quantity,{quantity=it},if(action=="rettifica")"Quantità contata" else "Quantità",number=true) }
                 FilledTonalIconButton(onClick={step(1)},modifier=Modifier.size(56.dp)) { Icon(Icons.Outlined.Add,contentDescription="Uno in più") }

@@ -138,7 +138,7 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 
 /** 4.7.2: list orderings. */
 enum class StockSort(val label:String) {
-    NAME("Nome A–Z"), CRITICAL("Critici prima"), QTY_LOW("Quantità crescente"),
+    NAME("Nome A–Z"), CRITICAL("Da riordinare prima"), QTY_LOW("Quantità crescente"),
     QTY_HIGH("Quantità decrescente"), RECENT("Ultimi movimentati"), CODE("Codice")
 }
 

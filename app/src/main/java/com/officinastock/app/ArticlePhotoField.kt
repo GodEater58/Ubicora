@@ -154,5 +154,7 @@ fun ArticleThumbnail(filename: String, modifier: Modifier = Modifier.size(46.dp)
     }.value
     if(bitmap!=null) Image(bitmap.asImageBitmap(),contentDescription="Foto articolo",
         modifier=modifier.clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
-    else Icon(Icons.Outlined.Inventory2,null,tint=Mint,modifier=modifier)
+    else Box(modifier.clip(RoundedCornerShape(12.dp)).background(Surface2),contentAlignment=Alignment.Center) {
+        Icon(Icons.Outlined.Inventory2,null,tint=Mint,modifier=Modifier.size(24.dp))
+    }
 }

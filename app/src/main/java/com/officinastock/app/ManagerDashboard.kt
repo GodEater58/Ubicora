@@ -97,10 +97,10 @@ private fun euro(value:Double):String=NumberFormat.getCurrencyInstance(Locale.IT
                     Spacer(Modifier.width(7.dp))
                     Text("Priorità di riordino",fontWeight=FontWeight.Bold,fontSize=16.sp)
                 }
-                Text("${report.lowStock} referenze sotto soglia o esaurite · ${report.missingLocation} senza ubicazione",fontSize=12.sp,color=TextSecondary)
+                Text("${report.lowStock} referenze sotto soglia o esaurite · ${report.missingLocation} senza posto",fontSize=12.sp,color=TextSecondary)
                 if(report.missingLocation>0) TextButton(
                     onClick={onStockFocus(StockFocus.UNLOCATED)},modifier=Modifier.fillMaxWidth()
-                ) { Text("Mostra articoli senza ubicazione") }
+                ) { Text("Mostra articoli senza posto") }
                 if(report.reorder.isEmpty()) Text("Nessun articolo critico con le soglie attuali.",fontSize=12.sp,color=Mint)
                 report.reorder.take(5).forEach { risk ->
                     Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth().clickable { onItemFocus(risk.item.id) }) {
