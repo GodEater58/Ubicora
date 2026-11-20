@@ -62,7 +62,7 @@ import androidx.compose.ui.unit.sp
             Row(Modifier.padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 8.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 if (!compact) {
-                    if (entry.photoFile != null) ArticleThumbnail(entry.photoFile)
+                    if (entry.photoFile != null) ArticleThumbnail(entry.photoFile, Modifier.size(58.dp), edge = 180)
                     else Surface(color = if (entry.lowStock) Amber.copy(alpha = .13f) else Mint.copy(alpha = .12f), shape = RoundedCornerShape(14.dp)) {
                         Icon(Icons.Outlined.Inventory2, null, tint = if (entry.lowStock) Amber else Mint, modifier = Modifier.padding(12.dp))
                     }
@@ -88,8 +88,12 @@ import androidx.compose.ui.unit.sp
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("${amount(entry.quantity)} ${entry.unit}", color = if (entry.lowStock) Amber else TextPrimary, fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp)
+                    // 4.24 «Vetrina»: the quantity is the number people look for, so it is the biggest thing on the row.
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(amount(entry.quantity), color = if (entry.lowStock) Amber else TextPrimary, fontFamily = Display, fontWeight = FontWeight.Bold,
+                            fontSize = if (compact) 18.sp else 24.sp)
+                        Text(" ${entry.unit}", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 2.dp))
+                    }
                     if (entry.lowStock) Text(if (entry.quantity <= 0.0) "Esaurito" else "Scorta bassa · min ${amount(entry.minimum)}",
                         color = Amber, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     if (!compact) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {

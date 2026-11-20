@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
             Icon(Icons.Outlined.Sync, null, tint = if (warn) Amber else Mint)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(if (t.role == TeamRole.CENTRAL) "Telefono centrale" else "Satellite ${t.letter}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(if (t.role == TeamRole.CENTRAL) "Telefono centrale" else "Satellite ${t.letter}", fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Text(when (t.role) {
                     TeamRole.CENTRAL -> "${t.peers.size} ${if (t.peers.size == 1) "satellite" else "satelliti"} · ultimo scambio ${ago(t.lastSync)}" +
                         (if (t.conflicts.isNotEmpty()) " · ${t.conflicts.size} conflitti" else "")

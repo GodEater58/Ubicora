@@ -183,10 +183,11 @@ private class LabelDocumentAdapter(private val item: LabelSpec): PrintDocumentAd
     }
 }
 
-@Composable fun QrLabelDialog(item: StockItem,onDismiss:()->Unit) {
+/** [onAnother]: shown right after a new article is saved, to load the next one at once (4.24). */
+@Composable fun QrLabelDialog(item: StockItem,onDismiss:()->Unit,onAnother:(()->Unit)?=null) {
     val context=LocalContext.current
     val image=remember(item.id,item.sku) { QrLabels.bitmap(item) }
-    AlertDialog(onDismissRequest=onDismiss,title={Text("Etichetta articolo")},text={
+    AlertDialog(onDismissRequest=onDismiss,title={Text(if(onAnother!=null) "Salvato: ecco l'etichetta" else "Etichetta articolo")},text={
         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Surface(shape=RoundedCornerShape(14.dp),color=Color.White) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -204,7 +205,10 @@ private class LabelDocumentAdapter(private val item: LabelSpec): PrintDocumentAd
         try { QrLabels.print(context,item) }
         catch(e:Exception) { android.widget.Toast.makeText(context,e.localizedMessage ?: "Stampa non disponibile",android.widget.Toast.LENGTH_LONG).show() }
     }) { Icon(Icons.Outlined.Print,null);Spacer(Modifier.width(8.dp));Text("Stampa / PDF") }},
-       dismissButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
+       dismissButton={Row {
+           if(onAnother!=null) TextButton(onClick=onAnother){Text("Aggiungine un altro")}
+           TextButton(onClick=onDismiss){Text("Chiudi")}
+       }})
 }
 
 @Composable fun PlacementQrDialog(p: Placement, items: List<StockItem>, onDismiss:()->Unit) {

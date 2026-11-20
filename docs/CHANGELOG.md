@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.24.0](CHANGELOG_4_24_0.md) | stile «Vetrina»: articoli che finiscono con la foto, scheda con pulsanti grandi, «Aggiungine un altro», nomi uguali ovunque. |
 | [4.23.0](CHANGELOG_4_23_0.md) | mappa più chiara: un colore, lettera dentro lo scaffale, pallino con gli articoli che finiscono; testi corretti. |
 | [4.22.0](CHANGELOG_4_22_0.md) | cancellazione dei movimenti con più di 2 anni, senza toccare le giacenze. |
 | [4.21.2](CHANGELOG_4_21_2.md) | password proposta forte per le nuove squadre; tempi massimi per i collegamenti al centrale; modifiche di scheda non valide rimandate indietro. |
