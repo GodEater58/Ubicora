@@ -16,7 +16,7 @@ object OperationsCsv {
         require(state.profile!=null && !state.sessionLocked){"Accedi per esportare i dati"}
         val out=StringBuilder()
         out.appendLine(row("UBICORA","REPORT GESTIONALE",warehouse.name,warehouse.location))
-        out.appendLine(row("Sezione","Riferimento","Stato","Articolo / macchina","Quantita","Valore noto EUR","Dettaglio"))
+        out.appendLine(row("Sezione","Riferimento","Stato","Articolo / macchina","Quantità","Valore noto EUR","Dettaglio"))
         state.orders.forEach {o ->
             out.appendLine(row("ACQUISTI","#"+o.id,o.status,o.itemName,o.quantity,
                 o.unitPrice?.let{it*o.quantity},o.supplier+" · Responsabile: "+o.owner))

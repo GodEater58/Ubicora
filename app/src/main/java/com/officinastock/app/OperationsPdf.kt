@@ -93,7 +93,7 @@ object OperationsPdf {
             if(state.stockTransfers.isEmpty())writeLine("Nessun trasferimento registrato.")
             state.stockTransfers.forEach{t->
                 writeLine("#"+t.id+" ["+t.status+"] "+t.itemName+
-                    " · Quantita "+t.quantity+" · Da "+t.fromId+" a "+t.toId)
+                    " · Quantità "+t.quantity+" · Da "+t.fromId+" a "+t.toId)
             }
             section("Manutenzioni")
             if(state.maintenanceWork.isEmpty())writeLine("Nessun intervento registrato.")
@@ -106,8 +106,8 @@ object OperationsPdf {
                 writeLine(i.sku+" · "+i.name+" · Giacenza "+i.quantity+" · Minimo "+i.minimum)
             }
             section("Limiti del rapporto")
-            writeLine("Il rapporto considera fino a ${state.operationsLimit} record caricati per tipo di workflow e fino a 120 scorte critiche.")
-            writeLine("Budget e valori non rappresentano contabilita certificata. L'accesso e locale per profilo.")
+            writeLine("Il rapporto considera fino a ${state.operationsLimit} voci per tipo di attività e fino a 120 scorte critiche.")
+            writeLine("Budget e valori non sono una contabilità certificata. L'accesso è locale, per profilo.")
             page?.let{p->
                 p.canvas.drawText("Ubicora · report locale | Pag. $pageNo",36f,813f,pen)
                 doc.finishPage(p)

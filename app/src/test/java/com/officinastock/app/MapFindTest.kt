@@ -178,4 +178,13 @@ class MapFindTest {
         val box = listOf(Wall(2, 1, 3f, 1f, 7f, 1f, "m"), Wall(3, 1, 7f, 1f, 7f, 3f, "m"), Wall(4, 1, 7f, 3f, 3f, 3f, "m"), Wall(5, 1, 3f, 3f, 3f, 1f, "m"))
         assertEquals(3, MapRoute.walk(listOf(gate, target), target, box, 10f, 10f)!!.path.size)
     }
+
+    @Test fun aWallBecomesSmallBoxesAlongItSoNamesStayOffIt() {
+        val boxes = MapLabels.wall(0f, 0f, 100f, 0f, 5f)
+        assertTrue(boxes.size >= 10)
+        assertTrue(boxes.any { it.intersects(ScreenBox(48f, -2f, 52f, 2f)) })          // on the wall
+        assertFalse(boxes.any { it.intersects(ScreenBox(40f, 10f, 60f, 30f)) })        // just beside it: free
+        // A diagonal wall does not block the empty corner of its bounding box.
+        assertFalse(MapLabels.wall(0f, 0f, 100f, 100f, 5f).any { it.intersects(ScreenBox(70f, 0f, 100f, 20f)) })
+    }
 }
