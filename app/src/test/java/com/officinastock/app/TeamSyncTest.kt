@@ -701,6 +701,8 @@ class TeamSyncTest {
         val old = System.currentTimeMillis() - 800 * 86_400_000L
         satellite.writableDatabase.execSQL("UPDATE movements SET created_at=?", arrayOf(old))
         satellite.writableDatabase.execSQL("INSERT INTO movements(item_id,delta,note,created_at) VALUES(?,?,?,?)", arrayOf(vite.id, 1.0, "Vecchio", old))
+        // ...already sent long ago: it is no longer in the queue to the central.
+        satellite.writableDatabase.execSQL("DELETE FROM team_sync_outbox WHERE kind='MOVE' AND ref_id=(SELECT MAX(id) FROM movements)")
         val before = System.currentTimeMillis() - 730 * 86_400_000L
         val unsentBefore = TeamSync(satellite).status().pending
         assertTrue(satellite.oldMovements(wh, before) >= 1)
