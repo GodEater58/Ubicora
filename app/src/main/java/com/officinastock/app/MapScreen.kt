@@ -83,6 +83,8 @@ private fun snapTolerance(hookPx: Float, scale: Float, from: PointMetres?, raw: 
 private val DoorBrown = Color(0xFF8B6B4A)
 private val ColumnGrey = Color(0xFF59646E)
 private val Idle = Color(0xFF2B3A47)
+/** 4.23: every place that holds stock has one colour; colour on the plan means a state (finishing, found), never a kind. */
+private val StockNeutral = Color(0xFF2A4256)
 
 private fun numberM(value: Float):String = String.format(Locale.ITALY,"%.2f m", value)
 private fun floorColor(kind: String): Color = when(kind) {
@@ -413,6 +415,10 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     // 4.20: no box behind the names any more: a soft shadow keeps them readable on the floor and the grid.
                     setShadowLayer(4f,0f,1f,android.graphics.Color.argb(220,7,18,31))
                 }}
+                val codePx=with(density){20.sp.toPx()}
+                val codePaint=remember(codePx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+                    textSize=codePx;typeface=Typeface.create("sans-serif",Typeface.BOLD);textAlign=AndroidPaint.Align.CENTER
+                }}
                 val badgePaint=remember(badgeTextPx){AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
                     color=android.graphics.Color.BLACK;textSize=badgeTextPx;typeface=Typeface.DEFAULT_BOLD;textAlign=AndroidPaint.Align.CENTER
                 }}
@@ -627,7 +633,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                         val fill=when {
                             isLit -> Color(0xFF4A3A1A)
                             faded -> Color(0xFF1B2D40)
-                            !f.holdsStock || layer==MapLayer.NORMAL -> floorColor(f.kind)
+                            !f.holdsStock -> floorColor(f.kind)
+                            layer==MapLayer.NORMAL -> StockNeutral
                             layer==MapLayer.EMPTY -> if(items.isEmpty()) Amber.copy(alpha=.85f) else Idle
                             else -> (layerValues[f.id] ?: 0f).let { v -> if(v<=0f) Idle else heat(v/layerMax) }
                         }
@@ -686,13 +693,16 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     val labelBoxes=mutableListOf<ScreenBox>()
                     val guideIds=setOfNotNull(guide.next?.id,walk?.from?.id)+guide.done
                     val badgeBoxes=mutableListOf<ScreenBox>()
-                    if(guiding) for(f in state.placements) {
-                        val count=mapItems[f.id].orEmpty().size
-                        val visited=f.id in guide.done
+                    // 4.23: at rest every structure shows how many of its articles are finishing.
+                    val showLow=!guiding && !editing && !dimming && layer==MapLayer.NORMAL
+                    if(guiding || showLow) for(f in state.placements) {
+                        val low=mapItems[f.id].orEmpty().count{it.lowStock}
+                        val count=if(guiding) mapItems[f.id].orEmpty().size else low
+                        val visited=guiding && f.id in guide.done
                         if(count==0 && !visited) continue
                         val fp=footprints[f.id] ?: continue
                         val bubble=Offset(camera.insetCoordinate(fp.right,size.width,badgePx),camera.insetCoordinate(fp.top,size.height,badgePx))
-                        drawCircle(if(visited) Mint else if(mapItems[f.id].orEmpty().any{it.lowStock})Amber else Mint,badgePx,bubble)
+                        drawCircle(if(visited) Mint else if(low>0)Amber else Mint,badgePx,bubble)
                         badgeBoxes.add(ScreenBox(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
                         drawIntoCanvas { cv ->
                             cv.nativeCanvas.drawText(if(visited) "\u2713" else count.toString(),bubble.x,bubble.y-(badgePaint.ascent()+badgePaint.descent())/2f,badgePaint)
@@ -726,6 +736,13 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             val spot=if(fitsInside) inside
                                 else MapLabels.place(fp,textW,textH,labelGapPx,taken,size.width,size.height)
                                     ?: if(important) MapLabels.place(fp,textW,textH,labelGapPx,emptyList(),size.width,size.height) ?: inside else null
+                            // 4.23: the short code ("A" of "A · Ricambi") stays inside the block, so the name beside it is never mistaken.
+                            val code=original.substringBefore(" · ",missingDelimiterValue="").trim()
+                            if(!fitsInside && code.length in 1..3 && !PlacementKinds.isPassage(f.kind) && fp.right-fp.left>codePx && fp.bottom-fp.top>codePx)
+                                drawIntoCanvas { cv ->
+                                    codePaint.color=if(dimming && f.id !in lit) android.graphics.Color.rgb(132,151,169) else android.graphics.Color.WHITE
+                                    cv.nativeCanvas.drawText(code,(fp.left+fp.right)/2f,(fp.top+fp.bottom)/2f-(codePaint.ascent()+codePaint.descent())/2f,codePaint)
+                                }
                             if(spot==null) continue
                             labelBoxes.add(spot)
                             drawIntoCanvas { cv ->
