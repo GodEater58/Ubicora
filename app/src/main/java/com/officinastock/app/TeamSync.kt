@@ -323,9 +323,14 @@ class TeamSync(private val stock: StockDb) {
         val bytes = input.readBytes()
         require(bytes.size <= 64 * 1024) { "Richiesta di collegamento non valida" }
         var usedCode: String? = null
-        val ticket = runCatching { read(bytes.inputStream(), requireTeamPw(), JOIN) }.getOrNull()
-            ?: activeInvite()?.let { code -> runCatching { read(bytes.inputStream(), code, JOIN) }.getOrNull()?.also { usedCode = code } }
-            ?: throw IllegalArgumentException(if (setting("invite_until") != null && activeInvite() == null)
+        var opened: JSONObject? = null
+        // 4.21.2: any phone nearby can send tickets; 5 wrong ones lock joining for 1, 2, 4… 60 minutes.
+        stock.throttled("team_join") {
+            opened = runCatching { read(bytes.inputStream(), requireTeamPw(), JOIN) }.getOrNull()
+                ?: activeInvite()?.let { code -> runCatching { read(bytes.inputStream(), code, JOIN) }.getOrNull()?.also { usedCode = code } }
+            opened != null
+        }
+        val ticket = opened ?: throw IllegalArgumentException(if (setting("invite_until") != null && activeInvite() == null)
                 "Password errata o QR scaduto: sul centrale mostra un QR nuovo" else "Password della squadra errata: controlla e riprova")
         val device = ticket.getString("device_uid"); val letter = ticket.getString("letter")
         require(ArticleCodes.isSatelliteLetter(letter) && device.isNotBlank()) { "Richiesta di collegamento non valida" }

@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate,upgrade,nextLabel,teamEncrypt,teamDecrypt,importTeam} from '../core.mjs';
+import {apply,empty,demo,available,reserved,analytics,cost,exportCsv,importCsv,parseCsv,validate,upgrade,nextLabel,teamEncrypt,teamDecrypt,importTeam,archiveOldMovements} from '../core.mjs';
+
+test('shared space near the server limit archives the oldest movements, never the rest', () => {
+  const s = demo();
+  const before = new TextEncoder().encode(JSON.stringify(s)).length;
+  assert.ok(s.movements.length > 1);
+  assert.equal(archiveOldMovements(s, before + 10), null);              // under the limit: nothing changes
+  const oldest = [...s.movements].sort((a, b) => a.at - b.at)[0];
+  const result = archiveOldMovements(s, before - 10);
+  assert.ok(result.archived.some(m => m.id === oldest.id));
+  assert.equal(result.state.movements.length + result.archived.length, s.movements.length);
+  assert.deepEqual(result.state.items, s.items);                         // only history leaves
+  assert.ok(new TextEncoder().encode(JSON.stringify(result.state)).length <= before - 10);
+  assert.ok(s.movements.some(m => m.id === oldest.id));                  // the original is untouched
+});
 const stock=()=>demo();
 test('Reservations release without stock change and consumption is exactly once',()=>{
  let s=stock(),i=s.items[0],r=s.reservations[0];assert.equal(available(s,i),20);

@@ -8,7 +8,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Literal
@@ -20,9 +23,20 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from pathlib import Path
-from jwt import PyJWKClient, InvalidTokenError, PyJWKClientError
+from jwt import PyJWKClient, InvalidTokenError, PyJWKClientError, PyJWKClientConnectionError
 from pydantic import BaseModel, Field, ConfigDict
 from psycopg.rows import dict_row
+from urllib.parse import urlsplit
+from workspace import browser_config, has_nul
+
+
+def token_origin() -> list[str]:
+    """Origin of the browser's OIDC token endpoint, when the sign-in is configured."""
+    settings = browser_config()
+    if not settings.get("configured"):
+        return []
+    url = urlsplit(settings["token_endpoint"])
+    return [f"https://{url.netloc}"]
 
 MAX_BATCH_BYTES = 512 * 1024
 RESOURCES = ("cost_center", "supplier", "asset", "staff_directory")
@@ -53,8 +67,12 @@ async def response_headers(request: Request, call_next):
     response.headers["Cache-Control"] = "no-store"
     # The service is HTTPS-only (see module docstring); the page never needs plugins or framing.
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = (
-        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+    policy = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+    if request.url.path == "/":
+        # The page's own CSP allows any https: host (the offline file cannot know the identity
+        # provider). Served from here it may only call this server and the configured token endpoint.
+        policy += "; connect-src " + " ".join(["'self'", *token_origin()])
+    response.headers["Content-Security-Policy"] = policy
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
@@ -89,6 +107,33 @@ def jwks_client() -> PyJWKClient:
     return PyJWKClient(url, cache_keys=True, lifespan=3600)
 
 
+# A token whose key id is not in the JWKS makes PyJWKClient download the set again. Without this
+# memory every forged token became one request to the identity provider (and a 503 instead of 401).
+UNKNOWN_KID_TTL_S = 300
+_UNKNOWN_KIDS_MAX = 1024
+_unknown_kids: "OrderedDict[str, float]" = OrderedDict()
+_unknown_kids_lock = threading.Lock()
+
+
+def _kid_known_bad(kid: str) -> bool:
+    with _unknown_kids_lock:
+        seen = _unknown_kids.get(kid)
+        if seen is None:
+            return False
+        if time.monotonic() - seen > UNKNOWN_KID_TTL_S:
+            del _unknown_kids[kid]
+            return False
+        return True
+
+
+def _remember_bad_kid(kid: str) -> None:
+    with _unknown_kids_lock:
+        _unknown_kids[kid] = time.monotonic()
+        _unknown_kids.move_to_end(kid)
+        while len(_unknown_kids) > _UNKNOWN_KIDS_MAX:
+            _unknown_kids.popitem(last=False)
+
+
 def config(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
@@ -102,9 +147,13 @@ def authorize(authorization: str | None = Header(default=None)) -> Principal:
     token = authorization[7:]
     if len(token) > 16384:
         raise HTTPException(401, "Invalid bearer token")
+    kid = ""
     try:
         issuer = config("UBICORA_OIDC_ISSUER")
         audience = config("UBICORA_OIDC_AUDIENCE")
+        kid = str(jwt.get_unverified_header(token).get("kid") or "")[:256]
+        if _kid_known_bad(kid):
+            raise InvalidTokenError("Unknown signing key")
         key = jwks_client().get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token, key.key, algorithms=["RS256"], issuer=issuer, audience=audience,
@@ -117,8 +166,15 @@ def authorize(authorization: str | None = Header(default=None)) -> Principal:
         return Principal(subject=subject)
     except (InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid or expired bearer token")
-    except PyJWKClientError:
+    except PyJWKClientConnectionError:
         raise HTTPException(503, "Authentication service temporarily unavailable")
+    except PyJWKClientError as error:
+        if not str(error).startswith("Unable to find a signing key"):
+            # Empty or malformed JWKS: the identity provider is at fault, not the token.
+            raise HTTPException(503, "Authentication service temporarily unavailable")
+        # The JWKS was fetched and no key matches: the token is invalid, not the server.
+        _remember_bad_kid(kid)
+        raise HTTPException(401, "Invalid or expired bearer token")
     except RuntimeError:
         # Misconfigured servers must fail closed.
         raise HTTPException(503, "Authentication service not configured")
@@ -152,7 +208,11 @@ def validate_entity(event: Event) -> None:
         raise HTTPException(400, "Invalid entity JSON")
     if size > 48_000:
         raise HTTPException(413, "Entity payload too large")
-    name = event.data.get("name") or event.data.get("display_name")
+    if has_nul(event.data):
+        # PostgreSQL jsonb cannot store NUL: refused here instead of failing (as "storage down") at INSERT.
+        raise HTTPException(400, "Text must not contain NUL characters")
+    # Each resource has its own name field: an empty "name" no longer passes thanks to "display_name".
+    name = event.data.get("display_name" if event.resource == "staff_directory" else "name")
     if not isinstance(name, str) or not 2 <= len(name.strip()) <= 160:
         raise HTTPException(400, "Entity name is invalid")
     if event.resource in {"cost_center", "asset"}:
@@ -185,6 +245,9 @@ def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
                 center = uuid.UUID(str(parent))
             except ValueError:
                 raise HTTPException(400, "Invalid asset center UUID")
+            if str(center) != parent:
+                # The delete check compares data->>'center_uuid' as text: only the canonical form is stored.
+                raise HTTPException(400, "Asset center UUID must be lowercase with hyphens")
             cur.execute("""SELECT 1 FROM entity_versions
                            WHERE tenant_id=%s AND resource='cost_center' AND entity_id=%s""",
                         (tenant, center))
@@ -228,6 +291,12 @@ def apply_event(cur, tenant: uuid.UUID, event: Event, subject: str) -> None:
                  event.operation, json.dumps(event.data), subject))
 
 
+@app.exception_handler(psycopg.DataError)
+async def database_rejected_data(_request: Request, _exc: psycopg.DataError):
+    # Bad values (e.g. untranslatable characters) are the client's: retrying the same batch never helps.
+    return JSONResponse(status_code=400, content={"detail": "Data rejected by storage"})
+
+
 @app.exception_handler(psycopg.Error)
 async def database_failure(_request: Request, _exc: psycopg.Error):
     # Never disclose connection strings or SQL details to clients.
@@ -250,7 +319,8 @@ async def push(request: Request, principal: Principal = Depends(authorize)):
         if len(data) > MAX_BATCH_BYTES:
             raise HTTPException(413, "Request too large")
     try:
-        batch = EventBatch.model_validate_json(bytes(data))
+        # Parsing up to 512 KiB is CPU work: off the event loop, like the database.
+        batch = await run_in_threadpool(EventBatch.model_validate_json, bytes(data))
     except Exception:
         raise HTTPException(400, "Invalid sync payload")
     event_ids = [e.event_id for e in batch.events]

@@ -173,6 +173,19 @@ export function exportAndroidCsv(s,wid){
  return exportCsv(s,wid);
 }
 
+// 1.1.3: every operation adds a movement and the shared space is saved whole (server limit 8 MiB).
+// Above the soft limit the oldest movements leave the document (to a file first), so saving never stops.
+export const SHARED_SOFT_LIMIT=7*1024*1024;
+export function archiveOldMovements(s,maxBytes=SHARED_SOFT_LIMIT){
+ const size=x=>new TextEncoder().encode(JSON.stringify(x)).length;
+ let total=size(s);if(total<=maxBytes)return null;
+ // Oldest by date (imports append at the end, so the array order is not the age order).
+ const byAge=s.movements.map((m,i)=>i).sort((a,b)=>s.movements[a].at-s.movements[b].at);
+ const target=maxBytes*0.75,out=new Set();
+ for(const i of byAge){if(total<=target)break;out.add(i);total-=size(s.movements[i])+1;}
+ if(!out.size)return null;
+ return {state:{...s,movements:s.movements.filter((m,i)=>!out.has(i))},archived:s.movements.filter((m,i)=>out.has(i))};
+}
 export function demo(){let s=empty();s=apply(s,{type:'warehouse',name:'Officina - esempio',location:'Archivio dimostrativo',width:12,depth:8});const wid=s.warehouses[0].id;
  for(const [name,x,y,width,depth]of[['Scaffale A',1,1,3,.8],['Cassettiera B',6,1,2,.8],['Banco 1',1,5,2,1]])s=apply(s,{type:'placement',warehouseId:wid,name,x,y,width,depth});
  for(const [sku,name,q,min,c,loc]of[['CUS-000001','Cuscinetto 6204',26,5,8.5,'Scaffale A'],['SNS-000001','Sensore induttivo M12',3,5,24,'Cassettiera B'],['UTN-000001','Chiave dinamometrica',2,1,75,'Banco 1'],['RIC-000002','Cinghia T10',0,2,null,'Scaffale A']])s=apply(s,{type:'item',warehouseId:wid,sku,name,quantity:q,minimum:min,cost:c,location:loc,supplier:'Fornitore esempio'});

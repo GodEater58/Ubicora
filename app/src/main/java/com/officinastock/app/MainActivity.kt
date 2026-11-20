@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -156,17 +157,18 @@ class MainActivity: FragmentActivity() {
                     if(uri!=null) model.prepareCsvImport(uri)
                 }
                 val backupLauncher=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-                    if(uri!=null) lifecycleScope.launch {
+                    // 4.21.2: in the ViewModel's scope, so turning the phone does not stop it halfway.
+                    if(uri!=null) model.viewModelScope.launch {
                         val error=runCatching {model.exportBackup(uri,model.pendingBackupPassword)}.exceptionOrNull()
                         model.pendingBackupPassword=""
-                        Toast.makeText(context,if(error==null)"Backup cifrato esportato" else "Backup non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
+                        Toast.makeText(context.applicationContext,if(error==null)"Backup cifrato esportato" else "Backup non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
                     } else model.pendingBackupPassword=""
                 }
                 val restoreLauncher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    if(uri!=null) lifecycleScope.launch {
+                    if(uri!=null) model.viewModelScope.launch {
                         val error=runCatching {model.restoreBackup(uri,model.pendingRestorePassword)}.exceptionOrNull()
                         model.pendingRestorePassword=""
-                        Toast.makeText(context,if(error==null)"Ripristino completato" else "Ripristino non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
+                        Toast.makeText(context.applicationContext,if(error==null)"Ripristino completato" else "Ripristino non riuscito: ${error.message}",Toast.LENGTH_LONG).show()
                     } else model.pendingRestorePassword=""
                 }
                 var showArDisclosure by remember {mutableStateOf(false)}
