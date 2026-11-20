@@ -61,7 +61,7 @@ private enum class EditorTool { VIEW, WALL, FURNITURE }
 /** Colour layers answering warehouse questions at a glance. */
 private enum class MapLayer(val label: String, val legend: String) {
     NORMAL("Normale", ""),
-    CRITICAL("Critici", "Articoli sotto scorta minima per struttura"),
+    CRITICAL("Da riordinare", "Articoli sotto la scorta minima, per struttura"),
     VALUE("Valore", "Valore delle scorte (quantità × costo)"),
     ACTIVITY("Più usati", "Movimenti negli ultimi 30 giorni"),
     EMPTY("Vuote", "Strutture senza articoli assegnati")

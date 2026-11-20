@@ -83,7 +83,7 @@ import kotlinx.coroutines.launch
     },sort,lastMoved).sortedByDescending { UiPrefs.isFavorite(it.warehouseId,it.id) } }   // 4.10: favourites first, order kept
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {SectionTitle("Inventario","${u.items.size} referenze registrate")}
+            Column(Modifier.weight(1f)) {SectionTitle("Articoli","${u.items.size} ${if(u.items.size==1) "articolo" else "articoli"}")}
             // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
             // 4.19.2: a pick-only phone cannot create articles: no form that would be refused at the end.
             // 4.19.3: the compact view is a button always in sight, not a chip at the end of the row.
@@ -114,9 +114,9 @@ import kotlinx.coroutines.launch
                     }
                 }
                 listOf(
-                    StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Critici",
+                    StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Da riordinare",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
-                    StockFocus.UNLOCATED to "Senza ubicazione",
+                    StockFocus.UNLOCATED to "Senza posto",
                     StockFocus.IDLE_90 to "Fermi 90 gg"
                 ).forEach { (option,label) ->
                     FilterChip(selected=activeFocus==option,onClick={activeFocus=option},label={Text(label)})

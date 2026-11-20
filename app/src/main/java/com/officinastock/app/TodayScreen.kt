@@ -117,7 +117,7 @@ object TodayTasks {
                 "Vedi chi li ha · tieni premuto per cambiare i giorni", onLong = { askLoanDays = true }) { onActivityFocus(ActivityFocus.LOANS, 0) }
         }
         if (unlocated > 0) item {
-            TodayTask(unlocated, TextPrimary, if (unlocated == 1) "Articolo senza ubicazione" else "Articoli senza ubicazione", "Assegna sulla mappa") { onStockFocus(StockFocus.UNLOCATED) }
+            TodayTask(unlocated, TextPrimary, if (unlocated == 1) "Articolo senza posto" else "Articoli senza posto", "Assegna sulla mappa") { onStockFocus(StockFocus.UNLOCATED) }
         }
         if (conflicts > 0) item {
             TodayTask(conflicts, Danger, if (conflicts == 1) "Conflitto dalla squadra" else "Conflitti dalla squadra", "Rivedi cosa non è stato applicato", onClick = goTeam)
