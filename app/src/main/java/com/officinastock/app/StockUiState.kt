@@ -28,6 +28,8 @@ data class StockUiState(
     val loans: List<Loan> = emptyList(),
     val manager: ManagerSnapshot = ManagerSnapshot(),
     val demoCount: Int = 0,
+    /** 4.22: movements older than two years in this site, that can be deleted. */
+    val oldMovements: Int = 0,
     val createdItemId: Long? = null,
     /** 4.21: the article being created (kept through the screen lock until Salva or Annulla). */
     val newItem: NewItemDraft? = null,

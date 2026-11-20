@@ -484,6 +484,26 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             arrayOf(itemId.toString(),warehouseId.toString()))==1) { "Articolo non aggiornato" }
         newSku?.let { bumpSequence(writableDatabase,it) }
     }
+    /**
+     * 4.22: movements older than [before]. They are only history: the quantity lives on the article and
+     * the statistics look back 90 days at most. Movements still waiting to reach the central are kept.
+     */
+    private val oldMovementsWhere = """item_id IN (SELECT id FROM items WHERE warehouse_id=?) AND created_at<?
+        AND id NOT IN (SELECT ref_id FROM team_sync_outbox WHERE kind='MOVE')"""
+    fun oldMovements(warehouseId: Long, before: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM movements WHERE $oldMovementsWhere", arrayOf(warehouseId.toString(), before.toString())
+    ).use { it.moveToFirst(); it.getInt(0) }
+    fun deleteOldMovements(warehouseId: Long, before: Long): Int {
+        val db = writableDatabase
+        val args = arrayOf(warehouseId.toString(), before.toString())
+        db.beginTransaction()
+        try {
+            db.delete("movement_actors", "movement_id IN (SELECT id FROM movements WHERE $oldMovementsWhere)", args)
+            val n = db.delete("movements", oldMovementsWhere, args)
+            db.setTransactionSuccessful()
+            return n
+        } finally { db.endTransaction() }
+    }
     /** Aggregazione server-side SQLite: non carichiamo migliaia di singoli movimenti nel Compose tree. */
     fun dailyActivity(warehouseId: Long, since: Long): List<DailyActivity> = readableDatabase.rawQuery(
         """SELECT date(m.created_at/1000,'unixepoch','localtime') AS day,
