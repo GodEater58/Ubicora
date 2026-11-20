@@ -45,7 +45,8 @@ fun LegalInfoDialog(onDismiss: () -> Unit) {
     val links=LocalUriHandler.current
     var licenses by remember {mutableStateOf(false)}
     val licensesText=remember(context) {
-        runCatching {context.assets.open("legal/third_party_notices.txt").bufferedReader().use {it.readText()}+"\n\n--- Testo integrale Apache License 2.0 ---\n\n"+context.assets.open("legal/Apache-2.0.txt").bufferedReader().use {it.readText()} }
+        runCatching {context.assets.open("legal/third_party_notices.txt").bufferedReader().use {it.readText()}+"\n\n--- Testo integrale Apache License 2.0 ---\n\n"+context.assets.open("legal/Apache-2.0.txt").bufferedReader().use {it.readText()}+
+            "\n\n--- Testo integrale SIL Open Font License 1.1 (Space Grotesk) ---\n\n"+context.assets.open("legal/OFL-1.1.txt").bufferedReader().use {it.readText()} }
             .getOrElse {"Informazioni non disponibili: "+it.message}
     }
     AlertDialog(onDismissRequest=onDismiss,title={Text(if(licenses)"Licenze di terze parti" else "Privacy e informazioni")},text={

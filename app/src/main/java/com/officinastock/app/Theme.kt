@@ -6,12 +6,16 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 
 // 4.10: every colour follows UiPrefs.light (dark = original Ubicora look, light = bright workshop).
 private fun pick(dark: Long, light: Long) = Color(if (UiPrefs.light) light else dark)
 val Ink: Color get() = pick(0xFF07121F, 0xFFF2F6F5)
-val PanelBg: Color get() = pick(0xFF101E2D, 0xFFFFFFFF)
+val PanelBg: Color get() = pick(0xFF142231, 0xFFFFFFFF)
 val Surface2: Color get() = pick(0xFF17293B, 0xFFE3ECEA)
 val Mint: Color get() = pick(0xFF2DDEB3, 0xFF0B8A6D)
 val Sky: Color get() = pick(0xFF6DC8F1, 0xFF1774A8)
@@ -19,6 +23,13 @@ val TextPrimary: Color get() = pick(0xFFF0F7FF, 0xFF0C1B27)
 val TextSecondary: Color get() = pick(0xFF99ADBE, 0xFF4C6170)
 val Amber: Color get() = pick(0xFFFFC978, 0xFFA45F0A)
 val Danger: Color get() = pick(0xFFFF8387, 0xFFC4353C)
+/** 4.24 «Vetrina»: titles and big numbers in Space Grotesk; everything else stays in the system font. */
+val Display = FontFamily(Font(R.font.space_grotesk_bold, FontWeight.Bold))
+private fun TextStyle.display() = copy(fontFamily = Display, fontWeight = FontWeight.Bold)
+private val VetrinaType = Typography().let { t -> t.copy(
+    displayLarge = t.displayLarge.display(), displayMedium = t.displayMedium.display(), displaySmall = t.displaySmall.display(),
+    headlineLarge = t.headlineLarge.display(), headlineMedium = t.headlineMedium.display(), headlineSmall = t.headlineSmall.display(),
+    titleLarge = t.titleLarge.display()) }
 /** Thin borders and tracks: light on the dark theme, dark on the light one. */
 val Hairline: Color get() = if (UiPrefs.light) Color.Black else Color.White
 /** Text and icons drawn on a Mint background. */
@@ -59,6 +70,6 @@ val HeroBrush: Brush get() = if (UiPrefs.light)
     val base = LocalDensity.current
     val density = if (UiPrefs.glove) Density(base.density * 1.15f, (base.fontScale * 1.1f).coerceAtMost(2f)) else base
     CompositionLocalProvider(LocalDensity provides density) {
-        MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
+        MaterialTheme(colorScheme = scheme, typography = VetrinaType, content = content)
     }
 }

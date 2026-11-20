@@ -22,6 +22,11 @@ ZXing Android Embedded 4.3.0 (JourneyApps)
   Licenza: Apache License 2.0.
   https://github.com/journeyapps/zxing-android-embedded
 
+Space Grotesk (carattere dei titoli e dei numeri grandi, dalla 4.24)
+  Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk).
+  Licenza: SIL Open Font License 1.1 (testo integrale in fondo e in LICENSES/OFL-1.1.txt).
+  https://github.com/google/fonts/tree/main/ofl/spacegrotesk
+
 Kotlin Standard Library (libreria runtime Kotlin)
   Copyright: JetBrains e contributori.
   Licenza: Apache License 2.0.

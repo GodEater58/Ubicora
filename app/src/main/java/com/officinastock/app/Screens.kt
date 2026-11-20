@@ -30,7 +30,7 @@ fun amount(d:Double):String= if(d%1.0==0.0) d.toLong().toString() else String.fo
 fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format(Date(ts))
 
 @Composable fun Panel(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit) {
-    Surface(modifier=modifier,shape=RoundedCornerShape(22.dp),color=PanelBg,border=BorderStroke(1.dp,Hairline.copy(alpha=.06f))) {
+    Surface(modifier=modifier,shape=RoundedCornerShape(24.dp),color=PanelBg,border=BorderStroke(1.dp,Hairline.copy(alpha=.06f))) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
     }
 }
@@ -54,8 +54,8 @@ fun date(ts:Long):String=SimpleDateFormat("dd MMM · HH:mm",Locale.ITALY).format
 
 @Composable fun SectionTitle(title:String,subtitle:String="",modifier:Modifier=Modifier) {
     Column(modifier,verticalArrangement=Arrangement.spacedBy(3.dp)) {
-        Text(title,color=TextPrimary,fontSize=20.sp,fontWeight=FontWeight.Bold)
-        if(subtitle.isNotEmpty()) Text(subtitle,color=TextSecondary,fontSize=12.sp)
+        Text(title,color=TextPrimary,fontSize=26.sp,fontWeight=FontWeight.Bold,fontFamily=Display,lineHeight=28.sp)
+        if(subtitle.isNotEmpty()) Text(subtitle,color=TextSecondary,fontSize=13.sp)
     }
 }
 @Composable fun Input(value:String,onChange:(String)->Unit,label:String,modifier:Modifier=Modifier,number:Boolean=false,password:Boolean=false) {
