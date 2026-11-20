@@ -76,7 +76,7 @@ object TodayTasks {
                 // 4.17: the name of the site is the way to the other sites of the company.
                 Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Cambia sede") { pickSite = true }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(u.warehouse?.name ?: "Sede", fontFamily = Display, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text(u.warehouse?.name ?: "Sede", fontFamily = Display, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false))
                         Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.padding(start = 4.dp))
                     }
@@ -95,7 +95,6 @@ object TodayTasks {
                 TodayNumber(lent.toString(), "In prestito", if (lent > 0) Sky else TextSecondary, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
             }
         }
-        item { TodayLabel("DA FARE ADESSO") }
         // 4.24 «Vetrina»: what is finishing is shown with its photo, the first thing to look at.
         if (critical > 0) item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -111,6 +110,8 @@ object TodayTasks {
                 }
             }
         }
+        // With only articles finishing, the cards above already are the thing to do: no empty heading.
+        if (critical == 0 || overdue + unlocated + conflicts + cardEdits + managerPending > 0) item { TodayLabel("DA FARE ADESSO") }
         if (overdue > 0) item {
             TodayTask(overdue, Sky, if (overdue == 1) "Utensile fuori da più di $loanDays giorni" else "Utensili fuori da più di $loanDays giorni",
                 "Vedi chi li ha · tieni premuto per cambiare i giorni", onLong = { askLoanDays = true }) { onActivityFocus(ActivityFocus.LOANS, 0) }
