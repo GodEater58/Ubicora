@@ -21,7 +21,7 @@ checks={
     # 4.7.1: wall points go through PlanGeometry.wallPoint, which applies orthogonal mode unless a corner is hooked.
     'right-angle snapping': 'PlanGeometry.wallPoint' in ui and 'orthogonal(from,base)' in geom,
     'shape closing on corners': 'landed.closes' in ui and 'WallSnapKind.VERTEX' in geom,
-    'metric measurement labels': 'numberM(roomWidth)' in ui,
+    'metric measurement labels': 'numberM(roomWidth)' in ui or 'numberM(camera.shownWidth)' in ui,  # 4.23: on the rulers
     'independent physical geometry': 'data class PlanViewport' in geom and 'fun toWorld' in geom,
     'model preserves furniture orientation': 'rotation: Float = 0f' in model
 }
