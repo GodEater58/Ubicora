@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.22.0](CHANGELOG_4_22_0.md) | cancellazione dei movimenti con più di 2 anni, senza toccare le giacenze. |
 | [4.21.2](CHANGELOG_4_21_2.md) | password proposta forte per le nuove squadre; tempi massimi per i collegamenti al centrale; modifiche di scheda non valide rimandate indietro. |
 | [4.21.1](CHANGELOG_4_21_1.md) | l'articolo che stai creando resta salvato al passo in cui eri anche se lo schermo si blocca; accesso con impronta. |
 | [4.21.0 / Web 1.1.2](CHANGELOG_4_21_0.md) | ricerca anche per descrizione; manutentore con reparto che modifica le schede, validate dal centrale; fotocamera con il riquadro della foto della scheda; nuovo articolo in tre passi. |

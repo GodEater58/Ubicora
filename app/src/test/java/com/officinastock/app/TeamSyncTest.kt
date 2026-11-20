@@ -693,4 +693,22 @@ class TeamSyncTest {
             TeamSync(db).becomeCentral(site, proposed)
         } finally { db.close() }
     }
+
+    @Test fun oldMovementsLeaveTheHistoryButQuantitiesAndUnsentOnesStay() {
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        satellite.movement(vite.id, -3.0, "Prelievo")                        // not yet sent to the central
+        val old = System.currentTimeMillis() - 800 * 86_400_000L
+        satellite.writableDatabase.execSQL("UPDATE movements SET created_at=?", arrayOf(old))
+        satellite.writableDatabase.execSQL("INSERT INTO movements(item_id,delta,note,created_at) VALUES(?,?,?,?)", arrayOf(vite.id, 1.0, "Vecchio", old))
+        val before = System.currentTimeMillis() - 730 * 86_400_000L
+        val unsentBefore = TeamSync(satellite).status().pending
+        assertTrue(satellite.oldMovements(wh, before) >= 1)
+        assertTrue(satellite.deleteOldMovements(wh, before) >= 1)
+        assertEquals(0, satellite.oldMovements(wh, before))
+        assertEquals(7.0, qty(satellite, wh, "Vite M8"), 0.0)                // the quantity lives on the article
+        assertEquals(unsentBefore, TeamSync(satellite).status().pending)     // the unsent withdrawal still reaches the central
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)
+    }
 }

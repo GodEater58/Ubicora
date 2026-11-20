@@ -314,6 +314,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                     ManagerSnapshot(db.dailyActivity(it.id,now-90*day),db.usageSummary(it.id,now))
                 } ?: ManagerSnapshot(),
                 demoCount=warehouse?.let {db.demoAssetCount(it.id)} ?: 0,
+                oldMovements=warehouse?.let {db.oldMovements(it.id,oldMovementsBefore())} ?: 0,
                 createdItemId=if (error==null) pendingNewItem else null,
                 busy=true,message=error).copy(
                     orders=warehouse?.let {operations.orders(it.id,operationalRowLimit)} ?: emptyList(),
@@ -927,6 +928,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     // Map history is touched on the main thread only, before the work starts.
     private fun requireNoSync() = require(ui.team.role==TeamRole.NONE) { "Con la sincronizzazione attiva i dati dimostrativi non sono disponibili" }
     fun seedDemo() { if(!ui.busy) clearMapHistory(); execute { requireNoSync();db.seedDemo(requireWarehouse()) } }
+    /** 4.22: the history older than two years leaves the archive and the backups; quantities do not change. */
+    private fun oldMovementsBefore()=System.currentTimeMillis()-730*86_400_000L
+    fun deleteOldMovements() = execute { db.deleteOldMovements(requireWarehouse(),oldMovementsBefore()) }
     fun refreshDemo() { if(!ui.busy) clearMapHistory(); refreshDemoNow() }
     private fun refreshDemoNow() = execute {
         requireNoSync()

@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
     var editBudget by remember{mutableStateOf(false)}
     var budgetText by remember{mutableStateOf("")}
     var backupDialog by remember{mutableStateOf(false)}
+    var confirmOldMovements by remember{mutableStateOf(false)}
     var restoreDialog by remember{mutableStateOf(false)}
     var secret by remember{mutableStateOf("")}
     var secretConfirm by remember{mutableStateOf("")}
@@ -95,6 +96,11 @@ import kotlinx.coroutines.launch
             PrimaryAction("Esporta backup completo",onClick={secret="";secretConfirm="";archivePins=emptyMap();archiveError=null;backupDialog=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth())
             OutlinedButton(onClick={secret="";understood=false;archivePins=emptyMap();archiveError=null;restoreDialog=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {Text("Ripristina da backup")}
             Text("Conserva password e file al sicuro. Senza la password il backup non è recuperabile. Il ripristino sostituisce tutti i dati locali.",fontSize=11.sp,color=TextSecondary)
+        }}
+        if(model.ui.oldMovements>0) item {Panel(Modifier.fillMaxWidth()) {
+            Text("MOVIMENTI VECCHI",color=Mint,fontSize=11.sp,letterSpacing=1.sp)
+            Text("${model.ui.oldMovements} movimenti di questa sede hanno più di 2 anni. Cancellarli alleggerisce archivio e backup: le giacenze non cambiano.",fontSize=12.sp,color=TextSecondary)
+            OutlinedButton(onClick={confirmOldMovements=true},enabled=!model.ui.busy,modifier=Modifier.fillMaxWidth()) {Text("Cancella i movimenti con più di 2 anni")}
         }}
         if(model.ui.demoCount>0) {
             item {Panel(Modifier.fillMaxWidth()) {
@@ -169,6 +175,10 @@ import kotlinx.coroutines.launch
         Text("Rimuove soltanto articoli, strutture e pareti marcati come dimostrativi in questa sede. Gli articoli personali non verranno cancellati.")
     },confirmButton={TextButton(onClick={model.removeDemo();confirmDemoRemoval=false}){Text("Rimuovi demo",color=Danger)}},
         dismissButton={TextButton(onClick={confirmDemoRemoval=false}){Text("Annulla")}})
+    if(confirmOldMovements) AlertDialog(onDismissRequest={confirmOldMovements=false},title={Text("Cancella i movimenti vecchi")},
+        text={Text("Spariscono dalla cronologia ${model.ui.oldMovements} movimenti con più di 2 anni. Le giacenze restano uguali. Se ti servono, fai prima un backup completo.")},
+        confirmButton={TextButton(onClick={model.deleteOldMovements();confirmOldMovements=false}){Text("Cancella",color=Danger)}},
+        dismissButton={TextButton(onClick={confirmOldMovements=false}){Text("Annulla")}})
     if(backupDialog) AlertDialog(onDismissRequest={backupDialog=false},title={Text("Backup cifrato")},text={
         Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)) {
             Text("Scegli una password di almeno 8 caratteri e conservala: protegge tutto l'archivio, inclusi PIN e fotografie.",fontSize=12.sp,color=TextSecondary)
