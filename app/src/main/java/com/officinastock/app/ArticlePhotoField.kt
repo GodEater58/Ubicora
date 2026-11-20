@@ -147,12 +147,12 @@ fun ArticlePhotoField(
 }
 
 @Composable
-fun ArticleThumbnail(filename: String) {
+fun ArticleThumbnail(filename: String, modifier: Modifier = Modifier.size(46.dp), edge: Int = 140) {
     val context=LocalContext.current
-    val bitmap=produceState<android.graphics.Bitmap?>(initialValue=null,filename) {
-        value=withContext(Dispatchers.IO) { PhotoFiles.preview(context,null,filename,140) }
+    val bitmap=produceState<android.graphics.Bitmap?>(initialValue=null,filename,edge) {
+        value=withContext(Dispatchers.IO) { PhotoFiles.preview(context,null,filename,edge) }
     }.value
     if(bitmap!=null) Image(bitmap.asImageBitmap(),contentDescription="Foto articolo",
-        modifier=Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
-    else Icon(Icons.Outlined.Inventory2,null,tint=Mint,modifier=Modifier.size(46.dp))
+        modifier=modifier.clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
+    else Icon(Icons.Outlined.Inventory2,null,tint=Mint,modifier=modifier)
 }

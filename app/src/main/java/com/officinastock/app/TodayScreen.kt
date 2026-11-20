@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,7 +76,7 @@ object TodayTasks {
                 // 4.17: the name of the site is the way to the other sites of the company.
                 Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Cambia sede") { pickSite = true }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(u.warehouse?.name ?: "Sede", fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text(u.warehouse?.name ?: "Sede", fontFamily = Display, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false))
                         Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.padding(start = 4.dp))
                     }
@@ -94,8 +96,20 @@ object TodayTasks {
             }
         }
         item { TodayLabel("DA FARE ADESSO") }
+        // 4.24 «Vetrina»: what is finishing is shown with its photo, the first thing to look at.
         if (critical > 0) item {
-            TodayTask(critical, Amber, if (critical == 1) "Articolo sotto scorta" else "Articoli sotto scorta", "Apri la lista da ordinare") { onStockFocus(StockFocus.CRITICAL) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Stanno finendo", fontFamily = Display, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("  $critical", fontFamily = Display, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Amber, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onStockFocus(StockFocus.CRITICAL) }) { Text("Vedi tutti") }
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(u.items.filter { it.lowStock }.sortedBy { it.quantity / maxOf(it.minimum, 1.0) }.take(12), key = { it.id }) { item ->
+                        FinishingTile(item) { onItemFocus(item.id) }
+                    }
+                }
+            }
         }
         if (overdue > 0) item {
             TodayTask(overdue, Sky, if (overdue == 1) "Utensile fuori da più di $loanDays giorni" else "Utensili fuori da più di $loanDays giorni",
@@ -168,6 +182,26 @@ object TodayTasks {
     }
 }
 
+/** 4.24: an article that is finishing, as a card with its photo (the «Vetrina» of the Oggi screen). */
+@Composable private fun FinishingTile(item: StockItem, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(24.dp), color = PanelBg, modifier = Modifier.width(150.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val photo = Modifier.fillMaxWidth().height(96.dp)
+            if (item.photoFile != null) ArticleThumbnail(item.photoFile, photo, edge = 360)
+            else Box(photo.clip(RoundedCornerShape(16.dp)).background(Surface2), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = Amber)
+            }
+            Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp, modifier = Modifier.heightIn(min = 34.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(amount(item.quantity), fontFamily = Display, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Amber)
+                Text(" ${item.unit} · min ${amount(item.minimum)}", fontSize = 12.sp, color = TextSecondary, maxLines = 1,
+                    modifier = Modifier.padding(bottom = 3.dp))
+            }
+        }
+    }
+}
+
 @Composable private fun TodayLabel(text: String) {
     Text(text, color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 }
@@ -175,7 +209,7 @@ object TodayTasks {
 @Composable private fun TodayNumber(value: String, label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
     Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp), color = PanelBg) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, color = color, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(value, color = color, fontFamily = Display, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(label, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
