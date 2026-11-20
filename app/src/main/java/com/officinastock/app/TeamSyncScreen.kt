@@ -38,7 +38,6 @@ import java.util.Locale
     var editScope by remember { mutableStateOf<String?>(null) }
     var scopeChoice by remember { mutableStateOf(setOf<String>()) }
     var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
     var letter by remember { mutableStateOf("B") }
     var invitedTo by remember { mutableStateOf<String?>(null) }
     var viaCode by remember { mutableStateOf(false) }
@@ -89,7 +88,7 @@ import java.util.Locale
                 Text("Un telefono centrale tiene l'archivio; gli altri (satelliti) lavorano offline e si scambiano file cifrati " +
                     "con il centrale, via WhatsApp, email o USB. Le giacenze si uniscono sommando i movimenti.",
                     fontSize = 12.sp, color = TextSecondary)
-                PrimaryAction("Rendi questo il telefono centrale", onClick = { password = ""; confirm = ""; askCentral = true },
+                PrimaryAction("Rendi questo il telefono centrale", onClick = { password = TeamSync.newPassword(); askCentral = true },
                     enabled = !u.busy && u.warehouse != null, modifier = Modifier.fillMaxWidth())
                 OutlinedButton(onClick = { model.requestScan() }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Collega con il QR del centrale")
@@ -200,14 +199,13 @@ import java.util.Locale
 
     if (askCentral) AlertDialog(onDismissRequest = { askCentral = false }, title = { Text("Telefono centrale") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Il magazzino «${u.warehouse?.name}» diventa quello condiviso. Scegli la password della squadra: serve a cifrare i file e la useranno tutti i telefoni.",
-                fontSize = 13.sp)
-            Input(password, { password = it }, "Password della squadra (min. 8)", password = true)
-            Input(confirm, { confirm = it }, "Ripeti la password", password = true)
+            Text("Il magazzino «${u.warehouse?.name}» diventa quello condiviso. Questa è la password della squadra: cifra i file tra i telefoni. " +
+                "Annotala: serve per collegare un telefono con i file e dopo un ripristino. Con il QR non serve.", fontSize = 13.sp)
+            Input(password, { password = it.trim() }, "Password della squadra (min. ${TeamSync.NEW_PASSWORD_MIN})")
             Text("Consiglio: prima fai un backup completo.", fontSize = 11.sp, color = TextSecondary)
         }
-    }, confirmButton = { TextButton(onClick = { model.becomeTeamCentral(password); askCentral = false; password = ""; confirm = "" },
-        enabled = password.length >= 8 && password == confirm) { Text("Conferma") } },
+    }, confirmButton = { TextButton(onClick = { model.becomeTeamCentral(password); askCentral = false; password = "" },
+        enabled = password.length >= TeamSync.NEW_PASSWORD_MIN) { Text("Conferma") } },
         dismissButton = { TextButton(onClick = { askCentral = false }) { Text("Annulla") } })
 
     if (askJoin) AlertDialog(onDismissRequest = { askJoin = false }, title = { Text("Collega al centrale") }, text = {

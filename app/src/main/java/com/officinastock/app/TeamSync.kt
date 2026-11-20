@@ -36,6 +36,12 @@ class TeamSync(private val stock: StockDb) {
         /** A code with less time left than this is replaced, so the QR never shows one about to expire. */
         private const val INVITE_REUSE_MS = 3 * 60_000L
         private const val INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        const val NEW_PASSWORD_MIN = 12
+        /** 4.21.2: the password proposed to a new central: 16 random characters (80 bits), easy to copy by hand. */
+        fun newPassword(): String {
+            val random = java.security.SecureRandom()
+            return (1..4).joinToString("-") { (1..4).map { INVITE_ALPHABET[random.nextInt(INVITE_ALPHABET.length)] }.joinToString("") }
+        }
         private const val MAX_JSON = 64L * 1024 * 1024
         private const val MAX_EVENTS = 200_000
         private const val MAX_SITES = 10
@@ -253,7 +259,8 @@ class TeamSync(private val stock: StockDb) {
 
     /** This phone becomes the central one for [warehouseId]. */
     fun becomeCentral(warehouseId: Long, password: String) {
-        requirePassword(password)
+        // 4.21.2: a new team starts with a long password (the files travel by chat and email); old teams keep theirs.
+        require(password.length >= NEW_PASSWORD_MIN) { "La password di una nuova squadra deve avere almeno $NEW_PASSWORD_MIN caratteri" }
         require(setting("role") == null) { "Questo telefono è già collegato a una sincronizzazione" }
         requireNotNull(stock.readableDatabase.rawQuery("SELECT id FROM warehouses WHERE id=?", arrayOf(warehouseId.toString()))
             .use { if (it.moveToFirst()) it.getLong(0) else null }) { "Magazzino non trovato" }
@@ -501,12 +508,17 @@ class TeamSync(private val stock: StockDb) {
                 c.getString(6), if (c.isNull(7)) null else c.getDouble(7), c.getString(8), if (c.isNull(9)) null else c.getInt(9))
         }
     private fun plain(v: Any?): String = when (v) { null, JSONObject.NULL -> ""; is Number -> v.toDouble().toString(); else -> v.toString().trim() }
-    private fun shown(key: String, v: Any?): String = when {
-        v == null || v == JSONObject.NULL || plain(v).isEmpty() -> "—"
-        key == "minimum" -> amount((v as Number).toDouble())
-        key == "cost" -> "€ " + amount((v as Number).toDouble())
-        key == "lead" -> "${(v as Number).toInt()} giorni"
-        else -> v.toString()
+    private fun shown(key: String, v: Any?): String {
+        val text = plain(v)
+        if (text.isEmpty()) return "—"
+        // A number may arrive as text from another version: never let it break the screen.
+        val n = (v as? Number)?.toDouble() ?: text.toDoubleOrNull()
+        return when {
+            key !in setOf("minimum", "cost", "lead") || n == null -> v.toString()
+            key == "minimum" -> amount(n)
+            key == "cost" -> "€ " + amount(n)
+            else -> "${n.toInt()} giorni"
+        }
     }
 
     /**
@@ -599,6 +611,9 @@ class TeamSync(private val stock: StockDb) {
             !isMaintainer(scope.orEmpty()) -> "Il telefono $letter non è un manutentore"
             dept.isNotEmpty() && (category.orEmpty() !in dept || after.optString("category", category.orEmpty()) !in dept) ->
                 "Articolo fuori dal reparto del telefono $letter"
+            // The same checks as when it is approved: a card that could never be saved is sent back at once.
+            runCatching { articleValues(cardOf(sql, found.first)!!.second.apply { after.keys().forEach { put(it, after.get(it)) } }) }.isFailure ->
+                "Valori non validi nella modifica"
             else -> null
         }
         sql.insertOrThrow("team_edits", null, ContentValues().apply {

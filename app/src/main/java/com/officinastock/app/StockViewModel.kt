@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -608,14 +609,18 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         draftSave?.cancel()
         draftSave=viewModelScope.launch(Dispatchers.IO) { kotlinx.coroutines.delay(300); NewItemDrafts.save(context,draft) }
     }
+    /** Ends the saved draft after any save still running, so a late save cannot bring it back. */
+    private fun forgetDraft(warehouseId:Long) {
+        val pending=draftSave; val context=getApplication<Application>()
+        draftSave=viewModelScope.launch(Dispatchers.IO) { pending?.cancelAndJoin(); NewItemDrafts.clear(context,warehouseId) }
+    }
     /** "Annulla": the draft and its photo not yet saved are thrown away. */
     fun closeNewItem() {
         val d=ui.newItem ?: return
-        draftSave?.cancel()
         ui=ui.copy(newItem=null)
         val context=getApplication<Application>()
         d.photoUri?.let { PhotoFiles.removeCapturedTemp(context,Uri.parse(it)) }
-        NewItemDrafts.clear(context,d.warehouseId)
+        forgetDraft(d.warehouseId)
     }
     /** After the app was closed by Android: the unfinished article of this site comes back where it was. */
     fun restoreNewItem() {
@@ -639,9 +644,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val draft=ui.newItem
         // 4.21: "on the map" opens the location pick once the article exists; the draft ends only when saved.
         execute(onSuccess={
-            draftSave?.cancel()
             if(ui.newItem==draft) ui=ui.copy(newItem=null)
-            draft?.let { NewItemDrafts.clear(getApplication<Application>(),it.warehouseId) }
+            draft?.let { forgetDraft(it.warehouseId) }
             if(place.onMap) created?.let { startLocationPick(listOf(it)) }
         }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }

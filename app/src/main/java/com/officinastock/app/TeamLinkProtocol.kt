@@ -27,6 +27,12 @@ object TeamLinkProtocol {
     const val MAX_PEERS = 6
     /** A connection that sends nothing within this time is closed. */
     const val IDLE_MS = 60_000L
+    /**
+     * 4.21.2, central: a stranger nearby must not hold the [MAX_PEERS] places. A phone must start sending
+     * within [CENTRAL_IDLE_MS] and finish within [CENTRAL_RECEIVE_MS] (24 MB over Bluetooth fit in it).
+     */
+    const val CENTRAL_IDLE_MS = 20_000L
+    const val CENTRAL_RECEIVE_MS = 5 * 60_000L
     /** 4.13: how long a satellite looks for its central (by hand / automatically) before giving up. */
     const val SEARCH_MS = 90_000L
     const val AUTO_SEARCH_MS = 45_000L

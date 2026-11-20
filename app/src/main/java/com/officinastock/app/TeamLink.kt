@@ -172,14 +172,18 @@ class TeamLink(
             if (busy >= TeamLinkProtocol.MAX_PEERS) { client.rejectConnection(endpointId); return }
             peer(endpointId, PeerPhase.CONNECTING, "Collegamento…", info.endpointName.take(40))
             client.acceptConnection(endpointId, centralPayloads)
-            // A phone that connects and then sends nothing is closed after a while.
+            // A phone that sends nothing, or sends too slowly, gives its place back.
             val current = session
-            scope.launch {
-                delay(TeamLinkProtocol.IDLE_MS)
-                val p = ui.peers.firstOrNull { it.endpointId == endpointId }
-                if (current == session && p != null && p.phase == PeerPhase.CONNECTING) {
-                    client.disconnectFromEndpoint(endpointId); peer(endpointId, PeerPhase.ERROR, "Nessun dato ricevuto: collegamento chiuso")
+            fun closeIf(phase: PeerPhase, reason: String) {
+                if (current == session && ui.peers.firstOrNull { it.endpointId == endpointId }?.phase == phase) {
+                    client.disconnectFromEndpoint(endpointId); peer(endpointId, PeerPhase.ERROR, reason)
                 }
+            }
+            scope.launch {
+                delay(TeamLinkProtocol.CENTRAL_IDLE_MS)
+                closeIf(PeerPhase.CONNECTING, "Nessun dato ricevuto: collegamento chiuso")
+                delay(TeamLinkProtocol.CENTRAL_RECEIVE_MS - TeamLinkProtocol.CENTRAL_IDLE_MS)
+                closeIf(PeerPhase.RECEIVING, "Invio troppo lento: collegamento chiuso, il satellite può riprovare")
             }
         }
         override fun onConnectionResult(endpointId: String, resolution: ConnectionResolution) {
