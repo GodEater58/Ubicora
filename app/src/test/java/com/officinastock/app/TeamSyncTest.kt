@@ -664,4 +664,33 @@ class TeamSyncTest {
         central.updateItemDetails(warehouse, vite.id, vite.name, vite.category, vite.minimum, vite.unit, vite.note, null, "", null, sku = "RIC-999")
         assertEquals("RIC-999", central.item(vite.id)!!.sku)
     }
+
+    @Test fun aMalformedCardChangeIsSentBackAndDoesNotBreakTheCentralScreen() {
+        TeamSync(central).setScope("B", emptyList())
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, vite.name, "Ricambi", 5.0, "pz", "", null, "", null))
+        // As another version or a damaged file could send it: the minimum stock as text.
+        satellite.writableDatabase.execSQL("UPDATE team_edits SET changes=?",
+            arrayOf("""{"after":{"minimum":"tanti","note":"x"},"before":{"minimum":2}}"""))
+        assertEquals(0, TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite))).edits)
+        assertTrue(TeamSync(central).status().edits.isEmpty())              // nothing to validate, and no crash
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        val back = TeamSync(satellite).status().edits.single()
+        assertEquals("rejected", back.status)
+        assertEquals("tanti", back.fields.single { it.key == "minimum" }.after)
+    }
+
+    @Test fun aNewTeamGetsALongPasswordWhileOldTeamsKeepTheirs() {
+        val proposed = TeamSync.newPassword()
+        assertTrue(proposed, Regex("[A-Z2-9]{4}(-[A-Z2-9]{4}){3}").matches(proposed))
+        assertNotEquals(proposed, TeamSync.newPassword())
+        val c = RuntimeEnvironment.getApplication(); c.deleteDatabase("new_team.db")
+        val db = StockDb(c, "new_team.db")
+        try {
+            val site = db.createWarehouse(db.createProfile("Anna", "1234"), "Magazzino", "Adria")
+            refused { TeamSync(db).becomeCentral(site, "corta-123") }
+            TeamSync(db).becomeCentral(site, proposed)
+        } finally { db.close() }
+    }
 }
