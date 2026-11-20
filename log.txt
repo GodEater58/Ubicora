@@ -1,0 +1,12 @@
+items=42 placements=9 message=null
+ok oggi 784x1700 windows=1
+ok articoli 784x1700 windows=1
+ok scheda_articolo 784x1700 windows=2
+ok mappa 784x1700 windows=1
+ok mappa_dove 784x1700 windows=1
+ok scaffale 784x1700 windows=1
+team role=CENTRAL message=null
+ok squadra 784x1700 windows=1
+ok rete_centrale 784x1700 windows=2
+ok tema_chiaro 784x1700 windows=1
+ok articoli_chiaro 784x1700 windows=1

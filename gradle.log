@@ -1,0 +1,90 @@
+Downloading https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+.............10%.............20%.............30%.............40%.............50%.............60%.............70%.............80%.............90%.............100%
+
+Welcome to Gradle 8.11.1!
+
+Here are the highlights of this release:
+ - Parallel load and store for Configuration Cache
+ - Java compilation errors at the end of the build output
+ - Consolidated report for warnings and deprecations
+
+For more details see https://docs.gradle.org/8.11.1/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebug
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:processDebugManifestForPackage
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:processDebugResources
+> Task :app:packageDebugUnitTestForUnitTest
+> Task :app:generateDebugUnitTestConfig
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/ArticleRow.kt:143:40 'val Icons.Outlined.PlaylistAdd: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.PlaylistAdd.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/BurstScanScreen.kt:125:68 'val Icons.Outlined.VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.VolumeUp.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/BurstScanScreen.kt:125:97 'val Icons.Outlined.VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.VolumeOff.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/InventoryScreen.kt:107:54 'val Icons.Outlined.FactCheck: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.FactCheck.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/InventoryScreen.kt:110:58 'val Icons.Outlined.Sort: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Sort.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MainActivity.kt:36:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MainActivity.kt:39:21 'fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?): Unit' is deprecated. This method has been deprecated in favor of using the Activity Result API
+      which brings increased type safety via an {@link ActivityResultContract} and the prebuilt
+      contracts for common intents available in
+      {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for
+      testing, and allow receiving results in separate, testable classes independent from your
+      activity. Use
+      {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}
+      passing in a {@link StartActivityForResult} object for the {@link ActivityResultContract}.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MapScreen.kt:319:45 'val Icons.Outlined.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowBack.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MapScreen.kt:850:57 'val Icons.Outlined.Undo: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Undo.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MapScreen.kt:851:57 'val Icons.Outlined.Redo: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Redo.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MapScreen.kt:916:41 'val Icons.Outlined.Undo: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Undo.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/MapShelf.kt:67:123 'val Icons.Outlined.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowBack.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/OperationsScreen.kt:39:60 'val Icons.Outlined.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowBack.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/ProfileScreens.kt:147:45 'val Icons.Outlined.ArrowForwardIos: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowForwardIos.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/StockDb.kt:98:108 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/StockDb.kt:224:76 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/StockDb.kt:231:92 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/TeamSync.kt:1179:105 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/TeamSyncScreen.kt:117:45 'val Icons.Outlined.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Send.
+
+> Task :app:compileDebugJavaWithJavac
+Note: /home/runner/work/Ubicora/Ubicora/app/src/main/java/com/officinastock/app/ARScanActivity.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+
+> Task :app:compileDebugUnitTestKotlin
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/test/java/com/officinastock/app/OperationalAnalyticsTest.kt:33:13 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>?' & 'Serializable?']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/test/java/com/officinastock/app/OperationalAnalyticsTest.kt:69:17 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>?' & 'Serializable?']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/test/java/com/officinastock/app/OperationalAnalyticsTest.kt:86:17 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/test/java/com/officinastock/app/OperationsDbTest.kt:108:13 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+w: file:///home/runner/work/Ubicora/Ubicora/app/src/test/java/com/officinastock/app/TeamSyncTest.kt:703:116 Type argument for reified type parameter 'T' was inferred to the intersection of ['Comparable<*>' & 'Serializable']. Reification of an intersection type results in the common supertype being used. This may lead to subtle issues and an explicit type argument is encouraged. This will become an error in a future release.
+
+> Task :app:compileDebugUnitTestJavaWithJavac
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:testDebugUnitTest
+[Incubating] Problems report is available at: file:///home/runner/work/Ubicora/Ubicora/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 2m 15s
+29 actionable tasks: 29 executed
