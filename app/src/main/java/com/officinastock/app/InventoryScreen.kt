@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
     }
     var selected by remember{mutableStateOf<StockItem?>(null)}
     var labelItem by remember { mutableStateOf<StockItem?>(null) }
+    var justSaved by remember { mutableStateOf(false) }
     LaunchedEffect(u.scannedItemId,u.items) {
         u.scannedItemId?.let { id ->
             u.items.firstOrNull { it.id==id }?.let { match ->
@@ -63,6 +64,7 @@ import kotlinx.coroutines.launch
         u.createdItemId?.let { id ->
             u.items.firstOrNull { it.id == id }?.let { saved ->
                 labelItem=saved
+                justSaved=true
                 model.acknowledgeNewItem()
             }
         }
@@ -156,7 +158,8 @@ import kotlinx.coroutines.launch
         }
     }
     labelItem?.let { current ->
-        QrLabelDialog(current,onDismiss={labelItem=null})
+        QrLabelDialog(current,onDismiss={labelItem=null;justSaved=false},
+            onAnother=if(justSaved && !model.pickOnly) ({ labelItem=null;justSaved=false;model.openNewItem() }) else null)
     }
     menuItemId?.let { id ->
         val current=u.items.firstOrNull{it.id==id}
