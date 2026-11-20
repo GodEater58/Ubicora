@@ -165,7 +165,7 @@ object MapLabels {
      * wall. Boxes, not one bounding box: a diagonal wall must not block the whole rectangle around it.
      */
     fun wall(ax: Float, ay: Float, bx: Float, by: Float, half: Float): List<ScreenBox> {
-        val steps = maxOf(1, (kotlin.math.hypot(bx - ax, by - ay) / (half * 2f)).toInt())
+        val steps = maxOf(1, kotlin.math.ceil(kotlin.math.hypot(bx - ax, by - ay) / (half * 2f)).toInt())   // spacing ≤ box width: no gaps
         return (0..steps).map { i ->
             val x = ax + (bx - ax) * i / steps; val y = ay + (by - ay) * i / steps
             ScreenBox(x - half, y - half, x + half, y + half)

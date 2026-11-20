@@ -690,8 +690,9 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                     // A name with no free place is left out (it appears zooming in), except the ones that matter now.
                     val solid=state.placements.filter{it.kind!="Corridoio"}.mapNotNull{f->footprints[f.id]?.let{f.id to it}}
                     val wallPx=with(density){6.dp.toPx()}
-                    val wallBoxes=walls.flatMap { w -> val a=camera.toScreen(PointMetres(w.x1,w.y1)); val b=camera.toScreen(PointMetres(w.x2,w.y2))
-                        MapLabels.wall(a.x,a.y,b.x,b.y,wallPx) }
+                    val screen=ScreenBox(0f,0f,size.width,size.height)
+                    val wallBoxes=if(!showLabels) emptyList() else walls.flatMap { w -> val a=camera.toScreen(PointMetres(w.x1,w.y1)); val b=camera.toScreen(PointMetres(w.x2,w.y2))
+                        if(ScreenBox(minOf(a.x,b.x),minOf(a.y,b.y),maxOf(a.x,b.x),maxOf(a.y,b.y)).intersects(screen)) MapLabels.wall(a.x,a.y,b.x,b.y,wallPx).filter{it.intersects(screen)} else emptyList() }
                     val labelBoxes=mutableListOf<ScreenBox>()
                     val guideIds=setOfNotNull(guide.next?.id,walk?.from?.id)+guide.done
                     val badgeBoxes=mutableListOf<ScreenBox>()
@@ -703,6 +704,8 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                         val visited=guiding && f.id in guide.done
                         if(count==0 && !visited) continue
                         val fp=footprints[f.id] ?: continue
+                        // Off screen at rest: no badge squeezed onto the edge (the guide keeps its edge pointers).
+                        if(showLow && (fp.right<0f || fp.left>size.width || fp.bottom<0f || fp.top>size.height)) continue
                         val bubble=Offset(camera.insetCoordinate(fp.right,size.width,badgePx),camera.insetCoordinate(fp.top,size.height,badgePx))
                         drawCircle(if(visited) Mint else if(low>0)Amber else Mint,badgePx,bubble)
                         badgeBoxes.add(ScreenBox(bubble.x-badgePx,bubble.y-badgePx,bubble.x+badgePx,bubble.y+badgePx))
@@ -742,16 +745,18 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                     ?: if(important) MapLabels.place(fp,textW,textH,labelGapPx,emptyList(),size.width,size.height) ?: inside else null
                             // 4.23: the short code ("A" of "A · Ricambi") stays inside the block, so the name beside it is never mistaken.
                             val code=original.substringBefore(" · ",missingDelimiterValue="").trim()
-                            if(!fitsInside && code.length in 1..3 && !PlacementKinds.isPassage(f.kind) && fp.right-fp.left>codePx && fp.bottom-fp.top>codePx)
-                                drawIntoCanvas { cv ->
+                            val codeW=codePaint.measureText(code)
+                            if(!fitsInside && spot!=inside && square && code.length in 1..3 && !PlacementKinds.isPassage(f.kind) &&
+                                fp.right-fp.left>codeW+8f && fp.bottom-fp.top>codePx+4f) {
+                                // On a small block the finishing badge sits on the corner: the code moves down-left, out of its way.
+                                var cx=(fp.left+fp.right)/2f; var cy=(fp.top+fp.bottom)/2f
+                                fun box()=ScreenBox(cx-codeW/2f,cy-codePx/2f,cx+codeW/2f,cy+codePx/2f)
+                                if(badgeBoxes.any{it.intersects(box())}) { cx=maxOf(fp.left+codeW/2f+4f,cx-badgePx/2f); cy=minOf(fp.bottom-codePx/2f-2f,cy+badgePx/2f) }
+                                if(badgeBoxes.none{it.intersects(box())}) drawIntoCanvas { cv ->
                                     codePaint.color=if(dimming && f.id !in lit) android.graphics.Color.rgb(132,151,169) else android.graphics.Color.WHITE
-                                    // On a small block the finishing badge sits on the corner: the code moves down-left, out of its way.
-                                    var cx=(fp.left+fp.right)/2f; var cy=(fp.top+fp.bottom)/2f
-                                    if(badgeBoxes.any{it.intersects(ScreenBox(cx-codePx/2f,cy-codePx/2f,cx+codePx/2f,cy+codePx/2f))}) {
-                                        cx=maxOf(fp.left+codePx/2f,cx-badgePx/2f); cy=minOf(fp.bottom-codePx/2f,cy+badgePx/2f)
-                                    }
                                     cv.nativeCanvas.drawText(code,cx,cy-(codePaint.ascent()+codePaint.descent())/2f,codePaint)
                                 }
+                            }
                             if(spot==null) continue
                             labelBoxes.add(spot)
                             drawIntoCanvas { cv ->
@@ -818,10 +823,13 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                         drawCircle(Color(0xFF07121F),11f,Offset(a.x,a.y));drawCircle(Sky,8f,Offset(a.x,a.y))
                     }
                     drawIntoCanvas { cv ->
-                        cv.nativeCanvas.drawText(numberM(camera.shownWidth),topLeft.x+sizeFloor.width/2f,topLeft.y-14f,rulerPaint)
+                        // Zoomed in, the room size stays readable: the rulers are kept inside the screen.
+                        val rx=(topLeft.x+sizeFloor.width/2f).coerceIn(60f,maxOf(60f,size.width-60f)); val ry=(topLeft.y-14f).coerceIn(rulerPx+4f,size.height-4f)
+                        cv.nativeCanvas.drawText(numberM(camera.shownWidth),rx,ry,rulerPaint)
+                        val vx=(topLeft.x-15f).coerceIn(rulerPx+4f,size.width-4f); val vy=(topLeft.y+sizeFloor.height/2f).coerceIn(60f,maxOf(60f,size.height-60f))
                         cv.nativeCanvas.save()
-                        cv.nativeCanvas.rotate(-90f,topLeft.x-15f,topLeft.y+sizeFloor.height/2f)
-                        cv.nativeCanvas.drawText(numberM(camera.shownHeight),topLeft.x-15f,topLeft.y+sizeFloor.height/2f,rulerPaint)
+                        cv.nativeCanvas.rotate(-90f,vx,vy)
+                        cv.nativeCanvas.drawText(numberM(camera.shownHeight),vx,vy,rulerPaint)
                         cv.nativeCanvas.restore()
                     }
                     }

@@ -186,5 +186,7 @@ class MapFindTest {
         assertFalse(boxes.any { it.intersects(ScreenBox(40f, 10f, 60f, 30f)) })        // just beside it: free
         // A diagonal wall does not block the empty corner of its bounding box.
         assertFalse(MapLabels.wall(0f, 0f, 100f, 100f, 5f).any { it.intersects(ScreenBox(70f, 0f, 100f, 20f)) })
+        // A short wall is covered in the middle too, not only at its ends.
+        assertTrue(MapLabels.wall(0f, 0f, 19f, 0f, 5f).any { it.intersects(ScreenBox(9f, -1f, 10f, 1f)) })
     }
 }
