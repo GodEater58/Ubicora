@@ -734,9 +734,11 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             val others=solid.filter{it.first!=f.id}.map{it.second}+badgeBoxes+labelBoxes+wallBoxes
                             val fitsInside=square && !PlacementKinds.isPassage(f.kind) && fp.right-fp.left>textW+12f && fp.bottom-fp.top>textH+6f &&
                                 others.none{it.intersects(inside)}
-                            val taken=solid.map{it.second}+badgeBoxes+labelBoxes+wallBoxes
+                            val taken=solid.map{it.second}+badgeBoxes+labelBoxes
+                            // Walls are avoided when there is room; a name is never dropped only because of a wall.
                             val spot=if(fitsInside) inside
-                                else MapLabels.place(fp,textW,textH,labelGapPx,taken,size.width,size.height)
+                                else MapLabels.place(fp,textW,textH,labelGapPx,taken+wallBoxes,size.width,size.height)
+                                    ?: MapLabels.place(fp,textW,textH,labelGapPx,taken,size.width,size.height)
                                     ?: if(important) MapLabels.place(fp,textW,textH,labelGapPx,emptyList(),size.width,size.height) ?: inside else null
                             // 4.23: the short code ("A" of "A · Ricambi") stays inside the block, so the name beside it is never mistaken.
                             val code=original.substringBefore(" · ",missingDelimiterValue="").trim()
