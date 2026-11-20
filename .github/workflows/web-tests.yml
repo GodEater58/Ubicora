@@ -5,6 +5,8 @@ on:
     paths: ['web/**', 'server/web/**', '.github/workflows/web-tests.yml']
   pull_request:
     paths: ['web/**', 'server/web/**', '.github/workflows/web-tests.yml']
+permissions:
+  contents: read
 jobs:
   web-tests:
     runs-on: ubuntu-24.04

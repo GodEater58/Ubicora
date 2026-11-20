@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** In creazione mantiene una foto provvisoria. Su un articolo esistente la sostituzione va confermata. */
@@ -58,8 +59,14 @@ fun ArticlePhotoField(
         else if(uri!=null) PhotoFiles.removeCapturedTemp(context,Uri.parse(uri))
         newCaptureUri=null
     }
+    val scope=rememberCoroutineScope()
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if(uri!=null) stage(uri.toString())
+        // 4.21.2: copied into the app at once: the gallery's permission ends when Android closes the app.
+        if(uri!=null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) { PhotoFiles.copyToCapture(context,uri) } }
+                .onSuccess { stage(it.toString()) }
+                .onFailure { Toast.makeText(context,"Immagine non leggibile",Toast.LENGTH_LONG).show() }
+        }
     }
     // 4.21: the app's own camera, with the frame of the card photo; the phone's camera only as a fallback.
     var framedCamera by remember { mutableStateOf(false) }

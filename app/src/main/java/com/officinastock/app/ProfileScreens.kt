@@ -115,12 +115,13 @@ import androidx.lifecycle.withResumed
             OutlinedTextField(pin,onValueChange={pin=it.filter(Char::isDigit).take(8)},label={Text("PIN")},singleLine=true,
                 keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.NumberPassword,
                     imeAction=androidx.compose.ui.text.input.ImeAction.Done),
-                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onDone={ if(pin.isNotEmpty()) { model.unlock(p,pin);picked=null } }),
+                // 4.21.2: while another operation ends the PIN is kept: it used to be dropped without a word.
+                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onDone={ if(pin.isNotEmpty() && !model.ui.busy) { model.unlock(p,pin);picked=null } }),
                 visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 modifier=Modifier.fillMaxWidth().focusRequester(pinFocus))
           }
         },
-            confirmButton={TextButton(onClick={model.unlock(p,pin);picked=null},enabled=pin.isNotEmpty()){Text("Accedi")}},
+            confirmButton={TextButton(onClick={model.unlock(p,pin);picked=null},enabled=pin.isNotEmpty() && !model.ui.busy){Text("Accedi")}},
             dismissButton={TextButton(onClick={picked=null}){Text("Annulla")}})
     }
 }

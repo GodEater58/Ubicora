@@ -22,11 +22,26 @@ object PhotoFiles {
 
     fun captureUri(context: Context): Uri {
         // Rimuovi soltanto gli scatti temporanei abbandonati da oltre 24 ore.
+        // 4.21.2: la foto di una bozza "Nuovo articolo" non è abbandonata, anche se vecchia.
         val expiration=System.currentTimeMillis()-24*60*60*1000L
-        captures(context).listFiles()?.forEach { if(it.lastModified()<expiration) it.delete() }
+        val inDrafts=NewItemDrafts.photoUris(context).mapNotNull { Uri.parse(it).lastPathSegment?.substringAfterLast('/') }.toSet()
+        captures(context).listFiles()?.forEach { if(it.lastModified()<expiration && it.name !in inDrafts) it.delete() }
         val file=File(captures(context),"shot_${UUID.randomUUID()}.jpg")
         if(!file.createNewFile()) throw IOException("Impossibile creare il file della fotocamera")
         return FileProvider.getUriForFile(context,"${context.packageName}.fileprovider",file)
+    }
+
+    /**
+     * 4.21.2: a gallery photo copied into the app's own camera folder. The gallery grants access to
+     * its uri only while the app runs: the draft would lose the photo once Android closed the app.
+     */
+    fun copyToCapture(context: Context, source: Uri): Uri {
+        val (file, uri)=captureFile(context)
+        try {
+            val input=context.contentResolver.openInputStream(source) ?: throw IOException("Immagine non leggibile")
+            input.use { i -> file.outputStream().use { o -> i.copyTo(o) } }
+            return uri
+        } catch(e: Exception) { file.delete(); throw e }
     }
 
     /** 4.21: a new empty camera file with its shareable uri (same folder and naming as [captureUri]). */

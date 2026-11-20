@@ -12,6 +12,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.withLock
 
 /** Dati persistiti in SQLite, stato effimero in Compose, operazioni fuori dal thread grafico. */
 class StockViewModel(app: Application): AndroidViewModel(app) {
@@ -341,6 +343,8 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
                 )
         }
         ui=snapshot.copy(initialized=true,sessionLocked=ui.sessionLocked,mapFocusPlacementId=ui.mapFocusPlacementId,
+            // 4.21.2: the article being created survives unlocks, failed saves and automatic syncs.
+            newItem=ui.newItem?.takeIf{snapshot.warehouse?.id==it.warehouseId},
             // 4.10.2: a reload must not end burst picking or drop a pending scanner/QR request.
             burstMode=ui.burstMode && snapshot.warehouse?.id==ui.warehouse?.id,burstCount=ui.burstCount,burstQty=ui.burstQty,scanSignal=ui.scanSignal,
             pickList=if(snapshot.warehouse?.id==ui.warehouse?.id) ui.pickList.filter{l->snapshot.items.any{it.id==l.itemId}} else emptyList(),
@@ -571,7 +575,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun changePin(currentPin:String,newPin:String,onDone:()->Unit) {
         val p=ui.profile ?: return
         if(ui.sessionLocked) return
-        execute(onSuccess=onDone) { db.changePin(p.id,currentPin,newPin) }
+        execute(onSuccess=onDone) {
+            db.changePin(p.id,currentPin,newPin)
+            // 4.21.2: a PIN changed because someone knew it also turns the fingerprint off: on a shared
+            // phone other people's fingers may be enrolled. It is turned on again from the menu.
+            BiometricLogin.disable(getApplication(),p.id)
+            BiometricLogin.pinUsed(getApplication(),p.id)
+        }
     }
     /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
     val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
@@ -598,6 +608,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     // ---- 4.21: the article being created survives the screen lock and a closed app ----
     private var draftSave: kotlinx.coroutines.Job? = null
+    // 4.21.2: a save already writing when "Annulla"/"Salva" arrives used to bring the draft back.
+    private val draftLock = kotlinx.coroutines.sync.Mutex()
+    private fun clearDraft(warehouseId: Long) {
+        draftSave?.cancel()
+        val context=getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { draftLock.withLock { NewItemDrafts.clear(context,warehouseId) } }
+    }
     fun openNewItem() {
         val w=ui.warehouse ?: return
         ui=ui.copy(newItem=ui.newItem?.takeIf { it.warehouseId==w.id } ?: NewItemDraft(w.id))
@@ -606,16 +623,14 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         ui=ui.copy(newItem=draft)
         val context=getApplication<Application>()
         draftSave?.cancel()
-        draftSave=viewModelScope.launch(Dispatchers.IO) { kotlinx.coroutines.delay(300); NewItemDrafts.save(context,draft) }
+        draftSave=viewModelScope.launch(Dispatchers.IO) { kotlinx.coroutines.delay(300); draftLock.withLock { ensureActive(); NewItemDrafts.save(context,draft) } }
     }
     /** "Annulla": the draft and its photo not yet saved are thrown away. */
     fun closeNewItem() {
         val d=ui.newItem ?: return
-        draftSave?.cancel()
         ui=ui.copy(newItem=null)
-        val context=getApplication<Application>()
-        d.photoUri?.let { PhotoFiles.removeCapturedTemp(context,Uri.parse(it)) }
-        NewItemDrafts.clear(context,d.warehouseId)
+        d.photoUri?.let { PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it)) }
+        clearDraft(d.warehouseId)
     }
     /** After the app was closed by Android: the unfinished article of this site comes back where it was. */
     fun restoreNewItem() {
@@ -639,18 +654,21 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         val draft=ui.newItem
         // 4.21: "on the map" opens the location pick once the article exists; the draft ends only when saved.
         execute(onSuccess={
-            draftSave?.cancel()
             if(ui.newItem==draft) ui=ui.copy(newItem=null)
-            draft?.let { NewItemDrafts.clear(getApplication<Application>(),it.warehouseId) }
+            draft?.let { clearDraft(it.warehouseId) }
             if(place.onMap) created?.let { startLocationPick(listOf(it)) }
         }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
         try {
-            val id=db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+            // 4.21.2: article and location in one transaction. A location deleted meanwhile used to leave
+            // the article saved without its photo, and the retry created a duplicate.
+            val id=db.atomically {
+                db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
+                    .also { id -> place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) } }
+            }
             pendingNewItem = if(place.onMap) null else id
             created=id
-            place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) }
         } catch(t:Throwable) {
             PhotoFiles.delete(getApplication<Application>(),picture)
             throw t
@@ -970,7 +988,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         requireArchiveAuthorization()
         ui=ui.copy(busy=true)
         try {
-            withContext(Dispatchers.IO){BackupArchive(getApplication(),db).restore(uri,password)}
+            withContext(Dispatchers.IO){
+                BackupArchive(getApplication(),db).restore(uri,password)
+                // 4.21.2: fingerprints and drafts were made for the profiles and sites that were just replaced.
+                BiometricLogin.forgetAll(getApplication())
+                NewItemDrafts.clearAll(getApplication())
+            }
             clearMapHistory();pendingWalls.clear()
             val profiles=withContext(Dispatchers.IO){db.profiles()}
             pendingNewItem=null;pendingProfileId=null;pendingWarehouseId=null

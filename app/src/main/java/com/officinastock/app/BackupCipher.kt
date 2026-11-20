@@ -15,13 +15,17 @@ import javax.crypto.spec.SecretKeySpec
 
 /** AES-256-GCM a blocchi autenticati. Non bufferizza l'intero backup in RAM. */
 object BackupCipher {
-    private val signature="OSTOCKB2".toByteArray(Charsets.US_ASCII)
+    private val signatureB2="OSTOCKB2".toByteArray(Charsets.US_ASCII)
+    // 4.21.2: full backups use OWASP's 600,000 PBKDF2-HMAC-SHA256 rounds. Team sync files keep B2,
+    // so phones of the same team on different versions still read each other.
+    private val signatureB3="OSTOCKB3".toByteArray(Charsets.US_ASCII)
     private const val CHUNK=65536
-    private const val ROUNDS=220_000
+    private const val ROUNDS_B2=220_000
+    private const val ROUNDS_B3=600_000
     private const val TAG=16
-    private fun key(password: String, salt: ByteArray): SecretKeySpec {
+    private fun key(password: String, salt: ByteArray, rounds: Int): SecretKeySpec {
         require(password.length>=8) {"Password backup: almeno 8 caratteri"}
-        val spec=PBEKeySpec(password.toCharArray(),salt,ROUNDS,256)
+        val spec=PBEKeySpec(password.toCharArray(),salt,rounds,256)
         return try {
             val material=SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
             SecretKeySpec(material,"AES").also {material.fill(0)}
@@ -34,7 +38,7 @@ object BackupCipher {
         it[10]=(sequence ushr 8).toByte()
         it[11]=sequence.toByte()
     }
-    private fun cipher(mode:Int,key:SecretKeySpec,prefix:ByteArray,sequence:Int,length:Int):Cipher {
+    private fun cipher(mode:Int,key:SecretKeySpec,prefix:ByteArray,sequence:Int,length:Int,signature:ByteArray):Cipher {
         val result=Cipher.getInstance("AES/GCM/NoPadding")
         result.init(mode,key,GCMParameterSpec(128,nonce(prefix,sequence)))
         result.updateAAD(signature)
@@ -42,10 +46,12 @@ object BackupCipher {
         result.updateAAD(byteArrayOf((length ushr 24).toByte(),(length ushr 16).toByte(),(length ushr 8).toByte(),length.toByte()))
         return result
     }
-    fun encrypt(output:OutputStream,password:String):OutputStream {
+    /** [strong]: full backup (B3, 600,000 rounds); otherwise B2, the format every team phone reads. */
+    fun encrypt(output:OutputStream,password:String,strong:Boolean=false):OutputStream {
+        val signature=if(strong) signatureB3 else signatureB2
         val salt=ByteArray(16).also{SecureRandom().nextBytes(it)}
         val prefix=ByteArray(8).also{SecureRandom().nextBytes(it)}
-        val secret=key(password,salt)
+        val secret=key(password,salt,if(strong) ROUNDS_B3 else ROUNDS_B2)
         val wire=DataOutputStream(output)
         wire.write(signature);wire.write(salt);wire.write(prefix)
         return object:OutputStream() {
@@ -55,7 +61,7 @@ object BackupCipher {
             private var closed=false
             private fun frame(length:Int) {
                 if(sequence==Int.MAX_VALUE)throw IOException("Limite backup superato")
-                val block=cipher(Cipher.ENCRYPT_MODE,secret,prefix,sequence++,length).doFinal(buffer,0,length)
+                val block=cipher(Cipher.ENCRYPT_MODE,secret,prefix,sequence++,length,signature).doFinal(buffer,0,length)
                 wire.writeInt(length)
                 wire.write(block)
                 used=0
@@ -89,10 +95,14 @@ object BackupCipher {
     fun decrypt(input:InputStream,password:String):InputStream {
         val wire=DataInputStream(input)
         val header=ByteArray(8);wire.readFully(header)
-        require(header.contentEquals(signature)) {"Backup incompatibile o non riconosciuto"}
+        val rounds=when {
+            header.contentEquals(signatureB3) -> ROUNDS_B3
+            header.contentEquals(signatureB2) -> ROUNDS_B2
+            else -> throw IllegalArgumentException("Backup incompatibile o non riconosciuto")
+        }
         val salt=ByteArray(16);wire.readFully(salt)
         val prefix=ByteArray(8);wire.readFully(prefix)
-        val secret=key(password,salt)
+        val secret=key(password,salt,rounds)
         return object:InputStream() {
             private var buffer=ByteArray(0)
             private var pos=0
@@ -106,7 +116,7 @@ object BackupCipher {
                 val ciphertext=ByteArray(length+TAG)
                 wire.readFully(ciphertext)
                 try {
-                    buffer=cipher(Cipher.DECRYPT_MODE,secret,prefix,sequence++,length).doFinal(ciphertext)
+                    buffer=cipher(Cipher.DECRYPT_MODE,secret,prefix,sequence++,length,header).doFinal(ciphertext)
                 } catch(e:Exception){throw IOException("Password errata o backup danneggiato",e)}
                 pos=0
                 if(length==0) {

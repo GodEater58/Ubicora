@@ -16,6 +16,7 @@ import java.util.zip.ZipOutputStream
 /** Backup OFFLINE cifrato: SQLite logico + immagini. Mai usare CSV come backup. */
 class BackupArchive(private val context: Context, private val stockDb: StockDb) {
     companion object {
+        const val MIN_NEW_PASSWORD = 12
         private val legacyTables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets")
         private val operationsTables = listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events", "ops_settings")
         private val managerTables = legacyTables + operationsTables
@@ -45,7 +46,8 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         return bytes.size.toLong()+1
     }
     fun export(uri: Uri, password: String) {
-        require(password.length>=8) {"Password backup: almeno 8 caratteri"}
+        // 4.21.2: a copied backup can be attacked offline: new backups need 12 characters (old ones still open with 8).
+        require(password.length>=MIN_NEW_PASSWORD) {"Password backup: almeno $MIN_NEW_PASSWORD caratteri"}
         // Complete and validate the encrypted archive before touching an existing destination.
         val staged=File.createTempFile("ubicora_export_", ".osbackup", context.cacheDir)
         try {
@@ -57,7 +59,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
     }
     private fun writeEncrypted(dest: OutputStream, password: String) {
         val files=mutableSetOf<String>()
-        BackupCipher.encrypt(dest,password).use { sealed ->
+        BackupCipher.encrypt(dest,password,strong=true).use { sealed ->
                 ZipOutputStream(BufferedOutputStream(sealed)).use {zip ->
                     zip.putNextEntry(ZipEntry("manifest.json"))
                     // Format ID legacy: non cambiare per mantenere compatibilita con backup 4.1.2+.
