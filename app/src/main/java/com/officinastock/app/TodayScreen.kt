@@ -77,7 +77,7 @@ object TodayTasks {
                 // 4.17: the name of the site is the way to the other sites of the company.
                 Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Cambia sede") { pickSite = true }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(u.warehouse?.name ?: "Sede", fontFamily = Display, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text(u.warehouse?.name ?: "Sede", fontFamily = Display, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false))
                         Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.padding(start = 4.dp))
                     }

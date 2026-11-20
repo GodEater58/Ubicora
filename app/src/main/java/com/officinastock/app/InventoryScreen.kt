@@ -96,7 +96,7 @@ import kotlinx.coroutines.launch
             if(!model.pickOnly) FilledIconButton(onClick={model.openNewItem()},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
         }
         Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome, categoria o descrizione")},singleLine=true,
+            OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o descrizione",maxLines=1)},singleLine=true,
                 leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 // 4.10: scan → quantity → next article, until "Fine".
