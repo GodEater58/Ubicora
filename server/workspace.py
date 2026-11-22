@@ -18,6 +18,43 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_BYTES = 8 * 1024 * 1024
+# Prices and costs a VIEWER does not see.
+COST_FIELDS = {"items": ("cost",), "orders": ("price",), "works": ("rate", "partsCost")}
+
+
+def has_nul(value) -> bool:
+    """True when a NUL character hides in any key or string of a JSON value (jsonb refuses it)."""
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(has_nul(k) or has_nul(v) for k, v in value.items())
+    if isinstance(value, list):
+        return any(has_nul(v) for v in value)
+    return False
+
+
+def without_costs(data: dict) -> dict:
+    """A copy of the workspace with every price, cost and the budget removed."""
+    copy = {**data, "budget": None}
+    for table, fields in COST_FIELDS.items():
+        copy[table] = [{**row, **{f: None for f in fields}} for row in data.get(table, [])]
+    return copy
+
+
+def prepare(body: bytes):
+    """Parse, check and hash a PUT body. CPU-bound (up to 8 MB): called off the event loop."""
+    try:
+        command = Write.model_validate_json(body)
+    except Exception:
+        raise HTTPException(400, "Invalid workspace")
+    payload = command.data.model_dump(mode="json")
+    if has_nul(payload):
+        raise HTTPException(400, "Text must not contain NUL characters")
+    canonical = json.dumps({"expected_revision": command.expected_revision, "data": payload},
+                           sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return command, payload, hashlib.sha256(canonical.encode()).hexdigest()
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
@@ -231,8 +268,10 @@ def router(authorize, connect, role_for):
         with transaction(tenant, principal.subject) as (cur, role):
             cur.execute("SELECT revision,data FROM web_workspaces WHERE tenant_id=%s", (tenant,))
             row = cur.fetchone()
+            data = row["data"] if row else empty()
             return {"revision": row["revision"] if row else 0,
-                    "data": row["data"] if row else empty(), "can_write": role == "MANAGER"}
+                    "data": without_costs(data) if role == "VIEWER" else data,
+                    "can_write": role == "MANAGER"}
 
     @api.put("/workspace/{tenant}")
     async def write(tenant: uuid.UUID, request: Request, principal=Depends(authorize)):
@@ -244,16 +283,15 @@ def router(authorize, connect, role_for):
             data.extend(chunk)
             if len(data) > MAX_BYTES:
                 raise HTTPException(413, "Workspace too large")
-        try:
-            command = Write.model_validate_json(bytes(data))
-        except Exception:
-            raise HTTPException(400, "Invalid workspace")
-        payload = command.data.model_dump(mode="json")
-        canonical = json.dumps({"expected_revision": command.expected_revision, "data": payload},
-                               sort_keys=True, separators=(",", ":"), allow_nan=False)
-        digest = hashlib.sha256(canonical.encode()).hexdigest()
-        # Blocking psycopg work runs off the event loop.
+        # Who may write is checked before the costly parsing; both run off the event loop.
+        await run_in_threadpool(require_manager, tenant, principal.subject)
+        command, payload, digest = await run_in_threadpool(prepare, bytes(data))
         return await run_in_threadpool(store, tenant, principal.subject, command, payload, digest)
+
+    def require_manager(tenant, subject):
+        with transaction(tenant, subject) as (_cur, role):
+            if role != "MANAGER":
+                raise HTTPException(403, "Only authenticated managers may edit this workspace")
 
     def store(tenant, subject, command, payload, digest):
         with transaction(tenant, subject) as (cur, role):

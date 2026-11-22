@@ -16,7 +16,8 @@ assert 'androidx.core.content.FileProvider' in manifest
 assert '<cache-path name="camera_capture" path="article_camera/" />' in (root/'app/src/main/res/xml/photo_paths.xml').read_text(encoding='utf-8')
 assert 'onApply?.invoke(pending)' in ui
 assert 'if(ok && uri!=null) stage(uri)' in ui
-assert 'if(uri!=null) stage(uri.toString())' in ui
+# 4.26.1: a gallery photo is copied into the app first (the gallery's permission ends with the app).
+assert 'PhotoFiles.copyToCapture(context,uri)' in ui and 'stage(it.toString())' in ui
 assert 'Elimina foto' in ui and 'Rifai foto' in ui
 assert 'filesDir' in photo and 'article_photos' in photo
 assert 'private val storedName' in photo

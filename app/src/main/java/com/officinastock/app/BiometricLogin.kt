@@ -60,6 +60,16 @@ object BiometricLogin {
         runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(alias(profileId)) }
     }
 
+    /**
+     * 4.21.2: after a backup is restored the profile ids belong to another archive: every fingerprint
+     * and every "PIN typed recently" date of this phone is dropped, so nobody enters a profile without its PIN.
+     */
+    fun forgetAll(context: Context) {
+        val ids = prefs(context).all.keys.mapNotNull { k -> k.removePrefix("pin_at_").removePrefix("p").toLongOrNull() }.toSet()
+        prefs(context).edit().clear().commit()
+        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.let { ks -> ids.forEach { ks.deleteEntry(alias(it)) } } }
+    }
+
     private fun newKey(profileId: Long): SecretKey {
         val spec = KeyGenParameterSpec.Builder(alias(profileId), KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -95,9 +105,15 @@ object BiometricLogin {
                 init(Cipher.DECRYPT_MODE, requireNotNull(key(profileId)), GCMParameterSpec(128, dec.decode(stored[0])))
             }
         }.getOrElse { e ->
-            disable(activity, profileId)
-            usePin(if (e is KeyPermanentlyInvalidatedException) "Le impronte del telefono sono cambiate: accedi con il PIN e riattiva l'impronta"
-                else "Impronta non più disponibile: accedi con il PIN")
+            // 4.21.2: only a key that can never work again is deleted (new fingerprint enrolled, key
+            // or sealed data missing). A passing Keystore error must not turn the fingerprint off.
+            val gone = e is KeyPermanentlyInvalidatedException || e is IllegalArgumentException
+            if (gone) disable(activity, profileId)
+            usePin(when {
+                e is KeyPermanentlyInvalidatedException -> "Le impronte del telefono sono cambiate: accedi con il PIN e riattiva l'impronta"
+                gone -> "Impronta non più disponibile: accedi con il PIN"
+                else -> "Impronta momentaneamente non disponibile: accedi con il PIN"
+            })
             return
         }
         prompt(activity, cipher, "Accedi a $profileName", "Appoggia il dito sul sensore", "Usa il PIN", { c ->

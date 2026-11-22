@@ -289,25 +289,35 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
     fun profiles(): List<Profile> = readableDatabase.rawQuery("SELECT id,name FROM profiles ORDER BY created_at,id", null).use { c ->
         buildList { while(c.moveToNext()) add(Profile(c.getLong(0),c.getString(1))) }
     }
-    fun authenticate(profileId: Long, pin: String): Boolean {
-        val attempts=appContext.getSharedPreferences("login_attempts",Context.MODE_PRIVATE)
-        val key="profile_$profileId"
-        val now=System.currentTimeMillis()
-        val retry=attempts.getLong("${key}_retry",0L)
-        require(!PinThrottle.isLocked(retry,now)) { PinThrottle.message(retry,now) }
+    fun authenticate(profileId: Long, pin: String): Boolean = throttled("profile_$profileId") {
         readableDatabase.rawQuery("SELECT salt,verifier FROM profiles WHERE id=?", arrayOf(profileId.toString())).use { c ->
-            if(!c.moveToFirst()) return false
+            if(!c.moveToFirst()) return@throttled null
             val current = proof(pin,Base64.getDecoder().decode(c.getString(0)))
-            val valid=java.security.MessageDigest.isEqual(current.toByteArray(),c.getString(1).toByteArray())
-            val failures=if(valid)0 else attempts.getInt(key,0)+1
-            val locked=failures>=PinThrottle.MAX_FAILURES
-            // Consecutive lockouts escalate the wait; a correct PIN resets the escalation.
-            val lockouts=if(valid)0 else attempts.getInt("${key}_locks",0)+(if(locked)1 else 0)
-            attempts.edit().putInt(key,if(locked)0 else failures)
-                .putInt("${key}_locks",lockouts)
-                .putLong("${key}_retry",if(locked)now+PinThrottle.lockMillis(lockouts) else 0L).commit()
-            return valid
+            java.security.MessageDigest.isEqual(current.toByteArray(),c.getString(1).toByteArray())
         }
+    }
+    /**
+     * Escalating lockout ([PinThrottle]) around a secret check: 5 wrong answers lock [key] for 1, 2, 4… 60
+     * minutes on the monotonic clock. [check] gives true/false, or null when there was nothing to check
+     * (not counted). 4.21.2: shared by the PIN and by the team password tried by nearby phones.
+     */
+    @Synchronized fun throttled(key: String, check: () -> Boolean?): Boolean {
+        val attempts=appContext.getSharedPreferences("login_attempts",Context.MODE_PRIVATE)
+        val now=android.os.SystemClock.elapsedRealtime()
+        val boot=android.provider.Settings.Global.getInt(appContext.contentResolver,android.provider.Settings.Global.BOOT_COUNT,-1)
+        val wait=PinThrottle.remaining(attempts.getLong("${key}_retry",0L),attempts.getLong("${key}_len",0L),attempts.getInt("${key}_boot",-1),now,boot)
+        require(wait==0L) { PinThrottle.message(wait) }
+        val valid=check() ?: return false
+        val failures=if(valid)0 else attempts.getInt(key,0)+1
+        val locked=failures>=PinThrottle.MAX_FAILURES
+        // Consecutive lockouts escalate the wait; a correct answer resets the escalation.
+        val lockouts=if(valid)0 else attempts.getInt("${key}_locks",0)+(if(locked)1 else 0)
+        val length=if(locked)PinThrottle.lockMillis(lockouts) else 0L
+        attempts.edit().putInt(key,if(locked)0 else failures)
+            .putInt("${key}_locks",lockouts)
+            .putLong("${key}_retry",if(locked)now+length else 0L)
+            .putLong("${key}_len",length).putInt("${key}_boot",boot).commit()
+        return valid
     }
     /** 4.14: new PIN for [profileId]; the current one is checked with the same attempt limits as the login. */
     fun changePin(profileId: Long, currentPin: String, newPin: String) {

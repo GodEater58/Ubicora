@@ -73,9 +73,37 @@ def test_missing_configuration_fails_closed(auth,monkeypatch):
 def test_jwks_outage_is_controlled_and_does_not_disclose_details(auth,monkeypatch):
     class Offline:
         def get_signing_key_from_jwt(self,token):
-            raise jwt.PyJWKClientError("private internal identity endpoint")
+            raise jwt.PyJWKClientConnectionError("private internal identity endpoint")
     monkeypatch.setattr(service,"jwks_client",lambda:Offline())
     with TestClient(service.app) as client:
         result=client.get("/v1/health",headers={"Authorization":"Bearer "+auth()})
         assert result.status_code==503
         assert "private internal" not in result.text
+
+
+def test_unknown_key_id_is_401_and_does_not_refetch_the_jwks(auth,monkeypatch):
+    calls=[]
+    class NoMatch:
+        def get_signing_key_from_jwt(self,token):
+            calls.append(token)
+            raise jwt.PyJWKClientError('Unable to find a signing key that matches: "forged"')
+    monkeypatch.setattr(service,"jwks_client",lambda:NoMatch())
+    service._unknown_kids.clear()
+    forged=rsa.generate_private_key(public_exponent=65537,key_size=2048)
+    token=jwt.encode({"sub":"x"},forged,algorithm="RS256",headers={"kid":"forged"})
+    with TestClient(service.app) as client:
+        for _ in range(3):
+            assert client.get("/v1/health",headers={"Authorization":"Bearer "+token}).status_code==401
+    assert len(calls)==1   # the same unknown key id is not looked up again for a while
+    service._unknown_kids.clear()
+
+
+def test_malformed_jwks_is_an_outage_not_a_bad_token(auth,monkeypatch):
+    class Broken:
+        def get_signing_key_from_jwt(self,token):
+            raise jwt.PyJWKClientError("The JWKS endpoint did not contain any signing keys")
+    monkeypatch.setattr(service,"jwks_client",lambda:Broken())
+    service._unknown_kids.clear()
+    with TestClient(service.app) as client:
+        assert client.get("/v1/health",headers={"Authorization":"Bearer "+auth()}).status_code==503
+    assert not service._unknown_kids

@@ -65,7 +65,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
     }
     private fun writeEncrypted(dest: OutputStream, password: String) {
         val files=mutableSetOf<String>()
-        BackupCipher.encrypt(dest,password).use { sealed ->
+        BackupCipher.encrypt(dest,password,strong=true).use { sealed ->
                 ZipOutputStream(BufferedOutputStream(sealed)).use {zip ->
                     zip.putNextEntry(ZipEntry("manifest.json"))
                     // Format ID legacy: non cambiare per mantenere compatibilita con backup 4.1.2+.
