@@ -3,6 +3,8 @@ package com.officinastock.app
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -272,6 +274,7 @@ private fun EditItemDetailsDialog(
     var action by remember(item.id) {mutableStateOf("prelievo")}
     var quantity by remember(item.id){mutableStateOf("1")}
     var note by remember(item.id){mutableStateOf("")}
+    var showNote by remember(item.id){mutableStateOf(false)}
     var borrower by remember(item.id){mutableStateOf("")}
     var pickingLocation by remember { mutableStateOf(false) }
     var showQrLabel by remember(item.id) { mutableStateOf(false) }
@@ -294,36 +297,43 @@ private fun EditItemDetailsDialog(
                 fontFamily=Display,fontSize=18.sp,fontWeight=FontWeight.Bold)
         }
     }) {
-            // 4.19.3: quantity, place and the movement first; photo and the card details below.
-            // 4.21.1: the description at the top, under the name, where it cannot be missed.
-            if(item.note.isNotBlank()) Surface(color=PanelBg,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal=12.dp,vertical=8.dp)) {
-                    Text("DESCRIZIONE",color=Mint,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
-                    Text(item.note,fontSize=14.sp,color=TextPrimary)
+            // 4.26: photo and quantity first (they confirm it is the right piece), then the place, then the movement;
+            // the description moves under the movement: who opens the card mostly wants to pick.
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                if(item.photoFile!=null) ArticleThumbnail(item.photoFile,Modifier.size(72.dp),edge=220)
+                Row(verticalAlignment=Alignment.Bottom) {
+                    Text(amount(item.quantity),fontFamily=Display,fontWeight=FontWeight.Bold,fontSize=48.sp,lineHeight=48.sp,
+                        color=if(item.lowStock) Amber else Mint)
+                    Text("  ${item.unit} disponibili",fontSize=16.sp,color=TextSecondary,modifier=Modifier.padding(bottom=6.dp))
                 }
-            }
-            Row(verticalAlignment=Alignment.Bottom) {
-                Text(amount(item.quantity),fontFamily=Display,fontWeight=FontWeight.Bold,fontSize=48.sp,lineHeight=48.sp,color=Mint)
-                Text("  ${item.unit} disponibili",fontSize=16.sp,color=TextSecondary,modifier=Modifier.padding(bottom=6.dp))
             }
             val location=placements.firstOrNull{it.id==item.placementId}
-            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
-                OutlinedButton(onClick={pickingLocation=true},modifier=Modifier.weight(1f)) {
-                    Text("Ubicazione: ${Locations.describe(location,item)}",maxLines=2,overflow=TextOverflow.Ellipsis)
-                }
-                if(location!=null) FilledTonalIconButton(onClick={model.showItemOnMap(item.id);onDismiss()}) {
-                    Icon(Icons.Outlined.Map,contentDescription="Mostra in pianta")
+            // 4.26: the place in one row: tap the text to change it, «Mappa» to see it on the plan.
+            Surface(color=PanelBg,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()) {
+                Row(Modifier.heightIn(min=52.dp).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel="Cambia ubicazione",role=Role.Button){pickingLocation=true}
+                        .heightIn(min=48.dp).padding(horizontal=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Place,contentDescription=null,tint=if(location==null) Amber else Sky,modifier=Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(Locations.describe(location,item),color=if(location==null) Amber else TextPrimary,fontWeight=FontWeight.SemiBold,
+                            maxLines=2,overflow=TextOverflow.Ellipsis)
+                    }
+                    if(location!=null) TextButton(onClick={model.showItemOnMap(item.id);onDismiss()},modifier=Modifier.heightIn(min=48.dp)) {
+                        Icon(Icons.Outlined.Map,contentDescription=null,modifier=Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text("Mappa")
+                    }
                 }
             }
-            // 4.24 «Vetrina»: the three everyday actions as big buttons; the stock correction is a quieter link.
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            // 4.24 «Vetrina»: the three everyday actions; 4.26: a light selector (outline), so the only filled
+            // button is the one at the bottom that records the movement.
+            Row(Modifier.selectableGroup(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 listOf("prelievo" to "Preleva","carico" to "Carica","prestito" to "Presta").forEach { (key,label) ->
                     val on=action==key
-                    Surface(onClick={action=key},modifier=Modifier.weight(1f).height(64.dp)
-                        .semantics { selected=on; role=Role.RadioButton },shape=RoundedCornerShape(20.dp),
-                        color=if(on) Mint else PanelBg) {
+                    // selectable + selectableGroup: TalkBack reads «Preleva, selezionato, 1 di 3».
+                    Surface(modifier=Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(18.dp))
+                        .selectable(selected=on,role=Role.RadioButton,onClick={action=key}),shape=RoundedCornerShape(18.dp),
+                        color=if(on) Mint.copy(alpha=.14f) else PanelBg,border=if(on) BorderStroke(2.dp,Mint) else null) {
                         Box(contentAlignment=Alignment.Center) {
-                            Text(label,fontFamily=Display,fontWeight=FontWeight.Bold,fontSize=17.sp,color=if(on) OnMint else TextPrimary)
+                            Text(label,fontFamily=Display,fontWeight=FontWeight.Bold,fontSize=17.sp,color=if(on) Mint else TextPrimary)
                         }
                     }
                 }
@@ -341,7 +351,18 @@ private fun EditItemDetailsDialog(
                 FilledTonalIconButton(onClick={step(1)},modifier=Modifier.size(56.dp)) { Icon(Icons.Outlined.Add,contentDescription="Uno in più") }
             }
             if(action=="prestito") Input(borrower,{borrower=it},"Assegnato a")
-            else Input(note,{note=it},"Motivo / riferimento")
+            // 4.26: the reason is optional for a pick or a load, so it stays folded; a correction needs it.
+            else if(action=="rettifica" || showNote || note.isNotBlank()) Input(note,{note=it},if(action=="rettifica") "Motivo della rettifica" else "Motivo / riferimento")
+            else TextButton(onClick={showNote=true},modifier=Modifier.heightIn(min=48.dp)) {
+                Icon(Icons.Outlined.Add,contentDescription=null,modifier=Modifier.size(18.dp),tint=TextSecondary)
+                Spacer(Modifier.width(6.dp));Text("Aggiungi un motivo",color=TextSecondary)
+            }
+            if(item.note.isNotBlank()) Surface(color=PanelBg,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal=12.dp,vertical=8.dp)) {
+                    Text("DESCRIZIONE",color=Mint,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                    Text(item.note,fontSize=14.sp,color=TextPrimary)
+                }
+            }
             HorizontalDivider(Modifier.padding(vertical=6.dp))
             ArticlePhotoField(savedPhoto=item.photoFile,selectedUri=null,
                 onSelected={ },onApply={uri->model.replaceItemPhoto(item.id,uri)},

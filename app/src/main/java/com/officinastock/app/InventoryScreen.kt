@@ -84,20 +84,15 @@ import kotlinx.coroutines.launch
         matches && item.matchesSearch(query)
     },sort,lastMoved).sortedByDescending { UiPrefs.isFavorite(it.warehouseId,it.id) } }   // 4.10: favourites first, order kept
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {SectionTitle("Articoli","${u.items.size} ${if(u.items.size==1) "articolo" else "articoli"}")}
-            // 4.15: the scanner is the middle button of the bottom bar, always in the same place.
-            // 4.19.2: a pick-only phone cannot create articles: no form that would be refused at the end.
-            // 4.19.3: the compact view is a button always in sight, not a chip at the end of the row.
-            IconButton(onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)}) {
-                Icon(if(UiPrefs.compactList) Icons.Outlined.ViewAgenda else Icons.Outlined.ViewHeadline,
-                    if(UiPrefs.compactList) "Vista con foto" else "Vista compatta",tint=TextSecondary)
+        // 4.26: the title is in StockSections above; here search with «+» beside it, then the tools and filters,
+        // then a thin bar with order and view right above the list they change.
+        Column(Modifier.padding(start=18.dp,end=18.dp,top=14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca articolo",maxLines=1)},placeholder={Text("Nome, codice o descrizione",maxLines=1)},singleLine=true,
+                    leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.weight(1f))
+                // 4.19.2: a pick-only phone cannot create articles: no form that would be refused at the end.
+                if(!model.pickOnly) FilledIconButton(onClick={model.openNewItem()},enabled=!u.busy,modifier=Modifier.size(56.dp)) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
             }
-            if(!model.pickOnly) FilledIconButton(onClick={model.openNewItem()},enabled=!u.busy) {Icon(Icons.Outlined.Add,"Nuovo articolo")}
-        }
-        Column(Modifier.padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query,onValueChange={query=it},label={Text("Cerca codice, nome o descrizione",maxLines=1)},singleLine=true,
-                leadingIcon={Icon(Icons.Outlined.Search,null)},modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 // 4.10: scan → quantity → next article, until "Fine".
                 AssistChip(onClick=model::startBurst,enabled=!u.busy,label={Text("Prelievo a raffica")},
@@ -105,16 +100,6 @@ import kotlinx.coroutines.launch
                 // 4.15: sweep a structure and see what is missing or misplaced.
                 AssistChip(onClick={model.startShelfCheck()},enabled=!u.busy,label={Text("Verifica scaffale")},
                     leadingIcon={Icon(Icons.Outlined.FactCheck,contentDescription=null,modifier=Modifier.size(18.dp))})
-                Box {
-                    AssistChip(onClick={sortMenu=true},label={Text(sort.label)},
-                        leadingIcon={Icon(Icons.Outlined.Sort,contentDescription="Ordina",modifier=Modifier.size(18.dp))})
-                    DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}) {
-                        StockSort.entries.forEach { option ->
-                            DropdownMenuItem(text={Text(option.label,fontWeight=if(option==sort) FontWeight.Bold else FontWeight.Normal)},
-                                onClick={sort=option;sortMenu=false})
-                        }
-                    }
-                }
                 listOf(
                     StockFocus.ALL to "Tutti",StockFocus.FAVORITES to "★ Preferiti",StockFocus.CRITICAL to "Da riordinare",
                     StockFocus.EMPTY to "Esauriti",StockFocus.PRICED to "Con costo",
@@ -124,8 +109,28 @@ import kotlinx.coroutines.launch
                     FilterChip(selected=activeFocus==option,onClick={activeFocus=option},label={Text(label)})
                 }
             }
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Box {
+                    TextButton(onClick={sortMenu=true}) {
+                        Icon(Icons.Outlined.Sort,contentDescription=null,modifier=Modifier.size(18.dp),tint=TextSecondary)
+                        Spacer(Modifier.width(6.dp));Text("Ordina: ${sort.label}",color=TextSecondary)
+                    }
+                    DropdownMenu(expanded=sortMenu,onDismissRequest={sortMenu=false}) {
+                        StockSort.entries.forEach { option ->
+                            DropdownMenuItem(text={Text(option.label,fontWeight=if(option==sort) FontWeight.Bold else FontWeight.Normal)},
+                                onClick={sort=option;sortMenu=false})
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                // 4.19.3: the compact view is a button always in sight, not a chip at the end of the row.
+                IconButton(onClick={UiPrefs.updateCompactList(!UiPrefs.compactList)}) {
+                    Icon(if(UiPrefs.compactList) Icons.Outlined.ViewAgenda else Icons.Outlined.ViewHeadline,
+                        if(UiPrefs.compactList) "Vista con foto" else "Vista compatta",tint=TextSecondary)
+                }
+            }
         }
-        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=12.dp,end=18.dp,bottom=18.dp),verticalArrangement=Arrangement.spacedBy(if(UiPrefs.compactList) 6.dp else 10.dp)) {
+        LazyColumn(contentPadding=PaddingValues(start=18.dp,top=4.dp,end=18.dp,bottom=18.dp),verticalArrangement=Arrangement.spacedBy(if(UiPrefs.compactList) 6.dp else 10.dp)) {
             // 4.19.3: the hint stays until it is closed once.
             if(!UiPrefs.swipeHintSeen) item {
                 Row(verticalAlignment=Alignment.CenterVertically) {
@@ -135,7 +140,7 @@ import kotlinx.coroutines.launch
             }
             items(filtered,key={it.id}) { entry ->
                 // 4.15: swipe, long press and compact rows live in ArticleRow.
-                ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,
+                ArticleRow(entry,entry.placementId?.let { placementById[it] },model,UiPrefs.compactList,query=query,
                     onOpen={selected=entry},onMenu={menuItemId=entry.id},onQuantity={load->quantityFor=entry.id to load})
             }
             if(filtered.isEmpty()) item {Panel(Modifier.fillMaxWidth()){Text(if(u.siteHits.isEmpty()) "Nessun articolo corrispondente." else "In questa sede non c'è.",color=TextSecondary)}}

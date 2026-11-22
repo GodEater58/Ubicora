@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.25.0-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.26.0-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
@@ -30,12 +30,13 @@
   <img src="docs/img/articoli_chiaro.png" width="19%" alt="Articoli, tema chiaro"/>
 </p>
 
-> Schermate della 4.20.2 con il magazzino dimostrativo. Si rifanno da sole con **Actions → Schermate → Run workflow** (escono sul ramo `schermate-output`); il prelievo a raffica non c'è perché la fotocamera si vede solo su un telefono vero.
+> Schermate della 4.26.0 con il magazzino dimostrativo. Si rifanno da sole con **Actions → Schermate → Run workflow** (escono sul ramo `schermate-output`); il prelievo a raffica non c'è perché la fotocamera si vede solo su un telefono vero.
 
-## Novità dalla 4.21 alla 4.25
+## Novità dalla 4.21 alla 4.26
 
 | | Novità | In breve |
 |---|---|---|
+| 🧭 | **Ordine sullo schermo** (4.26) | Scheda articolo con foto e quantità in alto, righe di Articoli più basse, Oggi senza doppioni, mappa con le sole lettere a riposo, Squadra con un solo primo passo |
 | 🧱 | **Solidità** (4.25) | Un solo archivio per tutta l'app, database alla versione 13 con migrazione tutto-o-niente, una sola regola per la giacenza, trasferimenti tra sedi tutto-o-niente |
 | 🛡️ | **Satelliti protetti** (4.25) | Se il centrale ripristina un backup vecchio, il satellite non cancella nulla e mostra un conflitto da controllare |
 | 💾 | **Backup senza limiti** (4.24.1) | Nessun limite di righe, ripristino una riga alla volta; un satellite ripristinato continua a inviare al centrale |
@@ -48,7 +49,7 @@
 
 > ⚠️ Un database aperto dalla 4.25 non si apre più con un'app più vecchia: fai un backup completo prima di aggiornare.
 
-Dettagli: [4.21](docs/CHANGELOG_4_21_0.md) · [4.21.1](docs/CHANGELOG_4_21_1.md) · [4.21.2](docs/CHANGELOG_4_21_2.md) · [4.22](docs/CHANGELOG_4_22_0.md) · [4.23](docs/CHANGELOG_4_23_0.md) · [4.24](docs/CHANGELOG_4_24_0.md) · [4.24.1](docs/CHANGELOG_4_24_1.md) · [4.25](docs/CHANGELOG_4_25_0.md)
+Dettagli: [4.21](docs/CHANGELOG_4_21_0.md) · [4.21.1](docs/CHANGELOG_4_21_1.md) · [4.21.2](docs/CHANGELOG_4_21_2.md) · [4.22](docs/CHANGELOG_4_22_0.md) · [4.23](docs/CHANGELOG_4_23_0.md) · [4.24](docs/CHANGELOG_4_24_0.md) · [4.24.1](docs/CHANGELOG_4_24_1.md) · [4.25](docs/CHANGELOG_4_25_0.md) · [4.26](docs/CHANGELOG_4_26_0.md)
 
 ## Novità dalla 4.17 alla 4.20
 
@@ -92,7 +93,7 @@ Dettagli e cose da collaudare: [4.17](docs/CHANGELOG_4_17_0.md) · [4.18](docs/C
 
 ## Installare e aggiornare
 
-1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.25.0: `4250`).
+1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.26.0: `4260`).
 2. **Dal telefono:** GitHub › *Releases* › bozza «Ubicora X.Y.Z» › tocca l'APK (la bozza la vede solo chi può scrivere nel repository, con l'accesso fatto nel browser).
    **Dal PC:** zip `ubicora-signed-update-code-…` nell'area *Artifacts* dell'esecuzione.
 3. Gli APK firmati si installano **sopra** la versione esistente, senza perdere dati.

@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.26.0](CHANGELOG_4_26_0.md) | ordine sullo schermo: scheda articolo con foto e quantità in alto, righe di Articoli più basse, Oggi senza doppioni, mappa con le sole lettere a riposo, scaffale con schede uguali, Squadra con un solo primo passo. |
 | [4.25.0](CHANGELOG_4_25_0.md) | un solo archivio, schema 13, una regola per la giacenza, satelliti protetti dal ripristino del centrale, trasferimenti interi, password backup 12. |
 | [4.24.1](CHANGELOG_4_24_1.md) | backup senza limite di righe e sempre ripristinabile; satellite ripristinato che continua a inviare; correzioni dalla revisione completa. |
 | [4.24.0](CHANGELOG_4_24_0.md) | stile «Vetrina»: articoli che finiscono con la foto, scheda con pulsanti grandi, «Aggiungine un altro», nomi uguali ovunque. |

@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -91,7 +95,8 @@ object TodayTasks {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TodayNumber(count.toString(), "Articoli", TextPrimary, Modifier.weight(1f)) { onStockFocus(StockFocus.ALL) }
-                TodayNumber(critical.toString(), "Da riordinare", if (critical > 0) Amber else TextSecondary, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
+                // 4.26: «Da riordinare» is no longer a counter: the «Stanno finendo» section below has the same number.
+                if (critical == 0) TodayNumber("0", "Da riordinare", TextSecondary, Modifier.weight(1f)) { onStockFocus(StockFocus.CRITICAL) }
                 val lent = u.loans.size + u.team.loans.size
                 TodayNumber(lent.toString(), "In prestito", if (lent > 0) Sky else TextSecondary, Modifier.weight(1f)) { onActivityFocus(ActivityFocus.LOANS, 0) }
             }
@@ -104,18 +109,22 @@ object TodayTasks {
                     Text("  $critical", fontFamily = Display, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Amber, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onStockFocus(StockFocus.CRITICAL) }) { Text("Vedi tutti") }
                 }
+                // 4.26: without any photo the cards drop the empty picture box and show the whole name.
+                val withPhotos = finishing.any { it.photoFile != null }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(finishing, key = { it.id }) { item ->
-                        FinishingTile(item) { onItemFocus(item.id) }
+                        FinishingTile(item, withPhotos) { onItemFocus(item.id) }
                     }
                 }
+                // 4.26: the list to order sits under the cards it is made of, not at the end of the screen.
+                ReorderShareButton(model, Modifier.fillMaxWidth())
             }
         }
         // With only articles finishing, the cards above already are the thing to do: no empty heading.
         if (critical == 0 || overdue + unlocated + conflicts + cardEdits + managerPending > 0) item { TodayLabel("DA FARE ADESSO") }
         if (overdue > 0) item {
             TodayTask(overdue, Sky, if (overdue == 1) "Utensile fuori da più di $loanDays giorni" else "Utensili fuori da più di $loanDays giorni",
-                "Vedi chi li ha · tieni premuto per cambiare i giorni", onLong = { askLoanDays = true }) { onActivityFocus(ActivityFocus.LOANS, 0) }
+                "Vedi chi li ha", onLong = { askLoanDays = true }, onSettings = { askLoanDays = true }) { onActivityFocus(ActivityFocus.LOANS, 0) }
         }
         if (unlocated > 0) item {
             TodayTask(unlocated, TextPrimary, if (unlocated == 1) "Articolo senza posto" else "Articoli senza posto", "Assegna sulla mappa") { onStockFocus(StockFocus.UNLOCATED) }
@@ -141,7 +150,6 @@ object TodayTasks {
                     color = TextSecondary, modifier = Modifier.padding(16.dp))
             }
         }
-        if (critical > 0) item { ReorderShareButton(model, Modifier.fillMaxWidth()) }
         // 4.15: the management indicators live in the Gestione section; here the screen is the same for everyone.
         if (u.businessMode) item {
             // 4.16.2: one card, like the tasks above, instead of two loose links.
@@ -185,16 +193,16 @@ object TodayTasks {
 }
 
 /** 4.24: an article that is finishing, as a card with its photo (the «Vetrina» of the Oggi screen). */
-@Composable private fun FinishingTile(item: StockItem, onClick: () -> Unit) {
+@Composable private fun FinishingTile(item: StockItem, withPhotos: Boolean, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(24.dp), color = PanelBg, modifier = Modifier.width(150.dp)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val photo = Modifier.fillMaxWidth().height(96.dp)
             if (item.photoFile != null) ArticleThumbnail(item.photoFile, photo, edge = 360)
-            else Box(photo.clip(RoundedCornerShape(16.dp)).background(Surface2), contentAlignment = Alignment.Center) {
+            else if (withPhotos) Box(photo.clip(RoundedCornerShape(16.dp)).background(Surface2), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = Amber)
             }
-            Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                lineHeight = 17.sp, modifier = Modifier.heightIn(min = 34.dp))
+            Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = if (withPhotos) 2 else 3, overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp, modifier = Modifier.heightIn(min = if (withPhotos) 34.dp else 51.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(amount(item.quantity), fontFamily = Display, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Amber)
                 Text(" ${item.unit} · min ${amount(item.minimum)}", fontSize = 12.sp, color = TextSecondary, maxLines = 1,
@@ -218,7 +226,8 @@ object TodayTasks {
 }
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable private fun TodayTask(number: Int, color: Color, title: String, subtitle: String, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+@Composable private fun TodayTask(number: Int, color: Color, title: String, subtitle: String, onLong: (() -> Unit)? = null,
+    onSettings: (() -> Unit)? = null, onClick: () -> Unit) {
     Surface(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = onClick, onLongClick = onLong),
         shape = RoundedCornerShape(16.dp), color = PanelBg) {
         Row(Modifier.heightIn(min = 68.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
@@ -230,6 +239,7 @@ object TodayTasks {
                 Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, color = TextSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            if (onSettings != null) IconButton(onClick = onSettings) { Icon(Icons.Outlined.Tune, contentDescription = "Cambia dopo quanti giorni avvisare", tint = TextSecondary) }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = TextSecondary)
         }
     }
@@ -312,19 +322,25 @@ object TodayTasks {
  * 4.15: Articoli holds two pages, the stock and its history ("Giacenze" / "Movimenti"): who looks
  * for what happened to a piece starts from the list of the pieces.
  */
-@Composable fun StockSections(movements: Boolean, onSelect: (movements: Boolean) -> Unit, goSettings: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically,
+@Composable fun StockSections(movements: Boolean, onSelect: (movements: Boolean) -> Unit, goSettings: () -> Unit, subtitle: String = "") {
+    // 4.26: first where you are (title), then which page (Giacenze / Movimenti); the gear stays beside the title as in Oggi and Squadra.
+    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        SectionTitle("Articoli", subtitle, Modifier.weight(1f))
+        SettingsGear(goSettings)
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(false to "Giacenze", true to "Movimenti").forEach { (target, label) ->
             val active = target == movements
-            Surface(onClick = { onSelect(target) }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp),
-                color = if (active) Mint.copy(alpha = .16f) else Surface2) {
+            // 4.26: a tab for TalkBack and a mint edge on the active one (the tint alone was faint).
+            Surface(modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(14.dp))
+                .selectable(selected = active, role = Role.Tab, onClick = { onSelect(target) }), shape = RoundedCornerShape(14.dp),
+                color = if (active) Mint.copy(alpha = .16f) else Surface2, border = if (active) BorderStroke(2.dp, Mint) else null) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(label, color = if (active) TextPrimary else TextSecondary, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
                 }
             }
         }
-        SettingsGear(goSettings)
     }
 }
 
