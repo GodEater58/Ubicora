@@ -343,7 +343,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             OR EXISTS(SELECT 1 FROM ops_transfers WHERE item_id=? AND status IN ('REQUESTED','IN_TRANSIT'))
             OR EXISTS(SELECT 1 FROM ops_maintenance WHERE item_id=? AND status='OPEN')
             OR EXISTS(SELECT 1 FROM loans WHERE item_id=? AND returned_at IS NULL)
-        )""",Array(5){itemId.toString()}
+            OR EXISTS(SELECT 1 FROM team_loans t JOIN items i ON i.uid=t.item_uid WHERE i.id=?)
+        )""",Array(6){itemId.toString()}   // 4.24.1: also a tool lent from another phone of the team
     ).use { cursor -> cursor.moveToFirst() && cursor.getInt(0)!=0 }
     /** Deletes stored article photos (call only after the rows are gone). */
     fun deletePhotoFiles(names: Collection<String>) = names.forEach { PhotoFiles.delete(appContext,it) }

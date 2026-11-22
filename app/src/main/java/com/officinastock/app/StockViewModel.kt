@@ -361,7 +361,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,pendingCode=ui.pendingCode,mapFindItemId=ui.mapFindItemId,
             shelfOpenId=ui.shelfOpenId?.takeIf{id->snapshot.placements.any{it.id==id}},
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},
-            mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
+            mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label,
+            // 4.24.1: a sync arriving meanwhile must not close the new article being filled in.
+            newItem=ui.newItem?.takeIf{it.warehouseId==snapshot.warehouse?.id},scannedItemId=ui.scannedItemId)
         pendingNewItem = null
     }
 
@@ -480,7 +482,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingProfileId: Long? = null
     private var pendingWarehouseId: Long? = null
     // All operation/session fields must exist before the first coroutine starts.
-    init { refresh() }
+    init {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { BackupArchive(app.applicationContext,db).removeLeftovers() } }
+        refresh()
+    }
     fun unlock(profile: Profile,pin: String) = execute {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         BiometricLogin.pinUsed(getApplication(),profile.id)   // 4.21.1: the fingerprint is good for 7 more days
@@ -651,24 +656,25 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
                 cost:Double?=null,supplier:String="",leadDays:Int?=null,place:NewItemPlace=NewItemPlace()) {
         var created:Long?=null
+        var notPlaced:String?=null
         val draft=ui.newItem
         // 4.21: "on the map" opens the location pick once the article exists; the draft ends only when saved.
         execute(onSuccess={
             if(ui.newItem==draft) ui=ui.copy(newItem=null)
             draft?.let { forgetDraft(it.warehouseId) }
             if(place.onMap) created?.let { startLocationPick(listOf(it)) }
+            notPlaced?.let { ui=ui.copy(message="Articolo salvato, ma senza posto ($it): assegnalo dalla mappa") }
         }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
-        try {
-            val id=db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
-            pendingNewItem = if(place.onMap) null else id
-            created=id
-            place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) }
-        } catch(t:Throwable) {
-            PhotoFiles.delete(getApplication<Application>(),picture)
-            throw t
-        }
+        val id=try { db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays) }
+            catch(t:Throwable) { PhotoFiles.delete(getApplication<Application>(),picture); throw t }
+        pendingNewItem = if(place.onMap) null else id
+        created=id
+        // 4.24.1: the article exists now: if its place is gone (a sync removed the structure) it stays saved,
+        // with its photo, and the draft ends; saving again would make a second article.
+        place.placementId?.let { p -> runCatching { db.assignItems(listOf(id),p,place.level,place.slot) }
+            .onFailure { e -> if(e is CancellationException) throw e; notPlaced=e.message ?: "posto non più disponibile" } }
         // The camera file goes only once the article is saved: after an error the draft keeps it.
         photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
         }

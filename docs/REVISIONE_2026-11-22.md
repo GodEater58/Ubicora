@@ -43,3 +43,22 @@ Senza problemi: backup cifrato (BackupCipher), cifratura dell'archivio (DbCipher
 2. Architettura 6 e 8, poi 2, 3 e 4 (insieme ai bug 4, 6, 9, 10).
 3. Bug 5 e 7, architettura 5.
 4. Backup a pezzi (architettura 1): da annunciare, perché i backup nuovi non si aprono sulle versioni vecchie.
+
+## Seconda opinione con gli agenti ECC (kotlin-reviewer, security-reviewer, silent-failure-hunter, architect)
+
+Tutti d'accordo: **tenere l'architettura, niente reinstallazione**. Il formato del backup è solido e va esteso, non sostituito.
+
+### Corretto nella 4.24.1
+- Bug 1 (numeratore dopo il ripristino), 3 (backup non ripristinabile), 2 (codici scambiati), 6 (esportazione del centrale incoerente), 9 (numero all'indietro), 10 (prestito di un altro telefono).
+- Backup: elenco delle tabelle e versione del database nel manifest (le versioni vecchie li ignorano), nessun limite di righe per tabella, ripristino una riga alla volta, tabelle lette in un'unica transazione (N2), modifiche alle schede incluse.
+- N1 (foto cancellata dopo il salvataggio, doppioni), N5 (modulo nuovo articolo chiuso da una sync), tocchi rifiutati durante un'operazione ora segnalati, un file alla volta per collegamento Nearby, cache in chiaro ripulita all'avvio.
+
+### Ancora aperti (in ordine)
+1. Un solo `StockDb` per tutta l'app (N6) e doppio `endTransaction` in `importState`.
+2. Schema versione 13 con `onOpen` in transazione; test di migrazione con database veri.
+3. Una sola funzione per cambiare la giacenza; il satellite che cancella articoli chiede conferma se il centrale ha ripristinato un backup (identità del centrale).
+4. Trasferimento tra sedi applicato a metà (bug 4).
+5. Operazioni della schermata Squadra e ripristino in `viewModelScope` (N3, N4).
+6. Sicurezza: limite ai tentativi falliti sul centrale, minimo 12 caratteri per le password dei backup, archivio in chiaro senza Keystore da segnalare, `seal()` che non ripiega sul testo in chiaro, NFC che non precompila l'ingresso in squadra, conferma del nome del centrale.
+7. Server: rate limit sul download delle chiavi JWT, dipendenze con hash.
+8. Errori silenziosi minori: bozza illeggibile, foto ricevuta corrotta, modifica illeggibile, invito non creato, ricerca altre sedi, Toast del backup annullato.

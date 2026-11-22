@@ -766,4 +766,19 @@ class TeamSyncTest {
         assertNull(back.shelfLevel)
         assertNotNull(back.placementId)
     }
+
+    /** 4.24.1: two codes swapped on the central no longer block the satellite's updates. */
+    @Test fun swappedCodesOnTheCentralReachTheSatellite() {
+        val dado = central.addItem(warehouse, "Dado M8", "Ricambi", 5.0, 1.0, "pz", "")
+        val wh = join(satellite, "B")
+        val vite = central.items(warehouse).single { it.name == "Vite M8" }
+        val d = central.item(dado)!!
+        val (codeV, codeD) = vite.sku to d.sku
+        fun rename(id: Long, sku: String) { val i = central.item(id)!!
+            central.updateItemDetails(warehouse, id, i.name, i.category, i.minimum, i.unit, i.note, i.unitCost, i.supplier, i.leadDays, sku = sku) }
+        rename(vite.id, "TMP-1"); rename(dado, codeV); rename(vite.id, codeD)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(codeD, satellite.items(wh).single { it.name == "Vite M8" }.sku)
+        assertEquals(codeV, satellite.items(wh).single { it.name == "Dado M8" }.sku)
+    }
 }
