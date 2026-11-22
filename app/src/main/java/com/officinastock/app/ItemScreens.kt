@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -72,7 +73,7 @@ data class NewItemPlace(val placementId: Long? = null, val level: Int? = null, v
  * Every field lives in [draft], kept by the ViewModel: a screen lock in the middle loses nothing.
  */
 @Composable fun NewItemDialog(draft:NewItemDraft,onChange:(NewItemDraft)->Unit,onClose:()->Unit,allowed:List<String> = emptyList(),
-        items:List<StockItem> = emptyList(),placements:List<Placement> = emptyList(),busy:Boolean=false,
+        items:List<StockItem> = emptyList(),placements:List<Placement> = emptyList(),busy:Boolean=false,room:Pair<Float,Float>?=null,
         save:(String,String,Double,Double,String,String,String?,Double?,String,Int?,NewItemPlace)->Unit) {
     // A satellite with a department only sees its own categories (4.9).
     val categories=ArticleCodes.categoryPrefixes.keys.filter { allowed.isEmpty() || it in allowed }.ifEmpty { ArticleCodes.categoryPrefixes.keys.toList() }
@@ -159,7 +160,11 @@ data class NewItemPlace(val placementId: Long? = null, val level: Int? = null, v
                     UnitPicker(d.unit,d.category,{set(d.copy(unit=it))})
                     Text("Dove lo metti",fontSize=12.sp,color=TextSecondary)
                     val chosen=d.place
-                    OutlinedButton(onClick={pickPlace=true},modifier=Modifier.fillMaxWidth()) {
+                    // 4.25 «Vetrina»: the plan of the site beside the choice, with the chosen structure lit; it opens the choice too.
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    if(room!=null && placements.isNotEmpty()) MiniPlan(room.first,room.second,placements,chosen?.placementId,
+                        Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel="Scegli l'ubicazione") { pickPlace=true })
+                    OutlinedButton(onClick={pickPlace=true},modifier=Modifier.weight(1f)) {
                         Icon(Icons.Outlined.Place,null,modifier=Modifier.size(18.dp));Spacer(Modifier.width(8.dp))
                         Text(when {
                             chosen==null || (chosen.placementId==null && !chosen.onMap) -> "Scegli l'ubicazione (facoltativa)"
@@ -168,6 +173,7 @@ data class NewItemPlace(val placementId: Long? = null, val level: Int? = null, v
                                 p.label+listOfNotNull(chosen.level?.let{"R$it"},chosen.slot?.let{"P$it"}).joinToString(" ").let { if(it.isEmpty()) "" else " · $it" }
                             } ?: "Scegli l'ubicazione (facoltativa)"
                         },maxLines=2,overflow=TextOverflow.Ellipsis)
+                    }
                     }
                     TextButton(onClick={set(d.copy(moreDetails=!d.moreDetails))},modifier=Modifier.fillMaxWidth()) {
                         Text("Costo, fornitore e consegna (facoltativi)",modifier=Modifier.weight(1f),color=TextSecondary)

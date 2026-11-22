@@ -228,7 +228,7 @@ class MainActivity: FragmentActivity() {
         // 4.21: the article being created stays above every tab and comes back after the screen lock.
         data.newItem?.takeIf { data.profile!=null && !data.sessionLocked && it.warehouseId==data.warehouse?.id }?.let { draft ->
             NewItemDialog(draft,model::updateNewItem,model::closeNewItem,allowed=model.departmentCategories(),
-                items=data.items,placements=data.placements,busy=data.busy) { name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place ->
+                items=data.items,placements=data.placements,busy=data.busy,room=data.warehouse?.let { it.mapWidth to it.mapHeight }) { name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place ->
                 model.addItem(name,cat,qty,min,unit,note,photoUri,cost,supplier,leadDays,place)
             }
         }
