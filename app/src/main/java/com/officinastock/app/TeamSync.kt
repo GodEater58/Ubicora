@@ -272,6 +272,7 @@ class TeamSync(private val stock: StockDb) {
             TeamSyncSchema.put(sql, "warehouse_id", warehouseId.toString())
             TeamSyncSchema.put(sql, "warehouse_uid", UUID.randomUUID().toString())
             TeamSyncSchema.put(sql, "password", DeviceSecrets.seal(password))
+            TeamSyncSchema.put(sql, "epoch", UUID.randomUUID().toString())
             sql.setTransactionSuccessful()
         } finally { sql.endTransaction() }
     }
@@ -497,7 +498,10 @@ class TeamSync(private val stock: StockDb) {
     /** Identifies the shared warehouse (the same on the central and on every satellite). */
     fun warehouseUid(): String? = if (setting("role") == null) null else setting("warehouse_uid")
 
-    fun dismissConflicts() { db.delete("team_sync_conflicts", null, null) }
+    fun dismissConflicts() {
+        db.delete("team_sync_conflicts", null, null)
+        db.delete("team_sync_settings", "key='deletions_on_hold'", null)   // checked: the central is right again
+    }
 
     // ---------------------------------------------------------------- 4.21 cards changed by maintainers
 
@@ -698,7 +702,9 @@ class TeamSync(private val stock: StockDb) {
         require(setting("role") == "central") { "Solo il telefono centrale invia l'aggiornamento" }
         val warehouseId = setting("warehouse_id")!!.toLong()
         val read = stock.readableDatabase
-        val state = JSONObject().put("format", SNAPSHOT).put("version", 1)
+        // 4.25: the central's identity, new after every restore of its archive (see BackupArchive.restore).
+        val epoch = setting("epoch") ?: UUID.randomUUID().toString().also { TeamSyncSchema.put(db, "epoch", it) }
+        val state = JSONObject().put("format", SNAPSHOT).put("version", 1).put("epoch", epoch)
             .put("warehouse_uid", setting("warehouse_uid")).put("central", deviceUid())
             .put("created_at", System.currentTimeMillis())
         val site = siteJson(read, warehouseId)
@@ -1019,7 +1025,8 @@ class TeamSync(private val stock: StockDb) {
             updated++
         }
         // 4.13: an article the central no longer has was deleted there (or refused): it goes here too,
-        // unless this phone created it and has not sent it yet.
+        // unless this phone created it and has not sent it yet (4.25: or the central restored an older archive).
+        if (setting("deletions_on_hold") == "1") return Triple(updated, 0, items)
         var removed = 0
         sql.rawQuery("SELECT id,uid,photo_file FROM items WHERE warehouse_id=?", arrayOf(warehouseId.toString())).use { c ->
             buildList { while (c.moveToNext()) if (c.getString(1) !in centralItems && c.getLong(0) !in pendingItems)
@@ -1055,6 +1062,18 @@ class TeamSync(private val stock: StockDb) {
         val myScope = state.optJSONObject("scopes")?.optJSONArray(setting("letter").orEmpty())
         if (myScope == null || myScope.length() == 0) sql.delete("team_sync_settings", "key='scope'", null)
         else TeamSyncSchema.put(sql, "scope", (0 until myScope.length()).joinToString("\n") { myScope.getString(it) })
+        val epoch = state.optString("epoch")
+        if (epoch.isNotEmpty()) {
+            val known = setting("central_epoch")
+            if (!known.isNullOrEmpty() && known != epoch) {
+                // 4.25: the central went back to an older archive: what it no longer has may be real work done after
+                // its backup. Nothing is deleted here until someone has checked («Ho controllato» on the conflicts).
+                TeamSyncSchema.put(sql, "deletions_on_hold", "1")
+                conflict(sql, "A", "Telefono centrale", "Il centrale ha ripristinato un backup: gli articoli che non ha più restano " +
+                    "su questo telefono finché non controlli. Poi premi «Ho controllato».")
+            }
+            TeamSyncSchema.put(sql, "central_epoch", epoch)
+        }
         TeamSyncSchema.put(sql, "applying", "1")
         var (updated, removed, items) = applySite(sql, warehouseId, state, pendingDelta, pendingLocate, pendingItems)
         // 4.18: the other sites of the company. A new one is created beside the first; one the central

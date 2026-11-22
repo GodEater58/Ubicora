@@ -116,17 +116,7 @@ class StockTraceDb(private val stock:StockDb) {
         }
     }
     private fun adjustStock(db:SQLiteDatabase,itemId:Long,delta:Double,note:String){
-        val physical=db.rawQuery("SELECT quantity FROM items WHERE id=?",
-            arrayOf(itemId.toString())).use{c->require(c.moveToFirst());c.getDouble(0)}
-        val next=StockRules.applyDelta(physical,delta)
-        StockPlanningDb.assertUnreservedStock(db,itemId,next)
-        assertPhysicalFloor(db,itemId,next)
-        require(db.update("items",ContentValues().apply{put("quantity",next)},
-            "id=?",arrayOf(itemId.toString()))==1){"Articolo non aggiornabile"}
-        db.insertOrThrow("movements",null,ContentValues().apply{
-            put("item_id",itemId);put("delta",delta);put("note",note)
-            put("created_at",System.currentTimeMillis())
-        })
+        StockDb.changeStock(db,itemId,delta,note)
     }
     fun consumeLot(wid:Long,lotId:Long,amount:Double,actor:String,discard:Boolean=false){
         require(amount.isFinite() && amount>0 && actor.trim().length in 2..100){"Quantità o operatore non validi"}

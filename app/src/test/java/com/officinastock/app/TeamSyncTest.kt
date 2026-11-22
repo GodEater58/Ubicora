@@ -781,4 +781,22 @@ class TeamSyncTest {
         assertEquals(codeD, satellite.items(wh).single { it.name == "Vite M8" }.sku)
         assertEquals(codeV, satellite.items(wh).single { it.name == "Dado M8" }.sku)
     }
+
+    /** 4.25: a central brought back to an older archive does not wipe the satellites' articles without a check. */
+    @Test fun aCentralRestoredFromAnOldBackupDeletesNothingOnTheSatelliteUntilChecked() {
+        val dado = central.addItem(warehouse, "Dado M8", "Ricambi", 5.0, 1.0, "pz", "")
+        val wh = join(satellite, "B")
+        assertEquals(2, satellite.items(wh).size)
+        // The central loses «Dado» by going back to an older archive (its identity changes with the restore).
+        central.writableDatabase.execSQL("DELETE FROM items WHERE id=?", arrayOf(dado))
+        central.writableDatabase.execSQL("UPDATE team_sync_settings SET value='restored' WHERE key='epoch'")
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)                              // kept
+        assertTrue(TeamSync(satellite).status().conflicts.isNotEmpty())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)                              // still kept: nobody checked yet
+        TeamSync(satellite).dismissConflicts()                                 // «Ho controllato»
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(1, satellite.items(wh).size)                              // now the central's deletion applies
+    }
 }

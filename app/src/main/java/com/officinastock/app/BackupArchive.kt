@@ -276,6 +276,9 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                     require(!c.moveToFirst()) { "Relazioni non valide nel backup" }
                 }
                 stockDb.repairRestoredPositions(db)
+                // 4.25: a central brought back to an older archive gets a new identity: its satellites will not delete
+                // what it no longer has without someone checking first.
+                db.execSQL("UPDATE team_sync_settings SET value=? WHERE key='epoch'",arrayOf(UUID.randomUUID().toString()))
                 stockDb.validateRestoredData()
                 // 4.24.1: on a new phone the change counter would restart from 1, below what the central has already
                 // received from this phone: its new changes would be taken as old and lost. The counter jumps ahead.

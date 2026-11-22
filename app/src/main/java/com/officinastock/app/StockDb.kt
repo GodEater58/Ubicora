@@ -19,6 +19,22 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
          * 4.25: one archive for the whole app, never closed while the app lives. Before, each screen model opened
          * its own and closed it on exit, even while a restore or a team exchange was still writing.
          */
+        /**
+         * 4.25: the ONE place where a quantity changes (local movements, team exchanges, purchases, counts,
+         * reservations, lots): reservations and lots are always checked, and the movement always written.
+         */
+        internal fun changeStock(db: SQLiteDatabase, itemId: Long, delta: Double, note: String,
+                                 at: Long = System.currentTimeMillis(), counted: Double? = null) {
+            val old = db.rawQuery("SELECT quantity FROM items WHERE id=?", arrayOf(itemId.toString())).use {
+                require(it.moveToFirst()) { "Articolo non trovato" }; it.getDouble(0) }
+            val next = counted ?: StockRules.applyDelta(old, delta)
+            StockPlanningDb.assertUnreservedStock(db, itemId, next)
+            StockTraceDb.assertPhysicalFloor(db, itemId, next)
+            require(db.update("items", ContentValues().apply { put("quantity", next) }, "id=?", arrayOf(itemId.toString())) == 1) { "Movimento non applicato" }
+            db.insertOrThrow("movements", null, ContentValues().apply {
+                put("item_id", itemId); put("delta", delta); put("note", note); put("created_at", at.coerceIn(0L, 4102444800000L))
+            })
+        }
         fun shared(context: Context): StockDb {
             val owner = context.applicationContext
             app?.takeIf { it.appContext === owner }?.let { return it }
@@ -563,27 +579,12 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             put("item_id",itemId);put("delta",delta);put("note",note);put("created_at",System.currentTimeMillis())
         })
     }
-    private fun adjust(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, counted: Double? = null) {
-        db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { cursor ->
-            require(cursor.moveToFirst()) { "Articolo non trovato" }
-            val next = counted ?: StockRules.applyDelta(cursor.getDouble(0),delta)
-            StockPlanningDb.assertUnreservedStock(db,itemId,next)
-            StockTraceDb.assertPhysicalFloor(db,itemId,next)
-            db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
-            recordMovement(db,itemId,delta,note)
-        }
-    }
+    private fun adjust(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, counted: Double? = null) =
+        changeStock(db, itemId, delta, note, counted = counted)
     /** Stock change received from another phone: same checks as a local movement, original date kept. */
     internal fun applyTeamMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, at: Long) {
         require(delta.isFinite() && delta != 0.0) { "quantità nulla" }
-        db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use { cursor ->
-            require(cursor.moveToFirst()) { "articolo non trovato" }
-            val next=StockRules.applyDelta(cursor.getDouble(0),delta)
-            StockPlanningDb.assertUnreservedStock(db,itemId,next)
-            StockTraceDb.assertPhysicalFloor(db,itemId,next)
-            db.update("items",ContentValues().apply { put("quantity",next) },"id=?",arrayOf(itemId.toString()))
-            recordTeamMovement(db,itemId,delta,note,at)
-        }
+        changeStock(db, itemId, delta, note.ifBlank { "Sincronizzazione" }, at)
     }
     internal fun recordTeamMovement(db: SQLiteDatabase, itemId: Long, delta: Double, note: String, at: Long) {
         db.insertOrThrow("movements",null,ContentValues().apply {

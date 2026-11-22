@@ -143,17 +143,8 @@ class OperationsDb(private val stock:StockDb) {
         } finally {db.endTransaction()}
     }
     private fun changeStock(db:SQLiteDatabase,itemId:Long,delta:Double,note:String,counted:Double?=null) {
-        val old=db.rawQuery("SELECT quantity FROM items WHERE id=?",arrayOf(itemId.toString())).use {
-            require(it.moveToFirst()){"Articolo mancante"};it.getDouble(0)
-        }
-        val next=counted ?: StockRules.applyDelta(old,delta)
-        StockPlanningDb.assertUnreservedStock(db,itemId,next)
-        StockTraceDb.assertPhysicalFloor(db,itemId,next)
         require(delta.isFinite() && delta!=0.0){"Movimento nullo"}
-        require(db.update("items",ContentValues().apply{put("quantity",next)},"id=?",arrayOf(itemId.toString()))==1){"Movimento non applicato"}
-        db.insertOrThrow("movements",null,ContentValues().apply {
-            put("item_id",itemId);put("delta",delta);put("note",note);put("created_at",System.currentTimeMillis())
-        })
+        StockDb.changeStock(db,itemId,delta,note,counted=counted)
     }
 
     fun createOrder(wid:Long,itemId:Long,quantity:Double,supplier:String,actor:String,
