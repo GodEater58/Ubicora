@@ -1189,8 +1189,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
      * dropped, the article stays on its structure. Called by the restore before [validateRestoredData].
      */
     internal fun repairRestoredPositions(db: SQLiteDatabase) {
-        db.execSQL("""UPDATE items SET shelf_level=NULL,shelf_slot=NULL WHERE placement_id IS NOT NULL AND EXISTS(
-            SELECT 1 FROM placements p WHERE p.id=items.placement_id AND (COALESCE(items.shelf_level,0)>p.levels OR COALESCE(items.shelf_slot,0)>p.slots))""")
+        db.execSQL("UPDATE items SET shelf_level=NULL,shelf_slot=NULL WHERE placement_id IS NOT NULL AND EXISTS(" +
+            "SELECT 1 FROM placements p WHERE p.id=items.placement_id AND (COALESCE(items.shelf_level,0)>p.levels OR COALESCE(items.shelf_slot,0)>p.slots))")
         db.execSQL("UPDATE items SET shelf_level=NULL,shelf_slot=NULL WHERE placement_id IS NULL AND (shelf_level IS NOT NULL OR shelf_slot IS NOT NULL)")
     }
     internal fun validateRestoredData() {
