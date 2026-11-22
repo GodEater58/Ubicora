@@ -147,7 +147,7 @@ class TeamLink(
                 if (answer == null) { peer(endpointId, PeerPhase.ERROR, "Trasferimento interrotto"); return@launch }
                 val name = answer.letter?.let { "Satellite $it" }
                 peerSummary[endpointId] = answer.summary
-                if (answer.failed) peer(endpointId, PeerPhase.ERROR, answer.summary, name)
+                if (answer.failed) { peer(endpointId, PeerPhase.ERROR, answer.summary, name); failures.addLast(System.currentTimeMillis()) }
                 else peer(endpointId, PeerPhase.SENDING, "Invio l'archivio aggiornato…", name)
                 val out = Payload.fromStream(ByteArrayInputStream(answer.bytes))
                 outgoing[out.id] = endpointId
@@ -169,8 +169,15 @@ class TeamLink(
         }
     }
 
+    /** 4.25: when the central refused a file (see the pause in onConnectionInitiated). */
+    private val failures = ArrayDeque<Long>()
     private val centralLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
+            // 4.25: after 5 refused files in 5 minutes (wrong password, tampered file) the network pauses for 2 minutes:
+            // guessing the team password online or holding the places costs time. Real satellites retry by themselves.
+            val now = System.currentTimeMillis()
+            while (failures.isNotEmpty() && now - failures.first() > 5 * 60_000L) failures.removeFirst()
+            if (failures.size >= 5 && now - failures.last() < 2 * 60_000L) { client.rejectConnection(endpointId); return }
             // 4.11: limit simultaneous phones; anything beyond waits for its turn.
             val busy = ui.peers.count { it.phase in setOf(PeerPhase.CONNECTING, PeerPhase.RECEIVING, PeerPhase.APPLYING, PeerPhase.SENDING) }
             if (busy >= TeamLinkProtocol.MAX_PEERS) { client.rejectConnection(endpointId); return }

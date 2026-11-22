@@ -16,6 +16,7 @@ import java.util.zip.ZipOutputStream
 /** Backup OFFLINE cifrato: SQLite logico + immagini. Mai usare CSV come backup. */
 class BackupArchive(private val context: Context, private val stockDb: StockDb) {
     companion object {
+        const val NEW_PASSWORD_MIN = 12
         private val legacyTables = listOf("profiles", "warehouses", "placements", "items", "movements", "loans", "walls", "sku_sequences", "demo_assets")
         private val operationsTables = listOf("ops_orders", "ops_counts", "ops_transfers", "ops_maintenance", "ops_events", "ops_settings")
         private val managerTables = legacyTables + operationsTables
@@ -51,7 +52,8 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         return bytes.size.toLong()+1
     }
     fun export(uri: Uri, password: String) {
-        require(password.length>=8) {"Password backup: almeno 8 caratteri"}
+        // 4.25: the file travels by chat and email; a new backup needs 12 characters (older ones still open with 8).
+        require(password.length>=NEW_PASSWORD_MIN) {"Password backup: almeno $NEW_PASSWORD_MIN caratteri"}
         // Complete and validate the encrypted archive before touching an existing destination.
         val staged=File.createTempFile("ubicora_export_", ".osbackup", context.cacheDir)
         try {
