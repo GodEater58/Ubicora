@@ -16,7 +16,7 @@ import kotlinx.coroutines.CancellationException
 
 /** Dati persistiti in SQLite, stato effimero in Compose, operazioni fuori dal thread grafico. */
 class StockViewModel(app: Application): AndroidViewModel(app) {
-    private val db = StockDb(app.applicationContext)
+    private val db = StockDb.shared(app)
     private val operations = OperationsDb(db)
     private val enterprise = EnterpriseDb(db)
     private val planning = StockPlanningDb(db)
@@ -1125,7 +1125,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         finally { ui=ui.copy(busy=false); drainWalls() }
     }
     // Each new ViewModel opens its own StockDb: close this one or connections pile up on the same file.
-    override fun onCleared() { link.stop();db.close();super.onCleared() }
+    override fun onCleared() { link.stop();super.onCleared() }   // 4.25: the shared archive stays open
     fun dismissTeamConflicts() = execute { team.dismissConflicts() }
     /** 4.11: the team password is device-sealed; after restoring a backup on a new phone it is typed again. */
     fun restoreTeamPassword(password:String) = execute { team.restorePassword(password) }

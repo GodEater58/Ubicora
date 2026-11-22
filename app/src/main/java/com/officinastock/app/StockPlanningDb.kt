@@ -108,21 +108,8 @@ class StockPlanningDb(private val stock:StockDb) {
             },"id=? AND warehouse_id=? AND status='ACTIVE'",
                 arrayOf(reservationId.toString(),warehouseId.toString()))==1){"Prenotazione già chiusa"}
             if(consume){
-                val current=db.rawQuery("SELECT quantity FROM items WHERE id=?",
-                    arrayOf(reservation.first.toString())).use{c->
-                    require(c.moveToFirst()){"Articolo mancante"}
-                    c.getDouble(0)
-                }
-                val next=StockRules.applyDelta(current,-reservation.second)
-                assertUnreservedStock(db,reservation.first,next)
-                StockTraceDb.assertPhysicalFloor(db,reservation.first,next)
-                require(db.update("items",ContentValues().apply{put("quantity",next)},
-                    "id=?",arrayOf(reservation.first.toString()))==1){"Scarico non applicato"}
-                db.insertOrThrow("movements",null,ContentValues().apply{
-                    put("item_id",reservation.first);put("delta",-reservation.second)
-                    put("note","Consumo prenotazione #$reservationId · ${reservation.third} · ${actor.trim()}")
-                    put("created_at",System.currentTimeMillis())
-                })
+                StockDb.changeStock(db,reservation.first,-reservation.second,
+                    "Consumo prenotazione #$reservationId · ${reservation.third} · ${actor.trim()}")
             }
             db.insertOrThrow("ops_events",null,ContentValues().apply{
                 put("warehouse_id",warehouseId)

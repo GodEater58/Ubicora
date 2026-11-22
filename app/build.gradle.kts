@@ -12,15 +12,19 @@ android {
         applicationId = "com.ubicora.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4241
-        versionName = "4.24.1"
+        versionCode = 4250
+        versionName = "4.25.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Robolectric Compose screens (real graphics) do not fit in Gradle's default 512 MB test heap.
-        unitTests.all { it.maxHeapSize = "2g" }
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            // The Android images Robolectric downloads during the tests come from the same mirror.
+            it.systemProperty("robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

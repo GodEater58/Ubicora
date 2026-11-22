@@ -120,7 +120,7 @@ class EnterpriseDbTest {
         sql.version=7
         db.close()
         db=StockDb(context);enterprise=EnterpriseDb(db)
-        assertEquals(12,db.readableDatabase.version)
+        assertEquals(13,db.readableDatabase.version)
         assertEquals(before,db.item(item))
         assertTrue(db.authenticate(profile,"1234"))
         assertTrue(enterprise.centers(profile).isEmpty())

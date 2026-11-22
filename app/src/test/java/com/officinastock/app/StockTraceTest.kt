@@ -119,7 +119,7 @@ class StockTraceTest {
         db.writableDatabase.execSQL("DROP TABLE stock_serials")
         db.writableDatabase.version=9
         db.close();db=StockDb(context);trace=StockTraceDb(db)
-        assertEquals(12,db.readableDatabase.version)
+        assertEquals(13,db.readableDatabase.version)
         assertEquals(11.0,db.item(item)!!.quantity,0.0)
         assertTrue(db.movements(warehouse).any{it.note.contains("SN0000012")})
         assertTrue(trace.lots(warehouse).isEmpty() && trace.serials(warehouse).isEmpty())

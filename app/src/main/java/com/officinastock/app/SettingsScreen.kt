@@ -181,7 +181,7 @@ import kotlinx.coroutines.launch
         dismissButton={TextButton(onClick={confirmOldMovements=false}){Text("Annulla")}})
     if(backupDialog) AlertDialog(onDismissRequest={backupDialog=false},title={Text("Backup cifrato")},text={
         Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-            Text("Scegli una password di almeno 8 caratteri e conservala: protegge tutto l'archivio, inclusi PIN e fotografie.",fontSize=12.sp,color=TextSecondary)
+            Text("Scegli una password di almeno 12 caratteri e conservala: protegge tutto l'archivio, inclusi PIN e fotografie.",fontSize=12.sp,color=TextSecondary)
             ArchivePins(model.ui.profiles,archivePins,{id,pin->archivePins=archivePins+(id to pin)})
             archiveError?.let{Text(it,color=Danger)}
             OutlinedTextField(secret,onValueChange={secret=it},label={Text("Password del backup")},
@@ -193,7 +193,7 @@ import kotlinx.coroutines.launch
         try {model.authorizeArchive(archivePins);onBackup(secret);backupDialog=false;secret="";secretConfirm="";archivePins=emptyMap()}
         catch(e:Exception){archiveError=e.message}
     }},
-        enabled=secret.length>=8 && secret==secretConfirm && !model.ui.busy){Text("Scegli dove salvare")}},
+        enabled=secret.length>=BackupArchive.NEW_PASSWORD_MIN && secret==secretConfirm && !model.ui.busy){Text("Scegli dove salvare")}},
         dismissButton={TextButton(onClick={backupDialog=false}){Text("Annulla")}})
     if(restoreDialog) AlertDialog(onDismissRequest={restoreDialog=false},title={Text("Ripristino completo")},text={
         Column(Modifier.heightIn(max=440.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {

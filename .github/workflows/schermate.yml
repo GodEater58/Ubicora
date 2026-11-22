@@ -22,6 +22,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          # 4.25: the Android images Robolectric downloads from Maven Central (~/.m2) are kept between runs,
+          # so a Maven Central hiccup no longer fails every test.
+          cache: maven
+          cache-dependency-path: app/build.gradle.kts
       - name: Locate preinstalled Android SDK
         shell: bash
         run: |

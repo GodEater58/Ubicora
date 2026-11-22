@@ -781,4 +781,38 @@ class TeamSyncTest {
         assertEquals(codeD, satellite.items(wh).single { it.name == "Vite M8" }.sku)
         assertEquals(codeV, satellite.items(wh).single { it.name == "Dado M8" }.sku)
     }
+
+    /** 4.25: a central brought back to an older archive does not wipe the satellites' articles without a check. */
+    @Test fun aCentralRestoredFromAnOldBackupDeletesNothingOnTheSatelliteUntilChecked() {
+        val dado = central.addItem(warehouse, "Dado M8", "Ricambi", 5.0, 1.0, "pz", "")
+        val wh = join(satellite, "B")
+        assertEquals(2, satellite.items(wh).size)
+        // The central loses «Dado» by going back to an older archive (its identity changes with the restore).
+        central.writableDatabase.execSQL("DELETE FROM items WHERE id=?", arrayOf(dado))
+        central.writableDatabase.execSQL("UPDATE team_sync_settings SET value='restored' WHERE key='epoch'")
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)                              // kept
+        assertTrue(TeamSync(satellite).status().conflicts.isNotEmpty())
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(2, satellite.items(wh).size)                              // still kept: nobody checked yet
+        TeamSync(satellite).dismissConflicts()                                 // «Ho controllato»
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(1, satellite.items(wh).size)                              // now the central's deletion applies
+    }
+
+    /** 4.25: a transfer between sites arrives whole or not at all (no pieces created out of nothing). */
+    @Test fun aTransferWhoseExitIsRefusedDoesNotAddTheEntry() {
+        val second = central.createWarehouse(central.profiles().single().id, "Secondaria", "Padova")
+        val vite = central.items(warehouse).single().id
+        central.transferToSite(vite, second, 3.0, createMissing = true)        // main 7, second 3
+        TeamSync(central).addSite(second)
+        val whB = join(satellite, "B")
+        val secondB = TeamSync(satellite).status().sites.single()
+        satellite.transferToSite(satellite.items(secondB).single().id, whB, 2.0, createMissing = false)
+        central.movement(central.items(second).single().id, -2.0, "Prelievo")  // meanwhile: only 1 left there
+        val result = TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        assertEquals(0, result.movements); assertEquals(2, result.conflicts)
+        assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)             // the entry did not create 2 pieces
+        assertEquals(1.0, qty(central, second, "Vite M8"), 0.0)
+    }
 }

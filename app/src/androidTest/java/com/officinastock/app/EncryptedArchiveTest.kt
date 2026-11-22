@@ -50,7 +50,7 @@ class EncryptedArchiveTest {
         assertNull(DbCipher.lastProblem)
         assertEquals(items, after.items(warehouse).map { it.sku to it.quantity }.toSet())
         assertEquals(moves, after.movements(warehouse).size)
-        assertEquals(12, after.readableDatabase.version)
+        assertEquals(13, after.readableDatabase.version)
         assertTrue("il PIN funziona ancora", after.authenticate(profile, "1234"))
         // Everything keeps working on the encrypted archive.
         after.movement(vite, -1.0, "Prelievo")

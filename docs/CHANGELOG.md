@@ -4,6 +4,7 @@ Dalla più recente. Ogni voce rimanda alle note complete.
 
 | Versione | Novità principali |
 |---|---|
+| [4.25.0](CHANGELOG_4_25_0.md) | un solo archivio, schema 13, una regola per la giacenza, satelliti protetti dal ripristino del centrale, trasferimenti interi, password backup 12. |
 | [4.24.1](CHANGELOG_4_24_1.md) | backup senza limite di righe e sempre ripristinabile; satellite ripristinato che continua a inviare; correzioni dalla revisione completa. |
 | [4.24.0](CHANGELOG_4_24_0.md) | stile «Vetrina»: articoli che finiscono con la foto, scheda con pulsanti grandi, «Aggiungine un altro», nomi uguali ovunque. |
 | [4.23.0](CHANGELOG_4_23_0.md) | mappa più chiara: un colore, lettera dentro lo scaffale, pallino con gli articoli che finiscono; testi corretti. |
