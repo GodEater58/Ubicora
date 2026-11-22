@@ -69,9 +69,12 @@ import java.util.Locale
     // 4.19.3: the team works on all the shared sites, not on one warehouse.
     val sharedSites = u.warehouses.filter { t.covers(it.id) }.joinToString(", ") { it.name }.ifBlank { u.warehouse?.name.orEmpty() }
     val compact = inTeamScreen && t.role != TeamRole.NONE && synced
+    // 4.26: a central with no satellite yet: one clear first step (the QR), the file exchange folded away.
+    val firstLink = t.role == TeamRole.CENTRAL && synced && t.peers.isEmpty()
+    var showFiles by remember { mutableStateOf(false) }
 
     Panel(Modifier.fillMaxWidth()) {
-        Text(if (compact) "ALTRI MODI DI SCAMBIO" else "SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
+        Text(if (firstLink) "COLLEGA IL PRIMO TELEFONO" else if (compact) "ALTRI MODI DI SCAMBIO" else "SINCRONIZZAZIONE TRA TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
         if (t.role != TeamRole.NONE && t.needsPassword) {
             // 4.11: the password is sealed by this phone's keystore; after a restore on another phone it is typed again.
             Surface(color = Amber.copy(alpha = .12f), shape = MaterialTheme.shapes.medium) {
@@ -104,27 +107,34 @@ import java.util.Locale
                         fontSize = 12.sp, color = if (synced) TextSecondary else Amber)
                 }
                 if (synced) {
-                    if (!compact) PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
+                    if (!compact && !firstLink) PrimaryAction("Apri la rete per i satelliti vicini", onClick = { nearby { model.startCentralLink() } },
                         enabled = !u.busy, modifier = Modifier.fillMaxWidth())
-                    OutlinedButton(onClick = { showInvite = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                    if (firstLink) {
+                        Text("Sul nuovo telefono tocca «Collega con il QR del centrale» e inquadra questo QR.", fontSize = 12.sp, color = TextSecondary)
+                        PrimaryAction("QR per collegare un nuovo telefono", onClick = { showInvite = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth())
+                    } else OutlinedButton(onClick = { showInvite = true }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.QrCode2, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("QR per collegare un nuovo telefono")
                     }
-                    Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
-                    OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Importa dai satelliti")
-                    }
-                    OutlinedButton(onClick = { exporter.launch("Ubicora_aggiornamento_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Invia aggiornamento a tutti")
+                    if (firstLink && !showFiles) TextButton(onClick = { showFiles = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Altri modi: con i file (WhatsApp, email…)", color = TextSecondary)
+                    } else {
+                        Text("Oppure con i file (WhatsApp, email…):", fontSize = 11.sp, color = TextSecondary)
+                        OutlinedButton(onClick = { importer.launch(arrayOf("*/*")) }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Importa dai satelliti")
+                        }
+                        OutlinedButton(onClick = { exporter.launch("Ubicora_aggiornamento_$day.ubisync") }, enabled = !u.busy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Invia aggiornamento a tutti")
+                        }
                     }
                 }
-                if (synced) {
+                // 4.19.3: only the satellites that are really linked, not a fixed list of letters.
+                val linked = (t.peers.map { it.letter } + t.scopes.keys).filter { it.isNotBlank() }.distinct().sorted()
+                // 4.26: the permissions section appears with the first linked phone (before, it only said «they appear here»).
+                if (synced && linked.isNotEmpty()) {
                     HorizontalDivider()
                     Text("PERMESSI DEI TELEFONI", color = Mint, fontSize = 11.sp, letterSpacing = 1.sp)
                     Text("Fuori dal suo reparto un telefono vede gli articoli e può solo prelevare. Le schede modificate da un manutentore le validi tu.",
                         fontSize = 11.sp, color = TextSecondary)
-                    // 4.19.3: only the satellites that are really linked, not a fixed list of letters.
-                    val linked = (t.peers.map { it.letter } + t.scopes.keys).filter { it.isNotBlank() }.distinct().sorted()
-                    if (linked.isEmpty()) Text("Compaiono qui quando un satellite si collega.", fontSize = 12.sp, color = TextSecondary)
                     linked.forEach { l ->
                         val cats = t.scopes[l].orEmpty()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -135,8 +145,6 @@ import java.util.Locale
                     }
                     HorizontalDivider()
                 }
-                if (t.peers.isEmpty()) Text("Nessun satellite ancora: invia l'aggiornamento e fallo importare con «Collega a un telefono centrale».",
-                    fontSize = 11.sp, color = TextSecondary)
                 t.peers.forEach { p ->
                     Text("Satellite ${p.letter} · ultima importazione ${if (p.lastImport > 0) date(p.lastImport) else "—"} · ${p.processedSeq} modifiche ricevute",
                         fontSize = 12.sp)

@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
  * when it needs attention. [compact] drops photo and code to show more articles per screen.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
-@Composable fun ArticleRow(entry: StockItem, place: Placement?, model: StockViewModel, compact: Boolean,
+@Composable fun ArticleRow(entry: StockItem, place: Placement?, model: StockViewModel, compact: Boolean, query: String = "",
     onOpen: () -> Unit, onMenu: () -> Unit, onQuantity: (load: Boolean) -> Unit) {
     val busy = model.ui.busy
     val current by rememberUpdatedState(entry)
@@ -77,14 +77,18 @@ import androidx.compose.ui.unit.sp
                         Text(entry.name, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold,
                             lineHeight = 19.sp)
                     }
-                    // 4.21.1: the description right under the name (it is often what was searched for).
-                    if (entry.note.isNotBlank()) Text(entry.note, fontSize = 12.sp, color = TextPrimary.copy(alpha = .82f),
+                    // 4.26: the description only when the search found the words there (and not in the name):
+                    // otherwise it doubled the height of every row.
+                    if (ArticleRowText.showNote(entry.name, entry.note, query)) Text(entry.note, fontSize = 12.sp, color = TextPrimary.copy(alpha = .82f),
                         maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
-                    // Where to find it comes first: it is what the operator looks for.
-                    Text(Locations.describe(place, entry), color = if (place == null) Amber else Sky, fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (!compact) Text("${entry.sku}  ·  ${entry.category}", color = TextSecondary, fontSize = 11.sp, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
+                    // Where to find it comes first: it is what the operator looks for; 4.26: the code on the same line.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // The place wins the space: the code is the one shortened when the row is narrow.
+                        Text(Locations.describe(place, entry), color = if (place == null) Amber else Sky, fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!compact) Text("  ·  ${entry.sku}", color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false))
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
@@ -210,6 +214,17 @@ import androidx.compose.ui.unit.sp
                 onClick = { model.transferToSite(item.id, target!!, quantity!!); onClose() }) { Text("Sposta") }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Annulla") } })
+}
+
+/** 4.26: what a row of Articoli writes (plain logic, tested without Android). */
+object ArticleRowText {
+    /** The description is shown when a searched word is in it but not in the name. */
+    fun showNote(name: String, note: String, query: String): Boolean {
+        if (note.isBlank() || query.isBlank()) return false
+        val words = MapSearch.words(query)   // the same words the search uses (spaces, commas, semicolons)
+        val n = name.lowercase(java.util.Locale.ITALY); val d = note.lowercase(java.util.Locale.ITALY)
+        return words.any { it in d && it !in n }
+    }
 }
 
 /** Quantity typed by hand: comma or dot, positive, and within the shelf when withdrawing. */

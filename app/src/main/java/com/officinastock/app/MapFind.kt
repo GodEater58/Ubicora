@@ -27,7 +27,7 @@ data class MapResults(
 fun StockItem.matchesSearch(query: String): Boolean = query.isBlank() || MapSearch.matches(this, query)
 
 object MapSearch {
-    private fun words(text: String) = text.lowercase(Locale.ITALY).split(' ', '\t', ',', ';').map { it.trim() }.filter { it.isNotEmpty() }
+    fun words(text: String) = text.lowercase(Locale.ITALY).split(' ', '\t', ',', ';').map { it.trim() }.filter { it.isNotEmpty() }
     private fun fold(text: String) = text.lowercase(Locale.ITALY)
 
     /** Every word typed must appear in the name, code, category or description ("m12 90" finds "connettore M12 F 90°"). */
@@ -160,6 +160,8 @@ data class ScreenBox(val left: Float, val top: Float, val right: Float, val bott
 }
 
 object MapLabels {
+    /** 4.26: below this zoom a structure with its letter inside shows only the letter. */
+    const val NAMES_FROM_ZOOM = 1.6f
     /**
      * 4.23: a wall from ([ax],[ay]) to ([bx],[by]) as small boxes along it, so a name is never written over a
      * wall. Boxes, not one bounding box: a diagonal wall must not block the whole rectangle around it.

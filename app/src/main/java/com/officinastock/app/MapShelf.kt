@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,7 +67,8 @@ import java.util.Locale
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 FilledTonalIconButton(onClick = model::closeShelf, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.ArrowBack, "Torna indietro") }
                 Column(Modifier.weight(1f)) {
-                    Text(p.label.ifBlank { p.kind }, fontFamily = Display, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // 4.26: two lines, smaller: «A · Ricambi meccanici» was cut to «A · Ricambi meccan…».
+                    Text(p.label.ifBlank { p.kind }, fontFamily = Display, fontSize = 21.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(listOfNotNull(p.kind, if (p.levels > 1) "${p.levels} ripiani" else null,
                         "${view.count} ${if (view.count == 1) "articolo" else "articoli"}").joinToString(" · "),
                         color = TextSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -177,18 +179,36 @@ import java.util.Locale
 }
 
 @Composable private fun ShelfItemButton(item: StockItem, highlighted: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    // 4.25 «Vetrina»: the photo on top, a yellow edge when the article is finishing, the quantity in big.
-    Surface(onClick = onClick, modifier = modifier.heightIn(min = 64.dp), shape = RoundedCornerShape(18.dp),
+    // 4.25 «Vetrina»: photo and quantity in big. 4.26: every card has the same picture slot (photo or icon), so
+    // cards with and without a photo are as tall; the yellow edge is only for the highlighted article: a finishing
+    // one already says it with the yellow number and «min».
+    Surface(onClick = onClick, modifier = modifier.heightIn(min = 64.dp)
+            .semantics(mergeDescendants = true) { if (item.lowStock) stateDescription = "Scorta bassa" }, shape = RoundedCornerShape(18.dp),
         color = if (highlighted) Amber.copy(alpha = .22f) else PanelBg,
-        border = BorderStroke(if (highlighted || item.lowStock) 2.dp else 1.dp,
-            if (highlighted || item.lowStock) Amber else Hairline.copy(alpha = .12f))) {
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item.photoFile?.let { ArticleThumbnail(it, Modifier.fillMaxWidth().height(44.dp), edge = 240) }
-            Text(item.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(amount(item.quantity), fontFamily = Display, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (item.lowStock) Amber else TextPrimary)
-                Spacer(Modifier.width(4.dp))
-                Text(item.unit, fontSize = 12.sp, color = TextSecondary)
+        border = BorderStroke(if (highlighted) 2.dp else 1.dp, if (highlighted) Amber else Hairline.copy(alpha = .12f))) {
+        BoxWithConstraints {
+            val wide = maxWidth >= 220.dp
+            @Composable fun picture(m: Modifier) {
+                if (item.photoFile != null) ArticleThumbnail(item.photoFile, m, edge = 240)
+                else Box(m.clip(RoundedCornerShape(12.dp)).background(Surface2), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = if (item.lowStock) Amber else Mint, modifier = Modifier.size(20.dp))
+                }
+            }
+            @Composable fun texts() {
+                Text(item.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(amount(item.quantity), fontFamily = Display, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (item.lowStock) Amber else TextPrimary)
+                    Spacer(Modifier.width(4.dp))
+                    Text(item.unit + if (item.lowStock) " · min ${amount(item.minimum)}" else "", fontSize = 12.sp,
+                        color = if (item.lowStock) Amber else TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (wide) Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                picture(Modifier.size(52.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { texts() }
+            } else Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                picture(Modifier.fillMaxWidth().height(44.dp))
+                texts()
             }
         }
     }

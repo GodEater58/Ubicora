@@ -37,7 +37,10 @@ import androidx.compose.ui.unit.sp
                 }, fontSize = 12.sp, color = if (warn) Amber else TextSecondary)
             }
         }
-        PrimaryAction(if (t.role == TeamRole.CENTRAL) "Apri la rete per i satelliti" else "Sincronizza ora",
+        // 4.26: a central with no satellite has nobody to open the network to: the first step is the QR below.
+        if (t.role == TeamRole.CENTRAL && t.peers.isEmpty())
+            Text("Nessun telefono collegato: collega il primo con il QR qui sotto.", fontSize = 13.sp, color = TextSecondary)
+        else PrimaryAction(if (t.role == TeamRole.CENTRAL) "Apri la rete per i satelliti" else "Sincronizza ora",
             onClick = { nearby { if (t.role == TeamRole.CENTRAL) model.startCentralLink() else model.startSatelliteLink() } },
             enabled = !u.busy, modifier = Modifier.fillMaxWidth())
     }

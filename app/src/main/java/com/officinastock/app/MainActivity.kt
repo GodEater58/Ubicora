@@ -342,12 +342,13 @@ enum class ActivityFocus { ALL, INBOUND, OUTBOUND, LOANS }
                         onActivityFocus={focus,days->openActivity(focus,days)},
                         onItemFocus={itemId->model.openItemDetails(itemId);go(Tab.STOCK)})
                     Tab.STOCK -> Column(Modifier.fillMaxSize()) {
-                        StockSections(movements=false,onSelect={ if(it) go(Tab.MOVES) },goSettings={go(Tab.SETTINGS)})
+                        StockSections(movements=false,onSelect={ if(it) go(Tab.MOVES) },goSettings={go(Tab.SETTINGS)},
+                            subtitle="${model.ui.items.size} ${if(model.ui.items.size==1) "articolo" else "articoli"}")
                         InventoryScreen(model,onScan,stockFocus)
                     }
                     Tab.MAP -> NativeMapScreen(model,onAr,onSettings={go(Tab.SETTINGS)})
                     Tab.MOVES -> Column(Modifier.fillMaxSize()) {
-                        StockSections(movements=true,onSelect={ if(!it) go(Tab.STOCK) },goSettings={go(Tab.SETTINGS)})
+                        StockSections(movements=true,onSelect={ if(!it) go(Tab.STOCK) },goSettings={go(Tab.SETTINGS)},subtitle="Movimenti registrati e utensili in uso")
                         MovementsScreen(model,activityFocus,activityDays)
                     }
                     Tab.SETTINGS -> SettingsScreen(model,onCsv,onCsvImport,onBackup,onRestore,goTeam={go(Tab.TEAM)})

@@ -61,10 +61,8 @@ import kotlinx.coroutines.launch
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
-            SectionTitle("Attività","Movimenti registrati e utensili in uso",Modifier.weight(1f))
-        }
-        Row(Modifier.padding(horizontal=18.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        // 4.26: the title lives in StockSections above (Articoli · Movimenti).
+        Row(Modifier.padding(start=18.dp,end=18.dp,top=12.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf(ActivityFocus.ALL to "Tutti",ActivityFocus.INBOUND to "Entrate",
                    ActivityFocus.OUTBOUND to "Uscite",ActivityFocus.LOANS to "Prestiti (${u.loans.size})").forEach{(option,label)->
                 FilterChip(selected=focus==option,onClick={focus=option},label={Text(label)})

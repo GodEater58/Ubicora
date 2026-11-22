@@ -746,6 +746,7 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                             // 4.23: the short code ("A" of "A · Ricambi") stays inside the block, so the name beside it is never mistaken.
                             val code=original.substringBefore(" · ",missingDelimiterValue="").trim()
                             val codeW=codePaint.measureText(code)
+                            var codeDrawn=false
                             if(!fitsInside && spot!=inside && square && code.length in 1..3 && !PlacementKinds.isPassage(f.kind) &&
                                 fp.right-fp.left>codeW+8f && fp.bottom-fp.top>codePx+4f) {
                                 // On a small block the finishing badge sits on the corner: the code moves down-left, out of its way.
@@ -753,11 +754,14 @@ fun NativeMapScreen(model:StockViewModel,onAr:()->Unit,onSettings:()->Unit={}) {
                                 fun box()=ScreenBox(cx-codeW/2f,cy-codePx/2f,cx+codeW/2f,cy+codePx/2f)
                                 if(badgeBoxes.any{it.intersects(box())}) { cx=maxOf(fp.left+codeW/2f+4f,cx-badgePx/2f); cy=minOf(fp.bottom-codePx/2f-2f,cy+badgePx/2f) }
                                 if(badgeBoxes.none{it.intersects(box())}) drawIntoCanvas { cv ->
+                                    codeDrawn=true
                                     codePaint.color=if(dimming && f.id !in lit) android.graphics.Color.rgb(132,151,169) else android.graphics.Color.WHITE
                                     cv.nativeCanvas.drawText(code,cx,cy-(codePaint.ascent()+codePaint.descent())/2f,codePaint)
                                 }
                             }
-                            if(spot==null) continue
+                            // 4.26: at rest the letter inside the block is enough; the name beside it (which could look like the
+                            // neighbour's) comes zooming in, or when the structure is searched, selected or on the way.
+                            if(spot==null || (codeDrawn && !important && zoom<MapLabels.NAMES_FROM_ZOOM)) continue
                             labelBoxes.add(spot)
                             drawIntoCanvas { cv ->
                                 val x=(spot.left+spot.right)/2f
