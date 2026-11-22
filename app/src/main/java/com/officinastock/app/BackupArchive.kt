@@ -30,17 +30,23 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         private val teamTables = listOf("team_sync_settings","team_sync_peers","team_sync_outbox","team_sync_conflicts")
         private val withTeamSync = beforeTeamSync + teamTables
         // 4.20.3: which phone made each movement (restored after the team settings, so no trigger rewrites it).
-        private val tables = withTeamSync + listOf("movement_actors")
+        private val withActors = withTeamSync + listOf("movement_actors")
+        // 4.24.1: a maintainer's card changes not yet validated travel with the backup too.
+        private val tables = withActors + listOf("team_edits")
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
-    private const val MAX_ROWS = 300_000
+    }
+    /** 4.24.1: a restore or export killed half way leaves readable copies in the cache: removed at start. */
+    fun removeLeftovers() {
+        context.cacheDir.listFiles()?.filter { it.name.startsWith("restore_") || it.name.startsWith("ubicora_export_") }
+            ?.forEach { it.deleteRecursively() }
     }
     private fun db()=stockDb.readableDatabase
     private fun photosDir()=File(context.filesDir,"article_photos").also{it.mkdirs()}
     private fun addRow(zip: ZipOutputStream, row: JSONObject, remaining:Long):Long {
         val bytes=row.toString().toByteArray(Charsets.UTF_8)
-        require(bytes.size.toLong()+1<=remaining) { "Tabella troppo grande per il formato backup (32 MiB). Esportazione annullata." }
+        require(bytes.size.toLong()+1<=remaining) { "Archivio troppo grande per il formato backup. Esportazione annullata." }
         zip.write(bytes);zip.write('\n'.code)
         return bytes.size.toLong()+1
     }
@@ -61,15 +67,19 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 ZipOutputStream(BufferedOutputStream(sealed)).use {zip ->
                     zip.putNextEntry(ZipEntry("manifest.json"))
                     // Format ID legacy: non cambiare per mantenere compatibilita con backup 4.1.2+.
+                    // 4.24.1: the exact list of tables and the database version travel too (older apps ignore them).
                     zip.write(JSONObject().put("app","OfficinaStock").put("schema",1)
                         .put("createdAt",System.currentTimeMillis())
-                        .put("tables",tables.size).toString().toByteArray(Charsets.UTF_8))
+                        .put("tables",tables.size).put("tableList",org.json.JSONArray(tables))
+                        .put("dbVersion",db().rawQuery("PRAGMA user_version",null).use { it.moveToFirst(); it.getInt(0) }).toString().toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
-                    val db=db()
+                    val db=stockDb.writableDatabase
                     var total=1024L
-                    for(table in tables) {
+                    // 4.24.1: all tables read in one transaction: a team file arriving meanwhile cannot leave the
+                    // backup half before and half after it (which could make it impossible to restore).
+                    db.beginTransaction()
+                    try { for(table in tables) {
                         var entryBytes=0L
-                        var rowCount=0
                         zip.putNextEntry(ZipEntry("db/$table.ndjson"))
                         db.rawQuery("SELECT * FROM $table",null).use {cursor ->
                             while(cursor.moveToNext()) {
@@ -89,13 +99,13 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                                         files.add(name)
                                     }
                                 }
-                                require(++rowCount<=MAX_ROWS) { "Troppe righe per il formato backup" }
-                                entryBytes+=addRow(zip,json,MAX_ENTRY-entryBytes)
+                                entryBytes+=addRow(zip,json,MAX_TOTAL-total-entryBytes)
                             }
                         }
                         zip.closeEntry()
                         total+=entryBytes
                     }
+                    } finally { db.endTransaction() }
                     for(photo in files.sorted()) {
                         val f=File(photosDir(),photo)
                         if(!f.isFile) throw IOException("Foto mancante: $photo. Backup annullato.")
@@ -138,12 +148,10 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         }
         return total
     }
-    private fun readDbFile(file:File, allowed:Map<String,String>): List<ContentValues> {
-        val values=ArrayList<ContentValues>()
+    private fun forEachRow(file:File, allowed:Map<String,String>, action:(ContentValues)->Unit) {
         file.bufferedReader(Charsets.UTF_8).useLines {lines ->
             for(line in lines) {
                 if(line.isBlank())continue
-                require(values.size < MAX_ROWS) { "Troppe righe nel backup" }
                 val obj=JSONObject(line)
                 val row=ContentValues()
                 val names=obj.keys()
@@ -167,10 +175,9 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                         else -> throw IOException("Valore non valido nel backup: $col")
                     }
                 }
-                values.add(row)
+                action(row)
             }
         }
-        return values
     }
     /** L'archivio viene validato fuori transazione. La sostituzione SQLite è atomica. */
     fun restore(uri:Uri,password:String) {
@@ -198,7 +205,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                             File(parts,name.removePrefix("photos/"))
                         else -> throw IOException("Contenuto backup inatteso")
                     }
-                    consumed+=copyBounded(zip,file,MAX_ENTRY)
+                    consumed+=copyBounded(zip,file,if(name.startsWith("db/")) MAX_TOTAL else MAX_ENTRY)
                     require(consumed<=MAX_TOTAL) { "Backup troppo grande" }
                     zip.closeEntry()
                 }
@@ -208,18 +215,23 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             require(manifest.optString("app")=="OfficinaStock" && manifest.optInt("schema")==1) {
                 "Backup incompatibile con questa versione"
             }
+            val listed=manifest.optJSONArray("tableList")?.let { a -> (0 until a.length()).map { a.getString(it) } }
             val archiveTableCount=manifest.optInt("tables",-1)
-            require(archiveTableCount in setOf(legacyTables.size,managerTables.size,
-                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,withTeamSync.size,tables.size)) {
+            require(listed!=null || archiveTableCount in setOf(legacyTables.size,managerTables.size,
+                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,withTeamSync.size,withActors.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
-            val mandatory=when(archiveTableCount){
+            val mandatory=if(listed!=null) {
+                require(listed.toSet().size==listed.size && listed.all { it in tables } && legacyTables.all { it in listed }) { "Elenco tabelle non valido nel backup" }
+                listed
+            } else when(archiveTableCount){
                 legacyTables.size -> legacyTables
                 managerTables.size -> managerTables
                 enterpriseTables.size -> enterpriseTables
                 reservedTables.size -> reservedTables
                 beforeTeamSync.size -> beforeTeamSync
                 withTeamSync.size -> withTeamSync
+                withActors.size -> withActors
                 else -> tables
             }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
@@ -227,21 +239,15 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 "Backup misto o non valido"
             }
             val db=stockDb.writableDatabase
-            val snapshots=linkedMapOf<String,List<ContentValues>>()
-            for(table in tables) {
-                val columns=mutableMapOf<String,String>()
-                db.rawQuery("PRAGMA table_info($table)",null).use {c-> while(c.moveToNext())columns[c.getString(1)]=c.getString(2)}
-                snapshots[table]=if(names.contains("db/$table.ndjson")) {
-                    readDbFile(File(parts,"$table.ndjson"),columns)
-                } else emptyList()
-            }
+            val columns=tables.associateWith { table -> buildMap<String,String> {
+                db.rawQuery("PRAGMA table_info($table)",null).use {c-> while(c.moveToNext()) put(c.getString(1),c.getString(2))} } }
             val oldFiles=mutableSetOf<String>()
             db.rawQuery("SELECT photo_file FROM items WHERE photo_file IS NOT NULL",null).use {c ->
                 while(c.moveToNext())oldFiles.add(c.getString(0))
             }
             val newNames=mutableMapOf<String,String>()
-            for(row in snapshots["items"].orEmpty()) {
-                val old=row.getAsString("photo_file") ?: continue
+            fun renamePhoto(row:ContentValues) {
+                val old=row.getAsString("photo_file") ?: return
                 require(imageName.matches(old) && names.contains("photos/$old")) {"Foto articolo mancante nel backup"}
                 if(!newNames.containsKey(old)) {
                     val next="item_${UUID.randomUUID()}.jpg"
@@ -257,17 +263,24 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 db.delete("sku_sequences",null,null)
                 // Cleared first, so no sync trigger fires while the archive is written back.
                 for(table in teamTables) db.delete(table,null,null)
-                // 4.21: card changes waiting for validation belong to the team of the replaced archive.
+                // 4.21: card changes waiting for validation belong to the team of the replaced archive
+                // (4.24.1: the backup brings back its own); the loans seen on the other phones come with the next exchange.
                 db.delete("team_edits",null,null)
-                for(table in tables) {
-                    for(values in snapshots.getValue(table)) {
-                        db.insertOrThrow(table,null,values)
-                    }
+                db.delete("team_loans",null,null)
+                // 4.24.1: one row at a time, so the size of a table no longer depends on the phone's memory.
+                for(table in tables) if(names.contains("db/$table.ndjson")) forEachRow(File(parts,"$table.ndjson"),columns.getValue(table)) { values ->
+                    if(table=="items") renamePhoto(values)
+                    db.insertOrThrow(table,null,values)
                 }
                 db.rawQuery("PRAGMA foreign_key_check",null).use{ c ->
                     require(!c.moveToFirst()) { "Relazioni non valide nel backup" }
                 }
+                stockDb.repairRestoredPositions(db)
                 stockDb.validateRestoredData()
+                // 4.24.1: on a new phone the change counter would restart from 1, below what the central has already
+                // received from this phone: its new changes would be taken as old and lost. The counter jumps ahead.
+                db.execSQL("INSERT INTO sqlite_sequence(name,seq) SELECT 'team_sync_outbox',0 WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='team_sync_outbox')")
+                db.execSQL("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='team_sync_outbox'",arrayOf(System.currentTimeMillis()))
                 db.setTransactionSuccessful()
             } finally {db.endTransaction()}
             restored=true

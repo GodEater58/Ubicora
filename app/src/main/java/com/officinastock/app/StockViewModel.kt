@@ -278,8 +278,17 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private class StockRefresh(val items:List<StockItem>,val movements:List<Movement>,val loans:List<Loan>,val manager:ManagerSnapshot,
         val reserved:Map<Long,Double>,val activity:Map<Long,Int>,val team:TeamSyncStatus,val reports:Map<Int,OperationalReport>)
 
+    /**
+     * 4.24.1: a tap while another operation runs (a sync, a reload) is not carried out; until now it was dropped
+     * without a word, and someone could believe a withdrawal was recorded. Now the phone says so.
+     */
+    private fun refusedWhileBusy(): Boolean {
+        if(!ui.busy) return false
+        android.widget.Toast.makeText(getApplication(),"Operazione in corso: non registrato, riprova tra un momento",android.widget.Toast.LENGTH_SHORT).show()
+        return true
+    }
     private fun execute(onSuccess: (() -> Unit)? = null, light: Boolean = false, action: () -> Unit) {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val generation=backgroundGeneration
         ui=ui.copy(busy=true, message=null)
         viewModelScope.launch {
@@ -352,7 +361,9 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
             scanRequest=ui.scanRequest,teamQr=ui.teamQr,pendingCode=ui.pendingCode,mapFindItemId=ui.mapFindItemId,
             shelfOpenId=ui.shelfOpenId?.takeIf{id->snapshot.placements.any{it.id==id}},
             locationPickItemIds=ui.locationPickItemIds?.takeIf{ids->snapshot.warehouse?.id==ui.warehouse?.id && ids.all{id->snapshot.items.any{it.id==id}}},
-            mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label)
+            mapUndoLabel=mapUndo.lastOrNull()?.label,mapRedoLabel=mapRedo.lastOrNull()?.label,
+            // 4.24.1: a sync arriving meanwhile must not close the new article being filled in.
+            newItem=ui.newItem?.takeIf{it.warehouseId==snapshot.warehouse?.id},scannedItemId=ui.scannedItemId)
         pendingNewItem = null
     }
 
@@ -375,7 +386,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun cancelLocationPick() { ui=ui.copy(locationPickItemIds=null) }
     fun completeLocationPick(placementId:Long,level:Int?,slot:Int?) {
         val ids=ui.locationPickItemIds ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         ui=ui.copy(locationPickItemIds=null)
         assignItems(ids,placementId,level,slot)
     }
@@ -412,7 +423,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(record) { mapUndo.addLast(edit);while(mapUndo.size>50)mapUndo.removeFirst();mapRedo.clear() }
     }
     private fun runMap(action:()->MapEdit?,onSuccess:(MapEdit)->Unit) {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val generation=backgroundGeneration
         val warehouseId=ui.warehouse?.id ?: return
         ui=ui.copy(busy=true,message=null)
@@ -452,12 +463,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     // An edit leaves its stack only when the revert really runs; a double tap while saving does not
     // lose it. If the revert fails (e.g. the structure was deleted meanwhile) it is dropped on purpose.
     fun undoMap() {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val edit=mapUndo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapRedo.addLast(inverse) }
     }
     fun redoMap() {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val edit=mapRedo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapUndo.addLast(inverse) }
     }
@@ -471,7 +482,10 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private var pendingProfileId: Long? = null
     private var pendingWarehouseId: Long? = null
     // All operation/session fields must exist before the first coroutine starts.
-    init { refresh() }
+    init {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { BackupArchive(app.applicationContext,db).removeLeftovers() } }
+        refresh()
+    }
     fun unlock(profile: Profile,pin: String) = execute {
         require(db.authenticate(profile.id,pin)) { "PIN errato" }
         BiometricLogin.pinUsed(getApplication(),profile.id)   // 4.21.1: the fingerprint is good for 7 more days
@@ -642,24 +656,25 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun addItem(name:String,cat:String,qty:Double,min:Double,unit:String,note:String,photoUri:String?=null,
                 cost:Double?=null,supplier:String="",leadDays:Int?=null,place:NewItemPlace=NewItemPlace()) {
         var created:Long?=null
+        var notPlaced:String?=null
         val draft=ui.newItem
         // 4.21: "on the map" opens the location pick once the article exists; the draft ends only when saved.
         execute(onSuccess={
             if(ui.newItem==draft) ui=ui.copy(newItem=null)
             draft?.let { forgetDraft(it.warehouseId) }
             if(place.onMap) created?.let { startLocationPick(listOf(it)) }
+            notPlaced?.let { ui=ui.copy(message="Articolo salvato, ma senza posto ($it): assegnalo dalla mappa") }
         }) {
         require(!outsideDepartment(cat)) { "Puoi creare solo articoli del tuo reparto (${department()})" }
         val picture=photoUri?.let { PhotoFiles.save(getApplication<Application>(),Uri.parse(it)) }
-        try {
-            val id=db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays)
-            pendingNewItem = if(place.onMap) null else id
-            created=id
-            place.placementId?.let { db.assignItems(listOf(id),it,place.level,place.slot) }
-        } catch(t:Throwable) {
-            PhotoFiles.delete(getApplication<Application>(),picture)
-            throw t
-        }
+        val id=try { db.addItem(requireWarehouse(),name,cat,qty,min,unit,note,picture,cost,supplier,leadDays) }
+            catch(t:Throwable) { PhotoFiles.delete(getApplication<Application>(),picture); throw t }
+        pendingNewItem = if(place.onMap) null else id
+        created=id
+        // 4.24.1: the article exists now: if its place is gone (a sync removed the structure) it stays saved,
+        // with its photo, and the draft ends; saving again would make a second article.
+        place.placementId?.let { p -> runCatching { db.assignItems(listOf(id),p,place.level,place.slot) }
+            .onFailure { e -> if(e is CancellationException) throw e; notPlaced=e.message ?: "posto non più disponibile" } }
         // The camera file goes only once the article is saved: after an error the draft keeps it.
         photoUri?.let{PhotoFiles.removeCapturedTemp(getApplication<Application>(),Uri.parse(it))}
         }
@@ -727,7 +742,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Undo never deletes history: it records the opposite movement, so the audit trail stays complete. */
     fun undoMovement() {
         val undo=ui.movementUndo ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         ui=ui.copy(movementUndo=null)
         execute(light=true) { team.returning { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) } }
     }
@@ -851,7 +866,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun resizeMap(width:Float,height:Float) {
         val warehouseId=ui.warehouse?.id ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         mapCameras.remove(warehouseId)
         // Older edits refer to the previous room size: undoing them could put things outside it.
         clearMapHistory()

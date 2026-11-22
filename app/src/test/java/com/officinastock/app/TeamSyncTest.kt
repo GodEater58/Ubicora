@@ -713,4 +713,72 @@ class TeamSyncTest {
         TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
         assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)
     }
+
+    @Test fun aBackupKeepsTheCardChangesNotYetSentAndForgetsTheOtherPhonesLoans() {
+        TeamSync(central).setScope("B", emptyList())
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, "Vite M8 inox", "Ricambi", 2.0, "pz", "", null, "", null))
+        val c = RuntimeEnvironment.getApplication()
+        val file = java.io.File(c.cacheDir, "team-edits.osbackup")
+        try {
+            BackupArchive(c, satellite).export(android.net.Uri.fromFile(file), "password-di-test")
+            satellite.writableDatabase.execSQL("DELETE FROM team_edits")
+            satellite.writableDatabase.execSQL("INSERT INTO team_loans(letter,item_uid,borrower,quantity,created_at) VALUES('C','u','Ugo',1,0)")
+            BackupArchive(c, satellite).restore(android.net.Uri.fromFile(file), "password-di-test")
+            assertEquals(listOf("sending"), TeamSync(satellite).status().edits.map { it.status })
+            assertTrue(TeamSync(satellite).status().loans.isEmpty())
+        } finally { file.delete() }
+    }
+
+    /** 4.24.1: a satellite restored on a new phone keeps sending: its new changes are not taken as already received. */
+    @Test fun aSatelliteRestoredOnANewPhoneStillDeliversItsNewChanges() {
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single().id
+        repeat(3) { satellite.movement(vite, -1.0, "Prelievo") }
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)
+        val c = RuntimeEnvironment.getApplication()
+        val file = java.io.File(c.cacheDir, "satellite-b.osbackup")
+        try {
+            BackupArchive(c, satellite).export(android.net.Uri.fromFile(file), "password-di-test")
+            BackupArchive(c, other).restore(android.net.Uri.fromFile(file), "password-di-test")   // the new phone
+        } finally { file.delete() }
+        val restoredWh = TeamSync(other).status().warehouseId!!
+        other.movement(other.items(restoredWh).single().id, -2.0, "Prelievo dal telefono nuovo")
+        TeamSync(central).importChanges(ByteArrayInputStream(changes(other)))
+        assertEquals(5.0, qty(central, warehouse, "Vite M8"), 0.0)
+    }
+
+    /** 4.24.1: states a team exchange can produce never make a backup impossible to restore. */
+    @Test fun aBackupRestoresEvenWithAShelfThatNoLongerExists() {
+        val c = RuntimeEnvironment.getApplication()
+        val vite = central.items(warehouse).single()
+        central.writableDatabase.execSQL("UPDATE items SET shelf_level=9 WHERE id=?", arrayOf(vite.id))   // shelf removed elsewhere
+        val file = java.io.File(c.cacheDir, "shelf.osbackup")
+        try {
+            BackupArchive(c, central).export(android.net.Uri.fromFile(file), "password-di-test")
+            BackupArchive(c, central).restore(android.net.Uri.fromFile(file), "password-di-test")
+        } finally { file.delete() }
+        val back = central.items(warehouse).single()
+        assertEquals(10.0, back.quantity, 0.0)
+        assertNull(back.shelfLevel)
+        assertNotNull(back.placementId)
+    }
+
+    /** 4.24.1: two codes swapped on the central no longer block the satellite's updates. */
+    @Test fun swappedCodesOnTheCentralReachTheSatellite() {
+        val dado = central.addItem(warehouse, "Dado M8", "Ricambi", 5.0, 1.0, "pz", "")
+        val wh = join(satellite, "B")
+        val vite = central.items(warehouse).single { it.name == "Vite M8" }
+        val d = central.item(dado)!!
+        val (codeV, codeD) = vite.sku to d.sku
+        fun rename(id: Long, sku: String) { val i = central.item(id)!!
+            central.updateItemDetails(warehouse, id, i.name, i.category, i.minimum, i.unit, i.note, i.unitCost, i.supplier, i.leadDays, sku = sku) }
+        rename(vite.id, "TMP-1"); rename(dado, codeV); rename(vite.id, codeD)
+        TeamSync(satellite).importState(ByteArrayInputStream(state()))
+        assertEquals(codeD, satellite.items(wh).single { it.name == "Vite M8" }.sku)
+        assertEquals(codeV, satellite.items(wh).single { it.name == "Dado M8" }.sku)
+    }
 }

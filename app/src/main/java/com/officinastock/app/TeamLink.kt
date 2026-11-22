@@ -125,6 +125,10 @@ class TeamLink(
 
     private val centralPayloads = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
+            // 4.24.1: one file per connection; more in parallel from the same phone could fill the memory.
+            if (ui.peers.firstOrNull { it.endpointId == endpointId }?.phase in setOf(PeerPhase.RECEIVING, PeerPhase.APPLYING, PeerPhase.SENDING)) {
+                client.cancelPayload(payload.id); return
+            }
             val stream = payload.asStream()?.asInputStream() ?: return
             val current = session
             peer(endpointId, PeerPhase.RECEIVING, "Ricevo le modifiche…")

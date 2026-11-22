@@ -685,7 +685,16 @@ class TeamSync(private val stock: StockDb) {
     }
 
     /** Complete state for every phone. */
-    fun exportState(out: OutputStream) {
+    /** 4.24.1: read in one transaction, so a satellite's file applied meanwhile cannot make the update inconsistent. */
+    fun exportState(out: OutputStream) = consistent { exportStateNow(out) }
+    fun exportChanges(out: OutputStream): Int = consistent { exportChangesNow(out) }
+    private fun <T> consistent(block: () -> T): T {
+        val sql = db
+        sql.beginTransaction()
+        try { return block().also { sql.setTransactionSuccessful() } } finally { sql.endTransaction() }
+    }
+
+    private fun exportStateNow(out: OutputStream) {
         require(setting("role") == "central") { "Solo il telefono centrale invia l'aggiornamento" }
         val warehouseId = setting("warehouse_id")!!.toLong()
         val read = stock.readableDatabase
@@ -815,7 +824,7 @@ class TeamSync(private val stock: StockDb) {
                     "SKIP" -> skipped++
                     else -> throw IllegalArgumentException("Modifica sconosciuta nel file")
                 }
-                processed = seq
+                processed = maxOf(processed, seq)   // a file out of order never moves the mark back
             }
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))
@@ -852,7 +861,7 @@ class TeamSync(private val stock: StockDb) {
     // ---------------------------------------------------------------- satellite
 
     /** Everything not yet confirmed by the central phone. */
-    fun exportChanges(out: OutputStream): Int {
+    private fun exportChangesNow(out: OutputStream): Int {
         require(setting("role") == "satellite") { "Solo un satellite invia le modifiche al centrale" }
         val read = stock.readableDatabase
         val events = JSONArray()
@@ -987,6 +996,10 @@ class TeamSync(private val stock: StockDb) {
             val target = StockRules.difference(it.getDouble("quantity"), -(local?.let { l -> pendingDelta[l.first] } ?: 0.0))
                 .coerceAtLeast(0.0)
             val values = articleValues(it).apply { put("quantity", target) }
+            // 4.24.1: codes swapped on the central (A→B, B→A): the article still holding this code here takes a
+            // provisional one, it gets its own code a few lines later in this same update.
+            sql.execSQL("UPDATE items SET sku='~'||uid WHERE warehouse_id=? AND sku=? AND uid<>? AND uid IS NOT NULL",
+                arrayOf(warehouseId, values.getAsString("sku"), uid))
             if (local == null) {
                 values.put("warehouse_id", warehouseId); values.put("uid", uid)
                 placeOn(values, placementOf(sql, warehouseId, it))
