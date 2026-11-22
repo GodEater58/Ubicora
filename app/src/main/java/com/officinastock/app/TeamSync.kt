@@ -774,6 +774,8 @@ class TeamSync(private val stock: StockDb) {
             val events = changes.getJSONArray("events")
             require(events.length() <= MAX_EVENTS) { "File troppo grande" }
             var articles = 0; var moves = 0; var locations = 0; var skipped = 0; var conflicts = 0
+            // 4.25: a transfer between sites travels as an exit and an entry: both or neither.
+            var transferOut: Pair<Long, Double>? = null; var transferOutFailed = false
             for (i in 0 until events.length()) {
                 val e = events.getJSONObject(i)
                 val seq = e.getLong("seq")
@@ -802,7 +804,10 @@ class TeamSync(private val stock: StockDb) {
                     "MOVE" -> {
                         val itemId = teamItem(sql, ids, e.getString("item"))?.first
                         val note = "$letter · " + e.getString("note").take(240)
-                        val failure = if (itemId == null) "articolo sconosciuto"
+                        val raw = e.getString("note")
+                        val entry = raw.startsWith("Trasferito da ")
+                        val failure = if (entry && transferOutFailed) "l'uscita dall'altra sede non è stata applicata"
+                            else if (itemId == null) "articolo sconosciuto"
                             else if (e.getDouble("delta") > 0 && outside(itemId) && !e.getString("note").startsWith("Annullato") &&
                                 !e.getString("note").startsWith("Restituito")) "carico fuori dal reparto $letter"
                             else runCatching {
@@ -811,7 +816,13 @@ class TeamSync(private val stock: StockDb) {
                         if (failure == null) moves++ else {
                             conflict(sql, letter, itemLabel(sql, itemId, e.getString("item")),
                                 "${signed(e.getDouble("delta"))} «${e.getString("note").take(80)}» non applicato: $failure"); conflicts++
+                            // The entry was refused after its exit went through: the exit is put back.
+                            if (entry) transferOut?.let { (outItem, outDelta) -> runCatching {
+                                stock.applyTeamMovement(sql, outItem, -outDelta, "$letter · Annullato: trasferimento non arrivato", System.currentTimeMillis()) } }
                         }
+                        val exit = raw.startsWith("Trasferito a ")
+                        transferOut = if (exit && failure == null && itemId != null) itemId to e.getDouble("delta") else null
+                        transferOutFailed = exit && failure != null
                     }
                     "LOCATE" -> {
                         val found = teamItem(sql, ids, e.getString("item"))
