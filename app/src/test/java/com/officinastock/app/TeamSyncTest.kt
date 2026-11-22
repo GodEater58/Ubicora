@@ -713,4 +713,21 @@ class TeamSyncTest {
         TeamSync(central).importChanges(ByteArrayInputStream(changes(satellite)))
         assertEquals(7.0, qty(central, warehouse, "Vite M8"), 0.0)
     }
+
+    @Test fun aBackupKeepsTheCardChangesNotYetSentAndForgetsTheOtherPhonesLoans() {
+        TeamSync(central).setScope("B", emptyList())
+        val wh = join(satellite, "B")
+        val vite = satellite.items(wh).single()
+        TeamSync(satellite).requestEdit(vite.id, TeamSync.card(vite.sku, "Vite M8 inox", "Ricambi", 2.0, "pz", "", null, "", null))
+        val c = RuntimeEnvironment.getApplication()
+        val file = java.io.File(c.cacheDir, "team-edits.osbackup")
+        try {
+            BackupArchive(c, satellite).export(android.net.Uri.fromFile(file), "password-di-test")
+            satellite.writableDatabase.execSQL("DELETE FROM team_edits")
+            satellite.writableDatabase.execSQL("INSERT INTO team_loans(letter,item_uid,borrower,quantity,created_at) VALUES('C','u','Ugo',1,0)")
+            BackupArchive(c, satellite).restore(android.net.Uri.fromFile(file), "password-di-test")
+            assertEquals(listOf("sending"), TeamSync(satellite).status().edits.map { it.status })
+            assertTrue(TeamSync(satellite).status().loans.isEmpty())
+        } finally { file.delete() }
+    }
 }

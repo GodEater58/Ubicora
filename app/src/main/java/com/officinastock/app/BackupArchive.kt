@@ -30,7 +30,9 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
         private val teamTables = listOf("team_sync_settings","team_sync_peers","team_sync_outbox","team_sync_conflicts")
         private val withTeamSync = beforeTeamSync + teamTables
         // 4.20.3: which phone made each movement (restored after the team settings, so no trigger rewrites it).
-        private val tables = withTeamSync + listOf("movement_actors")
+        private val withActors = withTeamSync + listOf("movement_actors")
+        // 4.24.1: a maintainer's card changes not yet validated travel with the backup too.
+        private val tables = withActors + listOf("team_edits")
         private val imageName = Regex("item_[a-f0-9-]{36}\\.jpg")
         private const val MAX_TOTAL = 4L * 1024 * 1024 * 1024
     private const val MAX_ENTRY = 32L * 1024 * 1024
@@ -210,7 +212,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
             }
             val archiveTableCount=manifest.optInt("tables",-1)
             require(archiveTableCount in setOf(legacyTables.size,managerTables.size,
-                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,withTeamSync.size,tables.size)) {
+                enterpriseTables.size,reservedTables.size,beforeTeamSync.size,withTeamSync.size,withActors.size,tables.size)) {
                 "Numero tabelle incompatibile nel manifest del backup"
             }
             val mandatory=when(archiveTableCount){
@@ -220,6 +222,7 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 reservedTables.size -> reservedTables
                 beforeTeamSync.size -> beforeTeamSync
                 withTeamSync.size -> withTeamSync
+                withActors.size -> withActors
                 else -> tables
             }
             require(mandatory.all {names.contains("db/$it.ndjson")}) {"Backup incompleto: tabelle mancanti"}
@@ -257,8 +260,10 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 db.delete("sku_sequences",null,null)
                 // Cleared first, so no sync trigger fires while the archive is written back.
                 for(table in teamTables) db.delete(table,null,null)
-                // 4.21: card changes waiting for validation belong to the team of the replaced archive.
+                // 4.21: card changes waiting for validation belong to the team of the replaced archive
+                // (4.24.1: the backup brings back its own); the loans seen on the other phones come with the next exchange.
                 db.delete("team_edits",null,null)
+                db.delete("team_loans",null,null)
                 for(table in tables) {
                     for(values in snapshots.getValue(table)) {
                         db.insertOrThrow(table,null,values)
