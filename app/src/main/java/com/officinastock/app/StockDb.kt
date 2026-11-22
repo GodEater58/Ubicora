@@ -12,7 +12,19 @@ import javax.crypto.spec.PBEKeySpec
 import java.util.Base64
 
 /** Database transazionale locale. Nessun HTML, server, permesso Internet o sincronizzazione remota. */
-class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQLiteOpenHelper(context, name, null, 12) {
+class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQLiteOpenHelper(context, name, null, 13) {
+    companion object {
+        @Volatile private var app: StockDb? = null
+        /**
+         * 4.25: one archive for the whole app, never closed while the app lives. Before, each screen model opened
+         * its own and closed it on exit, even while a restore or a team exchange was still writing.
+         */
+        fun shared(context: Context): StockDb {
+            val owner = context.applicationContext
+            app?.takeIf { it.appContext === owner }?.let { return it }
+            return synchronized(this) { app?.takeIf { it.appContext === owner } ?: StockDb(owner).also { app = it } }
+        }
+    }
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = ON")
@@ -75,14 +87,21 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
      */
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
+        // 4.25: still idempotent (IF NOT EXISTS) for safety, but all or nothing: a phone closed half way never keeps
+        // half of the team triggers.
         if (!db.isReadOnly) {
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_items_placement ON items(placement_id)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
-            // 4.15: who made each movement. Same rule: created once, on any database version.
-            MovementActors.create(db)
-            // 4.18: the team triggers follow every shared site; rebuilt here so older installations get the new ones.
-            TeamSyncSchema.create(db)
+            db.beginTransaction()
+            try { lateAdditions(db); db.setTransactionSuccessful() } finally { db.endTransaction() }
         }
+    }
+    /** Everything added after version 12 (4.10–4.24); from 4.25 it also runs as the version 13 migration. */
+    private fun lateAdditions(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_items_placement ON items(placement_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_walls_warehouse ON walls(warehouse_id)")
+        // 4.15: who made each movement.
+        MovementActors.create(db)
+        // 4.18: the team triggers follow every shared site; rebuilt so older installations get the new ones.
+        TeamSyncSchema.create(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // Aggiornamento additivo: conserva articoli, movimenti, magazzini e profili della 4.0.0.
@@ -153,6 +172,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         }
         // 4.8: phone-to-phone sync. Additive: global ids for items and structures, and the outbox.
         if (oldVersion < 12 && newVersion >= 12) TeamSyncSchema.create(db)
+        // 4.25: from now on every change of the schema is a new version (13, 14…) with its own step here.
+        if (oldVersion < 13 && newVersion >= 13) lateAdditions(db)
     }
     private fun createDemoAssets(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS demo_assets (

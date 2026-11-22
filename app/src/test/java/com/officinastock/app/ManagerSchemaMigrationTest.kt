@@ -44,7 +44,7 @@ class ManagerSchemaMigrationTest {
 
         db = StockDb(context)
         val upgraded = db.writableDatabase
-        assertEquals(12, upgraded.version)
+        assertEquals(13, upgraded.version)
         assertEquals("Privato", db.profiles().single().name)
         assertTrue(db.authenticate(profile, "1234"))
         assertEquals("Garage", db.warehouses(profile).single().name)
@@ -59,5 +59,27 @@ class ManagerSchemaMigrationTest {
         val orderId = operations.createOrder(warehouse, item, 3.0, "Acme", "Manager")
         assertEquals(orderId, operations.orders(warehouse).single().id)
         assertEquals(before.quantity, db.item(item)!!.quantity, 0.0)
+    }
+
+    /** 4.25: a 4.24 installation (version 12, team tables added at opening) moves to version 13 with everything. */
+    @Test fun aVersion12InstallationGetsTheLaterTablesAsVersion13() {
+        val profile = db.createProfile("Officina", "1234")
+        val warehouse = db.createWarehouse(profile, "Magazzino", "Rovigo")
+        val item = db.addItem(warehouse, "Vite", "Ricambi", 4.0, 1.0, "pz", "")
+        val sqlite = db.writableDatabase
+        listOf("team_edits", "team_loans", "movement_actors").forEach { sqlite.execSQL("DROP TABLE IF EXISTS $it") }
+        sqlite.execSQL("DROP INDEX IF EXISTS idx_items_placement")
+        sqlite.version = 12
+        db.close()
+
+        db = StockDb(context)
+        val upgraded = db.writableDatabase
+        assertEquals(13, upgraded.version)
+        for (table in listOf("team_edits", "team_loans", "movement_actors"))
+            upgraded.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table)).use { assertTrue(table, it.moveToFirst()) }
+        upgraded.rawQuery("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_items_placement'", null).use { assertTrue(it.moveToFirst()) }
+        assertEquals(4.0, db.item(item)!!.quantity, 0.0)
+        db.movement(item, -1.0, "Prelievo")                     // the movement triggers work on the upgraded archive
+        assertEquals(3.0, db.item(item)!!.quantity, 0.0)
     }
 }

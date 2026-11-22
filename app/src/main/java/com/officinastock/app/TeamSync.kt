@@ -938,13 +938,13 @@ class TeamSync(private val stock: StockDb) {
         val sql = db
         sql.beginTransaction()
         removedPhotos.clear()
-        try {
-            val result = applyState(sql, setting("warehouse_id")!!.toLong(), state)
-            sql.setTransactionSuccessful()
-            sql.endTransaction()
-            dropRemovedPhotos()
-            return result
-        } catch (e: Throwable) { sql.endTransaction(); removedPhotos.clear(); throw e }
+        // 4.25: the transaction ends exactly once; the photos go only after a successful commit.
+        val result = try {
+            applyState(sql, setting("warehouse_id")!!.toLong(), state).also { sql.setTransactionSuccessful() }
+        } catch (e: Throwable) { removedPhotos.clear(); throw e }
+        finally { sql.endTransaction() }
+        dropRemovedPhotos()
+        return result
     }
 
     /** One site of a central update: plan, structures and articles, keeping the local changes not yet confirmed. */
