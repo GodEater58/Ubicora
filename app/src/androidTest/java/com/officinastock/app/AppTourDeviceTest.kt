@@ -36,8 +36,8 @@ class AppTourDeviceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private var scenario: ActivityScenario<MainActivity>? = null
 
-    @Before fun cleanInstall() { context.deleteDatabase("officina_stock_native4.db") }
-    @After fun leaveClean() { scenario?.close(); context.deleteDatabase("officina_stock_native4.db") }
+    @Before fun cleanInstall() { StockDb.closeShared(); context.deleteDatabase("officina_stock_native4.db") }
+    @After fun leaveClean() { scenario?.close(); StockDb.closeShared(); context.deleteDatabase("officina_stock_native4.db") }
 
     private fun <T> onModel(block: (StockViewModel) -> T): T {
         var result: Result<T>? = null

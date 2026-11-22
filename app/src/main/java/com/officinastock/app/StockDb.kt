@@ -35,6 +35,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
                 put("item_id", itemId); put("delta", delta); put("note", note); put("created_at", at.coerceIn(0L, 4102444800000L))
             })
         }
+        /** Tests that delete the archive file close the shared one first (in the app it is never deleted while open). */
+        fun closeShared() = synchronized(this) { app?.close(); app = null }
         fun shared(context: Context): StockDb {
             val owner = context.applicationContext
             app?.takeIf { it.appContext === owner }?.let { return it }
