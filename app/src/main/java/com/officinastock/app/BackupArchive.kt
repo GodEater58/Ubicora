@@ -272,7 +272,12 @@ class BackupArchive(private val context: Context, private val stockDb: StockDb) 
                 db.rawQuery("PRAGMA foreign_key_check",null).use{ c ->
                     require(!c.moveToFirst()) { "Relazioni non valide nel backup" }
                 }
+                stockDb.repairRestoredPositions(db)
                 stockDb.validateRestoredData()
+                // 4.24.1: on a new phone the change counter would restart from 1, below what the central has already
+                // received from this phone: its new changes would be taken as old and lost. The counter jumps ahead.
+                db.execSQL("INSERT INTO sqlite_sequence(name,seq) SELECT 'team_sync_outbox',0 WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='team_sync_outbox')")
+                db.execSQL("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='team_sync_outbox'",arrayOf(System.currentTimeMillis()))
                 db.setTransactionSuccessful()
             } finally {db.endTransaction()}
             restored=true

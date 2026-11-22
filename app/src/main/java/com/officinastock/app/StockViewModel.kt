@@ -278,8 +278,17 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     private class StockRefresh(val items:List<StockItem>,val movements:List<Movement>,val loans:List<Loan>,val manager:ManagerSnapshot,
         val reserved:Map<Long,Double>,val activity:Map<Long,Int>,val team:TeamSyncStatus,val reports:Map<Int,OperationalReport>)
 
+    /**
+     * 4.24.1: a tap while another operation runs (a sync, a reload) is not carried out; until now it was dropped
+     * without a word, and someone could believe a withdrawal was recorded. Now the phone says so.
+     */
+    private fun refusedWhileBusy(): Boolean {
+        if(!ui.busy) return false
+        android.widget.Toast.makeText(getApplication(),"Operazione in corso: non registrato, riprova tra un momento",android.widget.Toast.LENGTH_SHORT).show()
+        return true
+    }
     private fun execute(onSuccess: (() -> Unit)? = null, light: Boolean = false, action: () -> Unit) {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val generation=backgroundGeneration
         ui=ui.copy(busy=true, message=null)
         viewModelScope.launch {
@@ -375,7 +384,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun cancelLocationPick() { ui=ui.copy(locationPickItemIds=null) }
     fun completeLocationPick(placementId:Long,level:Int?,slot:Int?) {
         val ids=ui.locationPickItemIds ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         ui=ui.copy(locationPickItemIds=null)
         assignItems(ids,placementId,level,slot)
     }
@@ -412,7 +421,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         if(record) { mapUndo.addLast(edit);while(mapUndo.size>50)mapUndo.removeFirst();mapRedo.clear() }
     }
     private fun runMap(action:()->MapEdit?,onSuccess:(MapEdit)->Unit) {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val generation=backgroundGeneration
         val warehouseId=ui.warehouse?.id ?: return
         ui=ui.copy(busy=true,message=null)
@@ -452,12 +461,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     // An edit leaves its stack only when the revert really runs; a double tap while saving does not
     // lose it. If the revert fails (e.g. the structure was deleted meanwhile) it is dropped on purpose.
     fun undoMap() {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val edit=mapUndo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapRedo.addLast(inverse) }
     }
     fun redoMap() {
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         val edit=mapRedo.removeLastOrNull() ?: return
         runMap({edit.revert(db)}) { inverse -> mapUndo.addLast(inverse) }
     }
@@ -727,7 +736,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     /** Undo never deletes history: it records the opposite movement, so the audit trail stays complete. */
     fun undoMovement() {
         val undo=ui.movementUndo ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         ui=ui.copy(movementUndo=null)
         execute(light=true) { team.returning { db.movement(undo.itemId,-undo.delta,"Annullato: ${undo.label}".take(250)) } }
     }
@@ -851,7 +860,7 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     }
     fun resizeMap(width:Float,height:Float) {
         val warehouseId=ui.warehouse?.id ?: return
-        if(ui.busy) return
+        if(refusedWhileBusy()) return
         mapCameras.remove(warehouseId)
         // Older edits refer to the previous room size: undoing them could put things outside it.
         clearMapHistory()

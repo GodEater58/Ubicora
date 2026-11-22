@@ -815,7 +815,7 @@ class TeamSync(private val stock: StockDb) {
                     "SKIP" -> skipped++
                     else -> throw IllegalArgumentException("Modifica sconosciuta nel file")
                 }
-                processed = seq
+                processed = maxOf(processed, seq)   // a file out of order never moves the mark back
             }
             sql.update("team_sync_peers", ContentValues().apply { put("processed_seq", processed); put("last_import", System.currentTimeMillis()) },
                 "device_uid=?", arrayOf(device))

@@ -1184,6 +1184,15 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
     }
 
     /** SQL foreign keys alone do not enforce warehouse ownership or valid floating point geometry. */
+    /**
+     * 4.24.1: a shelf or position that the structure no longer has (it was resized on another phone) is
+     * dropped, the article stays on its structure. Called by the restore before [validateRestoredData].
+     */
+    internal fun repairRestoredPositions(db: SQLiteDatabase) {
+        db.execSQL("""UPDATE items SET shelf_level=NULL,shelf_slot=NULL WHERE placement_id IS NOT NULL AND EXISTS(
+            SELECT 1 FROM placements p WHERE p.id=items.placement_id AND (COALESCE(items.shelf_level,0)>p.levels OR COALESCE(items.shelf_slot,0)>p.slots))""")
+        db.execSQL("UPDATE items SET shelf_level=NULL,shelf_slot=NULL WHERE placement_id IS NULL AND (shelf_level IS NOT NULL OR shelf_slot IS NOT NULL)")
+    }
     internal fun validateRestoredData() {
         val db=readableDatabase
         db.rawQuery("""SELECT 1 FROM items i JOIN placements p ON p.id=i.placement_id
@@ -1233,12 +1242,8 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
             WHERE t.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
             require(!it.moveToFirst()){"Tracciabilità associata a un altro magazzino"}
         }
-        db.rawQuery("""SELECT 1 FROM items i WHERE
-            (SELECT COALESCE(SUM(l.quantity),0) FROM stock_lots l WHERE l.item_id=i.id)
-            +(SELECT COUNT(*) FROM stock_serials s WHERE s.item_id=i.id AND s.state='IN_STOCK')
-            >i.quantity+0.0000001 LIMIT 1""",null).use {
-            require(!it.moveToFirst()){"Tracciabilità superiore alla giacenza"}
-        }
+        // 4.24.1: lots/serials or reservations above the stock are not refused any more: a team exchange can lower
+        // the quantity under them, and a backup the app itself made must always restore.
         db.rawQuery("""SELECT 1 FROM items i WHERE
             EXISTS(SELECT 1 FROM stock_lots l WHERE l.item_id=i.id AND l.quantity>0)
             AND EXISTS(SELECT 1 FROM stock_serials s WHERE s.item_id=i.id AND s.state='IN_STOCK')
@@ -1248,11 +1253,6 @@ class StockDb(context: Context, name: String = "officina_stock_native4.db"): SQL
         db.rawQuery("""SELECT 1 FROM stock_reservations r JOIN items i ON i.id=r.item_id
             WHERE r.warehouse_id<>i.warehouse_id LIMIT 1""",null).use {
             require(!it.moveToFirst()){"Prenotazione collegata a un altro magazzino"}
-        }
-        db.rawQuery("""SELECT i.id,i.quantity,COALESCE(SUM(r.quantity),0)
-            FROM items i JOIN stock_reservations r ON r.item_id=i.id AND r.status='ACTIVE'
-            GROUP BY i.id HAVING SUM(r.quantity)>i.quantity+0.0000001 LIMIT 1""",null).use {
-            require(!it.moveToFirst()){"Prenotazioni superiori alle scorte fisiche"}
         }
         // Prevent cross-warehouse workflow references even in imported encrypted archives.
         db.rawQuery("""SELECT 1 FROM ops_orders o JOIN items i ON i.id=o.item_id
