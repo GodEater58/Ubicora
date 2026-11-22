@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.20.2-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.25.0-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
@@ -32,16 +32,23 @@
 
 > Schermate della 4.20.2 con il magazzino dimostrativo. Si rifanno da sole con **Actions → Schermate → Run workflow** (escono sul ramo `schermate-output`); il prelievo a raffica non c'è perché la fotocamera si vede solo su un telefono vero.
 
-## Novità della 4.21
+## Novità dalla 4.21 alla 4.25
 
 | | Novità | In breve |
 |---|---|---|
-| 🔎 | **Ricerca per descrizione** | Tutte le ricerche degli articoli guardano anche la descrizione, con più parole insieme |
-| 🛠️ | **Manutentore con reparto** | Il manutentore ha le sue categorie (es. elettrico) e modifica le schede degli articoli del reparto; il centrale **valida** ogni modifica o la **rimanda indietro** con una nota |
-| ➕ | **Nuovo articolo in tre passi** | Foto, nome e categoria con gli articoli simili da copiare, quantità e ubicazione |
-| 📸 | **Foto con il riquadro** | La fotocamera dell'app mostra il riquadro esatto della foto della scheda e taglia lo scatto su quello |
+| 🧱 | **Solidità** (4.25) | Un solo archivio per tutta l'app, database alla versione 13 con migrazione tutto-o-niente, una sola regola per la giacenza, trasferimenti tra sedi tutto-o-niente |
+| 🛡️ | **Satelliti protetti** (4.25) | Se il centrale ripristina un backup vecchio, il satellite non cancella nulla e mostra un conflitto da controllare |
+| 💾 | **Backup senza limiti** (4.24.1) | Nessun limite di righe, ripristino una riga alla volta; un satellite ripristinato continua a inviare al centrale |
+| 🖼️ | **Stile «Vetrina»** (4.24) | Gli articoli che finiscono sono schede con la foto; giacenza in grande, pulsanti Preleva/Carica/Presta grandi, «Aggiungine un altro» |
+| 🗺️ | **Mappa più chiara** (4.23) | Un solo colore, la lettera dentro lo scaffale, pallino giallo con gli articoli che finiscono |
+| 🧹 | **Movimenti vecchi** (4.22) | Cancella i movimenti con più di 2 anni senza toccare le giacenze |
+| 🔎 | **Ricerca per descrizione** (4.21) | Tutte le ricerche degli articoli guardano anche la descrizione, con più parole insieme |
+| 🛠️ | **Manutentore con reparto** (4.21) | Modifica le schede degli articoli del suo reparto; il centrale **valida** o **rimanda indietro** con una nota |
+| ➕ | **Nuovo articolo in tre passi** (4.21) | Foto, nome e categoria con gli articoli simili da copiare, quantità e ubicazione (dalla 4.25 con la piantina della sede) |
 
-Dettagli: [4.21](docs/CHANGELOG_4_21_0.md)
+> ⚠️ Un database aperto dalla 4.25 non si apre più con un'app più vecchia: fai un backup completo prima di aggiornare.
+
+Dettagli: [4.21](docs/CHANGELOG_4_21_0.md) · [4.21.1](docs/CHANGELOG_4_21_1.md) · [4.21.2](docs/CHANGELOG_4_21_2.md) · [4.22](docs/CHANGELOG_4_22_0.md) · [4.23](docs/CHANGELOG_4_23_0.md) · [4.24](docs/CHANGELOG_4_24_0.md) · [4.24.1](docs/CHANGELOG_4_24_1.md) · [4.25](docs/CHANGELOG_4_25_0.md)
 
 ## Novità dalla 4.17 alla 4.20
 
@@ -78,14 +85,14 @@ Dettagli e cose da collaudare: [4.17](docs/CHANGELOG_4_17_0.md) · [4.18](docs/C
 | Cosa | Come |
 |---|---|
 | Archivio sul telefono | **Cifrato** con SQLCipher (AES-256); chiave casuale custodita dal portachiavi sicuro di Android (Keystore) |
-| Backup e scambi tra telefoni | File cifrati AES-256-GCM, chiave derivata dalla password (PBKDF2, 220.000 passaggi) |
+| Backup e scambi tra telefoni | File cifrati AES-256-GCM, chiave derivata dalla password (PBKDF2, 220.000 passaggi); i nuovi backup chiedono almeno 12 caratteri |
 | Accesso | Profili con PIN (PBKDF2 + blocco progressivo), schermate protette dagli screenshot (disattivabile) |
-| Collegamento in squadra | QR con **codice usa e getta** valido 10 minuti; password della squadra sigillata nel Keystore |
+| Collegamento in squadra | QR con **codice usa e getta** valido 10 minuti; password della squadra sigillata nel Keystore; dopo 5 file rifiutati in 5 minuti la rete del centrale si ferma 2 minuti |
 | Dati | Nessun account, nessun server obbligatorio: tutto resta sul telefono finché non esporti un backup |
 
 ## Installare e aggiornare
 
-1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.20.2: `4202`).
+1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.25.0: `4250`).
 2. **Dal telefono:** GitHub › *Releases* › bozza «Ubicora X.Y.Z» › tocca l'APK (la bozza la vede solo chi può scrivere nel repository, con l'accesso fatto nel browser).
    **Dal PC:** zip `ubicora-signed-update-code-…` nell'area *Artifacts* dell'esecuzione.
 3. Gli APK firmati si installano **sopra** la versione esistente, senza perdere dati.
