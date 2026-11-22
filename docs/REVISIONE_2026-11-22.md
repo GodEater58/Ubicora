@@ -19,3 +19,27 @@ Tenere l'architettura con correzioni mirate: **non serve reinstallare da zero**.
 Ordine consigliato: 6+8, 2 (+ test di migrazione con database veri v6/v11/v12), 3, 4, 5, poi 1 (rompe la compatibilità del backup verso le versioni vecchie: va annunciato), infine 7.
 
 Non controllati: schermate Compose, `TeamLink.kt`, query che leggono colonne per posizione.
+
+## Bug e sicurezza (revisore Kotlin/sicurezza): 11 problemi verificati leggendo il codice
+
+| # | Gravità | Problema | Dove | Correzione minima |
+|---|---|---|---|---|
+| 1 | Critico | Ripristinando il backup di un satellite su un telefono nuovo, il numeratore delle modifiche riparte da 1: il centrale scarta i nuovi movimenti come «già importati» e poi il satellite li perde | `BackupArchive.kt:262-271`, `TeamSync.kt:765,1028` | Dopo il ripristino alzare il numeratore di `team_sync_outbox` in `sqlite_sequence` (es. all'ora in ms) |
+| 2 | Alto | Scambiando i codici di due articoli sul centrale, il satellite incontra un codice doppio e ogni aggiornamento fallisce per sempre | `TeamSync.kt:989-1001`, `StockDb.kt:469-473` | Prima di scrivere il codice nuovo, dare un codice provvisorio all'articolo locale che lo occupa |
+| 3 | Alto | Backup che si esporta senza errori ma poi non si ripristina (prenotazioni oltre la giacenza dopo una sync, articolo su un ripiano che non esiste più) | `TeamSync.kt:987-1003,1131,1147-1149`, `StockDb.kt:1189-1191,1236-1256` | `validateRestoredData()` prima dell'esportazione; togliere il ripiano agli articoli oltre i ripiani della struttura |
+| 4 | Medio | Trasferimento tra sedi applicato a metà sul centrale se una delle due parti viene rifiutata | `TeamSync.kt:787-800`, `StockDb.kt:611-612` | Se l'uscita fallisce, saltare anche l'entrata collegata |
+| 5 | Medio | «Salva articolo» può creare l'articolo due volte se la collocazione fallisce | `StockViewModel.kt:655-661` | Salvataggio e collocazione nella stessa transazione |
+| 6 | Medio | Il centrale può inviare un aggiornamento incoerente se riceve un file mentre lo prepara | `TeamSync.kt:688-706` | `exportState`/`exportChanges` dentro una transazione |
+| 7 | Medio | Uno sconosciuto vicino può esaurire la memoria del centrale (6 × 24 MB in parallelo) | `TeamLink.kt:131-137,171-174,338-346` | Leggere un messaggio alla volta o abbassare il limite |
+| 8 | Basso | Collegandosi con la password, il primo «centrale» che risponde riceve una prova della password | `TeamLink.kt:236-242` | Confermare il nome del centrale o mettere il codice del magazzino nel QR |
+| 9 | Basso | Un file con modifiche fuori ordine può far contare due volte i movimenti | `TeamSync.kt:818` | `processed = maxOf(processed, seq)` |
+| 10 | Basso | Il centrale può eliminare un articolo prestato da un satellite: il prestito si perde | `StockDb.kt:339-347`, `TeamSync.kt:1011-1016` | `hasOpenWork` controlla anche `team_loans` |
+| 11 | Basso | Il limite di reparto si aggira con una nota che inizia con «Annullato» o «Restituito» (serve un file costruito a mano) | `TeamSync.kt:791-792` | Riconoscere i resi dai movimenti originali |
+
+Senza problemi: backup cifrato (BackupCipher), cifratura dell'archivio (DbCipher), componenti esposti nel manifest, FileProvider, CSV, biometria, codice di invito.
+
+## Priorità
+1. Bug 1, 2, 3: da correggere prima di consegnare la prossima versione.
+2. Architettura 6 e 8, poi 2, 3 e 4 (insieme ai bug 4, 6, 9, 10).
+3. Bug 5 e 7, architettura 5.
+4. Backup a pezzi (architettura 1): da annunciare, perché i backup nuovi non si aprono sulle versioni vecchie.
