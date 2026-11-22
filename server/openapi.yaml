@@ -1,11 +1,11 @@
 openapi: 3.0.3
 info:
-  title: Ubicora Enterprise Sync (proposed server contract)
-  version: 1.0.0-draft
+  title: Ubicora Enterprise Sync (server contract)
+  version: 1.1.0
   description: |
-    Server is NOT shipped or deployed by Ubicora 4.4.
     Authenticate tokens (issuer, audience, signature, expiry) and authorize
     each resource and tenant on the SERVER, never based on client-supplied roles.
+    Text values must not contain NUL characters (PostgreSQL jsonb cannot store them).
 servers:
   - url: https://inventory.example.org
 security:
@@ -21,10 +21,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [protocol_version]
+                required: [protocol_version, authenticated]
                 properties:
                   protocol_version: {type: integer, enum: [1]}
-        '401': {description: Authentication required}
+                  authenticated: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/Unavailable'}
   /v1/sync/events:
     post:
       summary: Accept idempotent outbox events (after authorization and durable commit)
@@ -32,6 +34,7 @@ paths:
         200 acknowledges only events committed to the server storage.
         A repeated event_id must produce the SAME result, not a duplicate row.
         Do not accept unrecognized resources or cross-tenant references.
+        UPDATE and DELETE must carry the entity's current expected_version; CREATE must not.
         Conflicting versions require 409 and leave the event unacknowledged.
       requestBody:
         required: true
@@ -39,6 +42,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required: [protocol_version, tenant_uuid, events]
               properties:
                 protocol_version: {type: integer, enum: [1]}
@@ -49,6 +53,7 @@ paths:
                   maxItems: 100
                   items:
                     type: object
+                    additionalProperties: false
                     required: [event_id, entity_uuid, resource, operation, created_at_ms, data]
                     properties:
                       event_id: {type: string, format: uuid}
@@ -59,8 +64,17 @@ paths:
                       operation:
                         type: string
                         enum: [CREATE, UPDATE, DELETE]
-                      created_at_ms: {type: integer, format: int64}
-                      data: {type: object, additionalProperties: true}
+                      created_at_ms: {type: integer, format: int64, minimum: 0}
+                      expected_version:
+                        type: integer
+                        minimum: 1
+                        description: Required for UPDATE and DELETE, forbidden for CREATE.
+                      data:
+                        type: object
+                        additionalProperties: true
+                        description: |
+                          Empty for DELETE. Otherwise "uuid" equals entity_uuid; "name" (or "display_name"
+                          for staff_directory) 2-160 characters; asset "center_uuid" in lowercase canonical form.
       responses:
         '200':
           description: Committed and deduplicated events
@@ -75,14 +89,98 @@ paths:
                     type: array
                     items: {type: string, format: uuid}
                     uniqueItems: true
-        '400': {description: Invalid payload}
-        '401': {description: Token missing or invalid}
+        '400': {description: Invalid payload or data rejected by storage (do not retry unchanged)}
+        '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {description: Tenant or role denied}
         '409': {description: Revision or semantic conflict}
         '413': {description: Request too large}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/sync/changes:
+    get:
+      summary: Accepted events after a cursor, filtered by the caller's read rights
+      parameters:
+        - {name: tenant_uuid, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: cursor, in: query, required: false, schema: {type: string, maxLength: 128},
+           description: "'<ISO timestamp with offset>|<event uuid>' from the previous next_cursor"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 250, default: 100}}
+      responses:
+        '200':
+          description: Events in commit order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protocol_version, events, next_cursor]
+                properties:
+                  protocol_version: {type: integer, enum: [1]}
+                  next_cursor: {type: string, nullable: true}
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id: {type: string, format: uuid}
+                        entity_uuid: {type: string, format: uuid}
+                        resource: {type: string}
+                        operation: {type: string}
+                        data: {type: object, additionalProperties: true}
+                        accepted_at: {type: string, format: date-time}
+        '400': {description: Invalid cursor}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: No active membership for this tenant}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/web/config:
+    get:
+      summary: Browser sign-in settings (no authentication)
+      security: []
+      responses:
+        '200': {description: '{"configured": false} or the OIDC endpoints, client_id and scope'}
+  /v1/web/tenants:
+    get:
+      summary: Tenants the caller belongs to, with the caller's role
+      responses:
+        '200': {description: '{"tenants": [{"id", "display_name", "role"}]}'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/web/workspace/{tenant}:
+    parameters:
+      - {name: tenant, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Whole workspace document and its revision (VIEWER receives it without prices, costs and budget)
+      responses:
+        '200': {description: '{"revision", "data", "can_write"}'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: No active membership for this tenant}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    put:
+      summary: Replace the document if expected_revision is current (MANAGER only, idempotent by mutation_id)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mutation_id, expected_revision, data]
+              properties:
+                mutation_id: {type: string, format: uuid}
+                expected_revision: {type: integer, minimum: 0}
+                data: {type: object, description: 'Document "ubicora-web-1", at most 8 MiB'}
+      responses:
+        '200': {description: '{"revision", "mutation_id"}'}
+        '400': {description: Invalid document}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: Only managers may write}
+        '409': {description: Changed on another device, or mutation_id reused with different data}
+        '413': {description: Workspace too large}
+        '503': {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Token missing, invalid, expired or signed with an unknown key
+    Unavailable:
+      description: Identity provider or storage temporarily unavailable (retry later)

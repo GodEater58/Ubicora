@@ -7,7 +7,7 @@
 **Inventario, ubicazioni e mappa del magazzino — sul telefono, senza cloud, anche in squadra.**
 
 [![Build Android](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml/badge.svg)](https://github.com/GodEater58/Ubicora/actions/workflows/android-build.yml)
-![Versione](https://img.shields.io/badge/Android-4.26.0-2ddeb3)
+![Versione](https://img.shields.io/badge/Android-4.26.1-2ddeb3)
 ![Min SDK](https://img.shields.io/badge/Android-8.0%2B-0b8a6d)
 ![Archivio](https://img.shields.io/badge/archivio-cifrato%20AES--256-10333d)
 
@@ -49,7 +49,7 @@
 
 > ⚠️ Un database aperto dalla 4.25 non si apre più con un'app più vecchia: fai un backup completo prima di aggiornare.
 
-Dettagli: [4.21](docs/CHANGELOG_4_21_0.md) · [4.21.1](docs/CHANGELOG_4_21_1.md) · [4.21.2](docs/CHANGELOG_4_21_2.md) · [4.22](docs/CHANGELOG_4_22_0.md) · [4.23](docs/CHANGELOG_4_23_0.md) · [4.24](docs/CHANGELOG_4_24_0.md) · [4.24.1](docs/CHANGELOG_4_24_1.md) · [4.25](docs/CHANGELOG_4_25_0.md) · [4.26](docs/CHANGELOG_4_26_0.md)
+Dettagli: [4.21](docs/CHANGELOG_4_21_0.md) · [4.21.1](docs/CHANGELOG_4_21_1.md) · [4.21.2](docs/CHANGELOG_4_21_2.md) · [4.22](docs/CHANGELOG_4_22_0.md) · [4.23](docs/CHANGELOG_4_23_0.md) · [4.24](docs/CHANGELOG_4_24_0.md) · [4.24.1](docs/CHANGELOG_4_24_1.md) · [4.25](docs/CHANGELOG_4_25_0.md) · [4.26](docs/CHANGELOG_4_26_0.md) · [4.26.1](docs/CHANGELOG_4_26_1.md)
 
 ## Novità dalla 4.17 alla 4.20
 
@@ -86,14 +86,14 @@ Dettagli e cose da collaudare: [4.17](docs/CHANGELOG_4_17_0.md) · [4.18](docs/C
 | Cosa | Come |
 |---|---|
 | Archivio sul telefono | **Cifrato** con SQLCipher (AES-256); chiave casuale custodita dal portachiavi sicuro di Android (Keystore) |
-| Backup e scambi tra telefoni | File cifrati AES-256-GCM, chiave derivata dalla password (PBKDF2, 220.000 passaggi); i nuovi backup chiedono almeno 12 caratteri |
+| Backup e scambi tra telefoni | File cifrati AES-256-GCM, chiave derivata dalla password con PBKDF2: 600.000 passaggi per i backup completi (dalla 4.26.1, almeno 12 caratteri), 220.000 per i file della squadra (leggibili da tutte le versioni) |
 | Accesso | Profili con PIN (PBKDF2 + blocco progressivo), schermate protette dagli screenshot (disattivabile) |
 | Collegamento in squadra | QR con **codice usa e getta** valido 10 minuti; password della squadra sigillata nel Keystore; dopo 5 file rifiutati in 5 minuti la rete del centrale si ferma 2 minuti |
 | Dati | Nessun account, nessun server obbligatorio: tutto resta sul telefono finché non esporti un backup |
 
 ## Installare e aggiornare
 
-1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.26.0: `4260`).
+1. **Actions → Ubicora Stable Signed Update → Run workflow** sul ramo `main`, con il `versionCode` della versione (per la 4.26.1: `4261`).
 2. **Dal telefono:** GitHub › *Releases* › bozza «Ubicora X.Y.Z» › tocca l'APK (la bozza la vede solo chi può scrivere nel repository, con l'accesso fatto nel browser).
    **Dal PC:** zip `ubicora-signed-update-code-…` nell'area *Artifacts* dell'esecuzione.
 3. Gli APK firmati si installano **sopra** la versione esistente, senza perdere dati.

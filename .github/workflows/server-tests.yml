@@ -10,6 +10,8 @@ on:
     paths:
       - 'server/**'
       - '.github/workflows/server-tests.yml'
+permissions:
+  contents: read
 jobs:
   api-tests:
     runs-on: ubuntu-24.04

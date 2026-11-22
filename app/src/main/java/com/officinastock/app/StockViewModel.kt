@@ -587,7 +587,13 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
     fun changePin(currentPin:String,newPin:String,onDone:()->Unit) {
         val p=ui.profile ?: return
         if(ui.sessionLocked) return
-        execute(onSuccess=onDone) { db.changePin(p.id,currentPin,newPin) }
+        execute(onSuccess=onDone) {
+            db.changePin(p.id,currentPin,newPin)
+            // 4.21.2: a PIN changed because someone knew it also turns the fingerprint off: on a shared
+            // phone other people's fingers may be enrolled. It is turned on again from the menu.
+            BiometricLogin.disable(getApplication(),p.id)
+            BiometricLogin.pinUsed(getApplication(),p.id)
+        }
     }
     /** 4.13: on a satellite the central owns the article list, so deleting is done there. */
     val canDeleteItems:Boolean get() { val t=ui.team; return !(t.role==TeamRole.SATELLITE && t.covers(ui.warehouse?.id)) }
@@ -993,7 +999,12 @@ class StockViewModel(app: Application): AndroidViewModel(app) {
         requireArchiveAuthorization()
         ui=ui.copy(busy=true)
         try {
-            withContext(Dispatchers.IO){BackupArchive(getApplication(),db).restore(uri,password)}
+            withContext(Dispatchers.IO){
+                BackupArchive(getApplication(),db).restore(uri,password)
+                // 4.21.2: fingerprints and drafts were made for the profiles and sites that were just replaced.
+                BiometricLogin.forgetAll(getApplication())
+                NewItemDrafts.clearAll(getApplication())
+            }
             clearMapHistory();pendingWalls.clear()
             val profiles=withContext(Dispatchers.IO){db.profiles()}
             pendingNewItem=null;pendingProfileId=null;pendingWarehouseId=null

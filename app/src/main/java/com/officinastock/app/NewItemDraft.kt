@@ -48,4 +48,10 @@ object NewItemDrafts {
             .getOrNull()?.takeIf { it.warehouseId == warehouseId }
     }
     fun clear(context: Context, warehouseId: Long) { prefs(context).edit().remove(key(warehouseId)).apply() }
+    /** 4.21.2: drafts and their photos belong to the archive they were made in; a restored backup drops them. */
+    fun clearAll(context: Context) { prefs(context).edit().clear().commit() }
+    /** 4.21.2: photos still used by a draft, so the cleanup of old camera files keeps them. */
+    fun photoUris(context: Context): Set<String> = prefs(context).all.values.mapNotNull { stored ->
+        runCatching { JSONObject(requireNotNull(DeviceSecrets.open(stored as String))).let { if (it.isNull("photo")) null else it.getString("photo") } }.getOrNull()
+    }.toSet()
 }

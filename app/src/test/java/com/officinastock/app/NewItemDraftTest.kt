@@ -23,6 +23,17 @@ class NewItemDraftTest {
         assertNull(NewItemDrafts.load(context, 7))
     }
 
+    @Test fun draftPhotosAreKnownAndARestoreDropsAllDrafts() {
+        val context = RuntimeEnvironment.getApplication()
+        NewItemDrafts.clearAll(context)
+        NewItemDrafts.save(context, NewItemDraft(1, photoUri = "content://x.fileprovider/camera/shot_a.jpg"))
+        NewItemDrafts.save(context, NewItemDraft(2))
+        assertEquals(setOf("content://x.fileprovider/camera/shot_a.jpg"), NewItemDrafts.photoUris(context))
+        NewItemDrafts.clearAll(context)
+        assertNull(NewItemDrafts.load(context, 1))
+        assertTrue(NewItemDrafts.photoUris(context).isEmpty())
+    }
+
     @Test fun theMapChoiceAndAnEmptyPlaceSurviveToo() {
         val onMap = NewItemDraft(3, place = NewItemPlace(onMap = true))
         assertEquals(onMap, NewItemDraft.fromJson(onMap.toJson()))
